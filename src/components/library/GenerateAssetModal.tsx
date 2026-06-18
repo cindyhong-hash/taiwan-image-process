@@ -1,0 +1,486 @@
+"use client";
+/**
+ * GenerateAssetModal — 素材生成（原「背景生成」）
+ * ────────────────────────────────────────────────
+ * 右側面板，按「素材類型」分開生成 1–5 張：
+ *   • 背景 — 純背景圖（無文字/人物/產品），FLUX.1；選取後存為 背景素材（BACKGROUND 組件，可重用）。
+ *   • 人像 — 真人寫實，FLUX.2 pro（預設亞裔/台港面孔）；選取後存為圖庫成圖（genType=person）。
+ *   • 插畫 — 2D 插畫，Recraft V3；選取後存為圖庫成圖（genType=illustration）。
+ * 生成用 draftOnly（存檔不入庫），未選的不會出現在圖庫。可先「✨潤色」擴寫描述再生成。
+ */
+
+import { useState, useRef } from "react";
+import { X, Wand2, Loader2, Check, Save, ImageIcon, UserRound, Palette, Link2, Sparkles, Upload, RefreshCw } from "lucide-react";
+
+type GeneratedItem = { imageUrl: string; selected: boolean };
+type AssetType = "background" | "person" | "illustration";
+
+type Props = {
+  clientId: string | null;
+  onClose: () => void;
+  onSaved: () => void;
+  /** Pre-fill values when opening from a popup's「重新生成/調整」action. */
+  init?: { description?: string; refImageUrl?: string; type?: AssetType; engine?: "flux" | "nano" };
+};
+
+const TYPE_META: Record<AssetType, { label: string; sub: string; icon: React.ReactNode; placeholder: string }> = {
+  background: { label: "背景", sub: "FLUX.1 · 純背景底圖", icon: <ImageIcon className="h-3.5 w-3.5" />, placeholder: "例：清新白色棚拍背景、柔和漫射光\n例：米白漸層棚拍、淡淡投影\n例：夏日戶外自然場景、柔光" },
+  person: { label: "人像", sub: "FLUX.2 pro · 真人寫實", icon: <UserRound className="h-3.5 w-3.5" />, placeholder: "例：微笑的年輕女性，自然妝容，戶外咖啡店\n例：專業男士，西裝，辦公室，自信表情" },
+  illustration: { label: "插畫", sub: "Recraft V3 · 2D 插畫", icon: <Palette className="h-3.5 w-3.5" />, placeholder: "例：可愛貓咪吉祥物，扁平插畫風，手持產品\n例：清新夏日海灘，2D 插畫，柔和色塊" },
+};
+
+export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) {
+  const [type, setType] = useState<AssetType>(init?.type ?? "background");
+  const [description, setDescription] = useState(init?.description ?? "");
+  const [count, setCount] = useState(3);
+  const [size, setSize] = useState<"square" | "landscape">("square");
+  const [asianFirst, setAsianFirst] = useState(true); // 人像：預設亞裔（台/港受眾）
+  const [refImageUrl, setRefImageUrl] = useState<string>(init?.refImageUrl ?? "");
+  const [refUploading, setRefUploading] = useState(false);
+  const [refDescribing, setRefDescribing] = useState(false);
+  const [engine, setEngine] = useState<"flux" | "nano">(init?.engine ?? "flux");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [generating, setGenerating] = useState(false);
+  const [polishing, setPolishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState<GeneratedItem[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const genType = type === "background" ? undefined : type; // 背景走預設(場景)模型；人像/插畫走對應模型
+
+  /** 組裝送去生成嘅繁中 brief（route 會翻英）。 */
+  function buildPrompt(desc: string): string {
+    const base = desc.trim();
+    if (type === "background") {
+      // 純背景：英文硬約束，杜絕人物/產品/文字。
+      return `${base}, pure background scene only, absolutely no people no faces no text no logos no watermarks no products, seamless background texture or environment, studio quality, photorealistic`;
+    }
+    if (type === "person") {
+      const asian = asianFirst ? "亞裔（台灣／香港）人物，" : "";
+      return `${asian}${base}，真人寫實人像攝影，自然光，高品質，無浮水印無文字`;
+    }
+    // illustration
+    return `${base}，2D 扁平數位插畫風格，乾淨線條與色塊，無浮水印無文字`;
+  }
+
+  /**
+   * AI 讀圖填描述：用 vision 分析參考圖，生成簡潔生成 brief（50–80 字）。
+   * force=true 時不管現有描述是否為空，都覆寫。
+   */
+  async function handleDescribeRef(url: string, force = false) {
+    if (!url.trim()) return;
+    if (!force && description.trim()) return; // 已有描述時不自動覆蓋
+    setRefDescribing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/library/describe", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: url.trim(), kind: "brief", genType: type }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "AI 讀圖失敗");
+      const desc = (data.text ?? data.subject ?? "").trim();
+      if (desc) setDescription(desc);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "AI 讀圖失敗");
+    } finally {
+      setRefDescribing(false);
+    }
+  }
+
+  /** 上傳本地圖片為參考風格圖；上傳成功後自動 AI 讀圖填描述。 */
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRefUploading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok || !data.url) throw new Error(data.error ?? "上傳失敗");
+      setRefImageUrl(data.url);
+      // 上傳後自動讀圖填描述（描述空時才填，有描述時靜默不覆蓋）
+      await handleDescribeRef(data.url, false);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "上傳失敗");
+    } finally {
+      setRefUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  /**
+   * ✨潤色：擴寫描述，回填可編輯。
+   * 如有參考圖且描述為空，先 AI 讀圖填描述，再潤色。
+   * 如有參考圖且描述有內容，直接融入風格潤色。
+   */
+  async function polish() {
+    const hasRef = !!refImageUrl.trim();
+    const hasDesc = !!description.trim();
+    if (!hasDesc && !hasRef) return;
+    setPolishing(true);
+    setError(null);
+    try {
+      // 有圖無描述：先讀圖產生初稿，然後以該初稿潤色
+      let currentDesc = description.trim();
+      if (!hasDesc && hasRef) {
+        setRefDescribing(true);
+        const descRes = await fetch("/api/library/describe", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: refImageUrl.trim(), kind: "brief", genType: type }),
+        });
+        const descData = await descRes.json();
+        setRefDescribing(false);
+        currentDesc = (descData.text ?? descData.subject ?? "").trim();
+        if (currentDesc) setDescription(currentDesc);
+        if (!currentDesc) throw new Error("AI 讀圖未能產生描述，請手動輸入");
+      }
+      const res = await fetch("/api/library/polish", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brief: currentDesc, genType: genType ?? "scene", ...(hasRef ? { refImageUrl: refImageUrl.trim() } : {}) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "潤色失敗");
+      setDescription(data.brief ?? currentDesc);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "潤色失敗");
+    } finally {
+      setPolishing(false);
+      setRefDescribing(false);
+    }
+  }
+
+  async function handleGenerate() {
+    if (!description.trim()) return;
+    setGenerating(true);
+    setError(null);
+    setItems([]);
+    try {
+      const prompt = buildPrompt(description);
+      const results = await Promise.allSettled(
+        Array.from({ length: count }, () =>
+          fetch("/api/library/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              clientId,
+              subject: description.trim(),
+              customPrompt: prompt,
+              size,
+              genType,
+              draftOnly: true,
+              ...(refImageUrl.trim() ? { refImageUrl: refImageUrl.trim() } : {}),
+              engine,
+            }),
+          }).then((r) => r.json())
+        )
+      );
+      const ok: GeneratedItem[] = results
+        .filter((r): r is PromiseFulfilledResult<{ imageUrl: string }> => r.status === "fulfilled" && !!r.value?.imageUrl)
+        .map((r) => ({ imageUrl: r.value.imageUrl, selected: true }));
+      if (ok.length === 0) throw new Error("所有圖片生成失敗，請重試");
+      setItems(ok);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "生成失敗");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function toggle(url: string) {
+    setItems((prev) => prev.map((it) => it.imageUrl === url ? { ...it, selected: !it.selected } : it));
+  }
+
+  async function handleSave() {
+    const selected = items.filter((it) => it.selected);
+    if (selected.length === 0) { setError("請至少選取一張圖片"); return; }
+    setSaving(true);
+    setError(null);
+    const name0 = description.trim().slice(0, 20);
+    try {
+      if (type === "background") {
+        // 背景 → 存為可重用 背景素材（BACKGROUND 組件）。
+        await Promise.all(selected.map((it, i) =>
+          fetch("/api/components", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "BACKGROUND", clientId,
+              name: `${name0}${selected.length > 1 ? ` #${i + 1}` : ""}`,
+              data: { imageUrl: it.imageUrl, mode: engine === "nano" ? "nano-banana" : "flux-scene", ...(refImageUrl.trim() ? { refImageUrl: refImageUrl.trim() } : {}) }, aiPromptText: description.trim(), previewUrl: it.imageUrl,
+            }),
+          })
+        ));
+      } else {
+        // 人像 / 插畫 → 存為圖庫成圖（最終交付）；genType 入 paramsJson 供圖庫分類。
+        await Promise.all(selected.map((it) =>
+          fetch("/api/library/save-image", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              clientId, imageUrl: it.imageUrl, subject: name0,
+              prompt: description.trim(),
+              paramsJson: JSON.stringify({ genType, mode: engine === "nano" ? "nano-banana" : (type === "person" ? "flux2-person" : "recraft-illustration"), ...(refImageUrl.trim() ? { refImageUrl: refImageUrl.trim() } : {}) }),
+            }),
+          })
+        ));
+      }
+      onSaved();
+    } catch {
+      setError("儲存失敗，請重試");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const selectedCount = items.filter((it) => it.selected).length;
+  const meta = TYPE_META[type];
+  const saveTarget = type === "background" ? "🌄 背景素材" : type === "person" ? "🧑 人像（圖庫）" : "🎨 插畫（圖庫）";
+  // FLUX option label changes per type — each type has its own default engine.
+  const fluxLabel = type === "person"
+    ? { name: "FLUX.2 pro", sub: "純文字生圖 · 真人寫實" }
+    : type === "illustration"
+    ? { name: "Recraft V3", sub: "純文字生圖 · 2D 插畫" }
+    : { name: "FLUX.1", sub: "schnell · 純文字生圖" };
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div>
+            <h2 className="text-base font-semibold flex items-center gap-2">
+              <Wand2 className="h-4 w-4 text-violet-500" />素材生成
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">分類生成 背景 / 人像 / 插畫，選取後存入素材庫或圖庫</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {/* 素材類型 */}
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1.5 block">素材類型</label>
+            <div className="flex gap-1.5">
+              {(Object.keys(TYPE_META) as AssetType[]).map((t) => {
+                const m = TYPE_META[t];
+                return (
+                  <button key={t} onClick={() => { setType(t); setItems([]); setEngine("flux"); }}
+                    className={`flex-1 text-left text-xs px-3 py-2 rounded-lg border transition-colors ${type === t ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                    <div className="font-semibold flex items-center gap-1">{m.icon}{m.label}</div>
+                    <div className={`text-[10px] leading-snug ${type === t ? "text-violet-100" : "text-gray-400"}`}>{m.sub}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 參考風格圖（所有類型均可用，位於描述上方） */}
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
+              <Link2 className="h-3 w-3" />參考風格圖
+              <span className="font-normal text-gray-400 ml-1">（選填）— AI 讀取色調、光影、質感做風格參考</span>
+            </label>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={refImageUrl}
+                onChange={(e) => setRefImageUrl(e.target.value)}
+                onBlur={(e) => {
+                  const url = e.target.value.trim();
+                  if (url.startsWith("http")) handleDescribeRef(url, false);
+                }}
+                placeholder="貼上圖片網址（https://…）"
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400 transition"
+              />
+              <button onClick={() => fileInputRef.current?.click()} disabled={refUploading}
+                title="從電腦上傳圖片"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-500 hover:bg-gray-50 transition-colors whitespace-nowrap disabled:opacity-50">
+                {refUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                {refUploading ? "上傳中…" : "上傳"}
+              </button>
+              {refImageUrl.trim() && (
+                <button onClick={() => setRefImageUrl("")}
+                  className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-500 hover:bg-gray-50 transition-colors whitespace-nowrap">
+                  清除
+                </button>
+              )}
+            </div>
+            {refImageUrl.trim() && (
+              <div className="mt-2 rounded-xl overflow-hidden border border-gray-100 bg-gray-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={refImageUrl} alt="參考圖" className="w-full max-h-48 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              </div>
+            )}
+          </div>
+
+          {/* 生成引擎（Nano Banana 需要參考圖；FLUX 標籤依素材類型顯示正確引擎名稱） */}
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
+              <Sparkles className="h-3 w-3" />生成引擎
+            </label>
+            <div className="flex gap-1.5">
+              <button onClick={() => setEngine("flux")}
+                className={`flex-1 text-xs px-3 py-2 rounded-lg border transition-colors ${engine === "flux" ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                <div className="font-semibold">{fluxLabel.name}</div>
+                <div className={`text-[10px] ${engine === "flux" ? "text-violet-100" : "text-gray-400"}`}>{fluxLabel.sub}</div>
+              </button>
+              <button onClick={() => setEngine("nano")}
+                title={refImageUrl.trim() ? "以參考圖色調、光影、質感做風格遷移生成" : "純文字生圖（有參考圖時自動轉風格遷移）"}
+                className={`flex-1 text-xs px-3 py-2 rounded-lg border transition-colors ${engine === "nano" ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                <div className="font-semibold">Nano Banana</div>
+                <div className={`text-[10px] ${engine === "nano" ? "text-violet-100" : "text-gray-400"}`}>{refImageUrl.trim() ? "參考圖風格遷移" : "純文字生圖"}</div>
+              </button>
+            </div>
+          </div>
+
+          {/* Description input + 潤色 */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              {/* Left: label + standalone loading indicator */}
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-gray-600">{meta.label}描述</label>
+                {refDescribing && (
+                  <span className="flex items-center gap-1 text-[10px] text-violet-500">
+                    <Loader2 className="h-2.5 w-2.5 animate-spin" />讀圖中…
+                  </span>
+                )}
+              </div>
+              {/* Right: AI 讀圖（有參考圖時）+ 潤色 */}
+              <div className="flex items-center gap-1">
+                {refImageUrl.trim() && (
+                  <button onClick={() => handleDescribeRef(refImageUrl, true)} disabled={refDescribing || polishing}
+                    title="AI 重新讀取參考圖，生成描述初稿（會覆蓋現有內容）"
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                      !refDescribing && !polishing ? "bg-sky-50 border-sky-300 text-sky-700 hover:bg-sky-100" : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}>
+                    <RefreshCw className="h-3 w-3" />重新讀圖
+                  </button>
+                )}
+                {/* 潤色：有描述 OR（無描述 + 有參考圖）時均可觸發 */}
+                <button onClick={polish} disabled={(!description.trim() && !refImageUrl.trim()) || polishing || refDescribing}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                    (description.trim() || refImageUrl.trim()) && !polishing && !refDescribing ? "bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100" : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                  title="把描述擴寫成簡潔有創意的生成 brief（可再編輯）">
+                  {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                  {polishing ? "潤色中…" : "潤色"}
+                </button>
+              </div>
+            </div>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
+              placeholder={meta.placeholder}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 transition" />
+          </div>
+
+          {/* 人像：亞裔優先 */}
+          {type === "person" && (
+            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+              <button type="button" onClick={() => setAsianFirst((v) => !v)}
+                className={`w-4 h-4 rounded border flex items-center justify-center ${asianFirst ? "bg-violet-600 border-violet-600" : "border-gray-300 bg-white"}`}>
+                {asianFirst && <Check className="h-3 w-3 text-white" />}
+              </button>
+              優先生成亞裔（台灣／香港）面孔
+            </label>
+          )}
+
+          {/* Count 1–5 */}
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-semibold text-gray-600 whitespace-nowrap">生成數量</label>
+            <div className="flex gap-1.5">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} onClick={() => setCount(n)}
+                  className={`w-9 h-9 rounded-lg border text-sm font-medium transition-colors ${count === n ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Size */}
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-semibold text-gray-600 whitespace-nowrap">尺寸</label>
+            <div className="flex gap-1.5">
+              <button onClick={() => setSize("square")}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${size === "square" ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                <span className="inline-block w-3 h-3 border border-current rounded-[2px]" />正方形 1200×1200
+              </button>
+              <button onClick={() => setSize("landscape")}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${size === "landscape" ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                <span className="inline-block w-4 h-3 border border-current rounded-[2px]" />橫向 1800×1200
+              </button>
+            </div>
+          </div>
+
+          <button
+            onClick={handleGenerate}
+            disabled={!description.trim() || generating}
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-xl hover:bg-violet-700 disabled:opacity-40 transition-colors">
+            {generating
+              ? <><Loader2 className="h-4 w-4 animate-spin" />生成中…（每張約 10–40 秒）</>
+              : <><Wand2 className="h-4 w-4" />生成 {count} 張{meta.label}</>}
+          </button>
+
+          {error && (
+            <div className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">⚠️ {error}</div>
+          )}
+
+          {/* Results */}
+          {items.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold text-gray-600">
+                  點擊選取要保留的圖片（已選 {selectedCount}/{items.length}）
+                </div>
+                <button onClick={() => setItems([])}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors whitespace-nowrap">
+                  <Wand2 className="h-3 w-3" />重新生成/調整
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {items.map((item) => (
+                  <div key={item.imageUrl}
+                    className={`relative rounded-xl border-2 overflow-hidden cursor-pointer transition-all ${item.selected ? "border-violet-500 shadow-md" : "border-gray-200 opacity-50"}`}
+                    onClick={() => toggle(item.imageUrl)}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.imageUrl} alt="generated" className="w-full aspect-square object-contain bg-gray-50" />
+                    <div className={`absolute inset-0 transition-colors ${item.selected ? "bg-transparent" : "bg-gray-100/30"}`} />
+                    {item.selected && (
+                      <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-violet-600 flex items-center justify-center shadow">
+                        <Check className="h-3 w-3 text-white" />
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {items.length > 0 && (
+          <div className="px-6 py-4 border-t bg-gray-50 flex items-center gap-2">
+            {error && <p className="text-xs text-red-500 flex-1">{error}</p>}
+            <button onClick={onClose}
+              className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-100 transition-colors whitespace-nowrap">
+              取消
+            </button>
+            <button onClick={() => setItems([])}
+              className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-100 transition-colors whitespace-nowrap">
+              <Wand2 className="h-3.5 w-3.5" />重新調整
+            </button>
+            <button onClick={handleSave} disabled={saving || selectedCount === 0}
+              className="flex-1 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-700 disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors">
+              {saving
+                ? <><Loader2 className="h-4 w-4 animate-spin" />儲存中…</>
+                : <><Save className="h-4 w-4" />保留 {selectedCount} 張 → {saveTarget}</>}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

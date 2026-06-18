@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Client {
+  id             String     @id @default(cuid())
+  name           String
+  primaryColor   String
+  secondaryColor String?
+  logoUrl        String?
+  toneLabels         String     @default("[]")
+  taboos             String     @default("[]")
+  pastPostImageUrls  String     @default("[]")
+  paletteColors      String     @default("[]")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  activities     Activity[]
+}
+
+model Activity {
+  id                 String            @id @default(cuid())
+  clientId           String
+  client             Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  theme              String
+  focusPoint         String
+  productImageUrl    String
+  referenceImageUrls String            @default("[]")
+  status             String            @default("PENDING")
+  createdAt          DateTime          @default(now())
+  generatedLayouts   GeneratedLayout[]
+}
+
+model GeneratedLayout {
+  id              String   @id @default(cuid())
+  activityId      String
+  activity        Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  layoutType      String
+  imageUrl        String
+  copyText        String
+  styleComponents String   @default("{}")
+  isSelected      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+}
+
+model StyleComponent {
+  id             String   @id @default(cuid())
+  name           String
+  type           String
+  data           String   @default("{}")
+  sourceLayoutId String
+  clientId       String?
+  aiPromptText   String   @default("")
+  previewUrl     String?
+  createdAt      DateTime @default(now())
+}
+
+model LibraryImage {
+  id         String   @id @default(cuid())
+  clientId   String?
+  imageUrl   String
+  prompt     String
+  copyText   String?
+  subject    String?
+  paramsJson String   @default("{}")
+  createdAt  DateTime @default(now())
+}
