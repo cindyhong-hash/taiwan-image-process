@@ -13,6 +13,9 @@ import { useState, useRef, useEffect } from "react";
 import { X, Upload, Sparkles, Loader2, Plus, Trash2, Check } from "lucide-react";
 import { CATEGORY_META, PALETTE_ROLES, getColors } from "@/types/library";
 import type { PaletteRole, StyleComponent, ComponentCategory } from "@/types/library";
+import { useRotatingHint } from "@/hooks/useRotatingHint";
+// AI 分析（生成素材積木）loading 輪播提示
+const ANALYZE_HINTS = ["AI 分析構圖中…", "抽取配色…", "解讀風格語氣…", "整理素材積木…", "快好喇…"];
 // INDUSTRY_PRESETS moved to PromptComposer (積木組合台)
 import { ColorCards } from "./ColorCards";
 
@@ -54,7 +57,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
   const [include, setInclude] = useState({
     COMPOSITION: true,
     COLOR_SCHEME: true,
-    COPY_TONE: true,
+    COPY_TONE: false,  // 語氣積木已移除（wireframe ⑧）—— 預設唔包含、section 已隱藏
     BACKGROUND: false,
   });
 
@@ -83,6 +86,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
 
   // ── AI ──
   const [analyzing, setAnalyzing] = useState(false);
+  const analyzeHint = useRotatingHint(analyzing, ANALYZE_HINTS);
   // Which single section is being (re)analyzed via its per-block AI button (null = none).
   const [sectionAnalyzing, setSectionAnalyzing] = useState<ComponentCategory | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -279,33 +283,29 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
     setSaving(true);
     setSaveError(null);
 
-    // Generated-image edit: rewrite the image's paramsJson.slots (NOT StyleComponent rows).
-    // The generated-image modal reads its 構圖/配色/語氣 from paramsJson, and the prefilled
-    // components' ids belong to the ORIGINAL source library assets — so we must neither write
-    // orphan StyleComponents nor DELETE by those ids here.
+    // Generated-image edit（「調整」）：只把「調整意圖」送去 server，由 server 用「擁有權規則」決定
+    // 每個 block 係「改自己」定「fork 新 block」——因為要判斷 block 有冇俾其他圖共用，需要掃 DB（server 先做到）。
+    //   • 自己專屬（冇其他圖用、亦唔係第二張圖分析出嚟嘅 block）→ 就地改（change itself）
+    //   • 借用（其他圖／參考圖擁有）→ fork 一個屬於自己嘅新 block，唔郁原本嗰個
     if (libraryImageId) {
       const byType = Object.fromEntries((prefillComponents ?? []).map((c) => [c.type, c]));
-      const mkSlot = (type: ComponentCategory) => {
-        if (!include[type]) return null; // unchecked → drop from the snapshot
+      const mkEdit = (type: ComponentCategory) => {
+        if (!include[type]) return null; // unchecked → 由快照移除
         const p = payloadFor(type)!;
         const orig = byType[type];
-        return {
-          ...(orig ?? { id: `edited-${type}`, clientId: editClientId, sourceLayoutId: "", previewUrl: null, createdAt: new Date().toISOString() }),
-          type,
-          name: p.name,
-          data: p.data,
-          aiPromptText: p.aiPromptText,
-        };
-      };
-      const slots = {
-        layout: mkSlot("COMPOSITION"),
-        color: mkSlot("COLOR_SCHEME"),
-        tone: mkSlot("COPY_TONE"),
-        background: byType["BACKGROUND"] ?? null, // 背景 is not editable here — keep as-is
+        const changed = !orig
+          || orig.name !== p.name
+          || (orig.aiPromptText ?? "") !== (p.aiPromptText ?? "")
+          || JSON.stringify(orig.data ?? {}) !== JSON.stringify(p.data ?? {});
+        return { type, name: p.name, data: p.data, aiPromptText: p.aiPromptText, prevBlockId: orig?.id ?? null, changed };
       };
       const res = await fetch(`/api/library/images/${libraryImageId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slots, clientId: editClientId ?? null }),
+        body: JSON.stringify({
+          blockEdits: { layout: mkEdit("COMPOSITION"), color: mkEdit("COLOR_SCHEME"), tone: mkEdit("COPY_TONE") },
+          background: byType["BACKGROUND"] ?? null, // 背景 here is not editable — keep as-is
+          clientId: editClientId ?? null,
+        }),
       });
       setSaving(false);
       if (!res.ok) { setSaveError("儲存失敗，請重試"); return; }
@@ -377,7 +377,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h2 className="text-base font-semibold">{isEdit ? "編輯素材" : "快速加入素材"}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{isEdit ? "修改後儲存即覆蓋原素材" : "構圖・配色・語氣・背景可同時新增"}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{isEdit ? "修改後儲存即覆蓋原素材" : "構圖・配色・背景可同時新增"}</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <X className="h-4 w-4" />
@@ -401,7 +401,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
           {/* Reference image upload + AI analyze — available in both create and edit mode */}
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-2 block">
-              參考圖片（選填，供 AI 分析構圖／配色／語氣／背景）
+              參考圖片（選填，供 AI 分析構圖／配色／背景）
             </label>
             <input ref={fileRef} type="file" accept="image/*" className="hidden"
               onChange={(e) => { if (e.target.files?.[0]) handleUpload(e.target.files[0]); }} />
@@ -416,7 +416,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
                 <button onClick={handleAnalyze} disabled={analyzing}
                   className="absolute bottom-3 right-3 flex items-center gap-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg shadow transition-colors disabled:opacity-60">
                   {analyzing
-                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />AI 分析中…</>
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />{analyzeHint}</>
                     : <><Sparkles className="h-3.5 w-3.5" />AI 讀取圖片，填入欄位</>}
                 </button>
               </div>
@@ -480,7 +480,8 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
             </Field>
           </SectionWrapper>
 
-          {/* COPY_TONE */}
+          {/* COPY_TONE — 語氣積木已移除（wireframe ⑧），暫隱藏（保留 code 供日後） */}
+          {false && (
           <SectionWrapper meta={toneMeta} label="語氣" checked={include.COPY_TONE}
             onToggle={() => setInclude((p) => ({ ...p, COPY_TONE: !p.COPY_TONE }))}
             action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COPY_TONE"} disabled={!!sectionAnalyzing || analyzing} onClick={() => analyzeSection("COPY_TONE")} /> : null}>
@@ -509,6 +510,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
               </div>
             </Field>
           </SectionWrapper>
+          )}
         </div>
 
         {/* Footer */}

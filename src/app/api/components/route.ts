@@ -8,10 +8,12 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const clientId = searchParams.get("clientId");
   const previewUrl = searchParams.get("previewUrl");
+  const unassigned = searchParams.get("unassigned") === "1"; // 未分組：clientId 為 null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: Record<string, any> = {};
   if (clientId) where.clientId = clientId;
+  else if (unassigned) where.clientId = null;
   if (previewUrl) where.previewUrl = previewUrl;
 
   const components = await db.styleComponent.findMany({
@@ -20,8 +22,21 @@ export async function GET(request: Request) {
     take: 200,
   });
 
+  // 每次活動圖生成都會自動存低一份 構圖/配色/語氣（sourceLayoutId 綁實），但同一品牌嘅
+  // 配色通常唔會變（跟 client.primaryColor），生成得多次就會有大量內容完全一樣嘅重複卡，
+  // 洗版揀色 picker。冇 previewUrl（即自動生成，唔係用戶自己上傳分析嘅素材）先去重，
+  // 淨係喺呢個列表 API 隱藏，唔刪 DB（撤回活動圖時仍要對返正確嗰筆）。
+  const seen = new Set<string>();
+  const deduped = components.filter((c) => {
+    if (c.previewUrl) return true;
+    const key = `${c.clientId}|${c.type}|${c.data}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   return NextResponse.json(
-    components.map((c) => ({ ...c, data: JSON.parse(c.data) }))
+    deduped.map((c) => ({ ...c, data: JSON.parse(c.data) }))
   );
 }
 

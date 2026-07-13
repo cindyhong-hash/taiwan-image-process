@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 
 type Layout = { id: string; imageUrl: string; copyText: string; layoutType: string; isSelected: boolean };
-type Activity = { id: string; theme: string; generatedLayouts: Layout[] };
+type Activity = { id: string; theme: string; generatedLayouts: Layout[]; client?: { logoUrl?: string | null } };
 
 export default function EditorPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
   const [clientId, setClientId] = useState<string>("");
@@ -33,7 +33,7 @@ export default function EditorPage({ params }: { params: Promise<{ clientId: str
         </Link>
         <h1 className="text-xl font-semibold">{activity.theme} — 微調畫布</h1>
       </div>
-      <EditorCanvas layout={selectedLayout} />
+      <EditorCanvas layout={selectedLayout} brandLogoUrl={activity.client?.logoUrl ?? undefined} />
     </div>
   );
 }

@@ -14,10 +14,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const clientId = searchParams.get("clientId");
+  const unassigned = searchParams.get("unassigned") === "1"; // 未分組：clientId 為 null 嘅素材
 
   // ── Generated library images ── (fetch first so we can exclude their URLs from uploaded)
   const gens = await db.libraryImage.findMany({
-    where: clientId ? { clientId } : undefined,
+    where: clientId ? { clientId } : unassigned ? { clientId: null } : undefined,
     orderBy: { createdAt: "desc" },
     take: 500,
   });
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const compWhere: Record<string, any> = { previewUrl: { not: null } };
   if (clientId) compWhere.clientId = clientId;
+  else if (unassigned) compWhere.clientId = null;
 
   const comps = await db.styleComponent.findMany({
     where: compWhere,

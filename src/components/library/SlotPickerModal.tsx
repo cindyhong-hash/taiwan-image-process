@@ -34,6 +34,9 @@ export function SlotPickerModal({ clientId, category, onPick, onClose }: Props) 
 
   useEffect(() => {
     setLoading(true);
+    // [WIP / 待 auth] 而家「全部品牌」會攞晒所有 client 嘅 component。
+    // 將來接咗 user login，呢度應該 scope 做「登入用戶自己 account 內建立嘅品牌」，
+    // 唔可以見到 / 取用其他用戶 client 嘅 blocks（server route 亦要按 user 過濾）。
     const url = filterClientId ? `/api/components?clientId=${filterClientId}` : "/api/components";
     fetch(url)
       .then((r) => r.json())
@@ -43,10 +46,16 @@ export function SlotPickerModal({ clientId, category, onPick, onClose }: Props) 
       .finally(() => setLoading(false));
   }, [filterClientId, category]);
 
+  // 產品圖 picker 只顯示「有圖」（產品/參考圖）嘅 block。隱藏活動圖生成自動整嘅通用 preset
+  // （previewUrl 為空 + sourceLayoutId 綁住某個生成 layout，唔係 "manual"）——佢哋唔屬於任何一張圖，
+  // 但仍留喺 DB 俾活動「風格素材選擇器」用。
+  const isAutoPreset = (c: StyleComponent) =>
+    !c.previewUrl && !!c.sourceLayoutId && c.sourceLayoutId !== "manual";
   // 背景 is now an image-only asset — hide legacy text-only backgrounds (no image).
-  const visible = category === "BACKGROUND"
+  const visible = (category === "BACKGROUND"
     ? items.filter((c) => c.previewUrl || c.data?.imageUrl)
-    : items;
+    : items
+  ).filter((c) => !isAutoPreset(c));
   const filtered = search.trim()
     ? visible.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
     : visible;

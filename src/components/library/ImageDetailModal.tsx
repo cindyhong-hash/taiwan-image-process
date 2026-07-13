@@ -8,7 +8,7 @@
  * the generated copy and offers 「分析此圖加入素材」.
  */
 import { useEffect, useState } from "react";
-import { X, ArrowRightCircle, Sparkles, ScanSearch, Pencil, RefreshCw, Trash2, Download, Check, Loader2, Image as ImageIcon } from "lucide-react";
+import { X, ArrowRightCircle, Sparkles, ScanSearch, Pencil, RefreshCw, Trash2, Download, Check, Loader2, Image as ImageIcon, Target } from "lucide-react";
 import type { StyleComponent, ComponentCategory } from "@/types/library";
 import { CATEGORY_META, getColors } from "@/types/library";
 import { ColorCards } from "./ColorCards";
@@ -31,13 +31,11 @@ type Props = {
   sourceImages?: string[];
   /** 從 popup 觸發「重新生成/調整」，傳回預填資料讓父層打開 GenerateAssetModal。 */
   onOpenGenerateAsset?: (init: { description: string; refImageUrl: string; type: "background" | "person" | "illustration"; engine: "flux" | "nano" }) => void;
-  /** 客戶清單 — 用嚟「移到其他客戶 / 設公用」。 */
-  clients?: { id: string; name: string }[];
   injectedIds?: Set<string>;
   onInject: (comp: StyleComponent) => void;
   /** 一次過帶入全部積木（構圖/配色/語氣/背景）到生成圖片並切 tab。 */
   onInjectAll?: (comps: StyleComponent[]) => void;
-  onAnalyze?: (imageUrl: string) => void;
+  onAnalyze?: (imageUrl: string, libraryImageId?: string) => void;
   /** Image-based edit: adjust this image's 構圖/配色/語氣 together.
    *  libraryImageId is forwarded so a generated image saves back into its paramsJson snapshot. */
   onAdjust?: (imageUrl: string, components: StyleComponent[], libraryImageId?: string) => void;
@@ -47,10 +45,41 @@ type Props = {
   onDeleteComponents?: (ids: string[]) => void;
   /** Called after the photo title is edited — lets the parent refresh its grids. */
   onRefresh?: () => void;
+  /** 帶入此圖去「新增活動」做參考圖（經 sessionStorage 傳 URL，唔會喺網址外露）。 */
+  onUseAsActivityRef?: (imageUrl: string) => void;
   onClose: () => void;
 };
 
-const ORDER: ComponentCategory[] = ["COMPOSITION", "COLOR_SCHEME", "COPY_TONE", "BACKGROUND"];
+// 語氣（COPY_TONE）已從 UI 移除（wireframe ⑧）——詳情彈窗只顯示 構圖/配色/背景。
+const ORDER: ComponentCategory[] = ["COMPOSITION", "COLOR_SCHEME", "BACKGROUND"];
+
+// popup（詳細檢視）尺寸 label：比例 · 原始像素，如「1:1 · 1200×1200」；非標準比例只顯示像素。
+const STD_RATIOS: [string, number][] = [
+  ["1:1", 1], ["4:5", 0.8], ["3:4", 0.75], ["2:3", 2 / 3],
+  ["9:16", 9 / 16], ["4:3", 4 / 3], ["3:2", 1.5], ["16:9", 16 / 9],
+];
+function sizeLabel(w: number, h: number): string {
+  if (!w || !h) return "";
+  const r = w / h;
+  let bestLabel = "", bestVal = 1, diff = Infinity;
+  for (const [lbl, val] of STD_RATIOS) { const d = Math.abs(val - r); if (d < diff) { diff = d; bestLabel = lbl; bestVal = val; } }
+  return diff / bestVal < 0.03 ? `${bestLabel} · ${w}×${h}` : `${w}×${h}`;
+}
+
+// 主圖 + 右下角尺寸 pill（比例 · 原始尺寸）
+function ImageWithSize({ src, alt, className }: { src: string; alt?: string; className?: string }) {
+  const [dims, setDims] = useState("");
+  return (
+    <div className="relative">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt ?? "preview"} className={className}
+        onLoad={(e) => { const t = e.currentTarget; setDims(sizeLabel(t.naturalWidth, t.naturalHeight)); }} />
+      {dims && (
+        <span className="absolute bottom-2 right-2 text-[10px] font-medium bg-black/55 text-white px-1.5 py-0.5 rounded shadow pointer-events-none">{dims}</span>
+      )}
+    </div>
+  );
+}
 
 export function ImageDetailModal({
   imageUrl,
@@ -62,7 +91,6 @@ export function ImageDetailModal({
   mode,
   refImageUrl,
   sourceImages,
-  clients,
   injectedIds,
   onInject,
   onInjectAll,
@@ -73,6 +101,7 @@ export function ImageDetailModal({
   onDeleteComponents,
   onRefresh,
   onOpenGenerateAsset,
+  onUseAsActivityRef,
   onClose,
 }: Props) {
   const [confirmDel, setConfirmDel] = useState(false);
@@ -109,39 +138,7 @@ export function ImageDetailModal({
     a.remove();
   }
 
-  // 移到其他客戶 / 設公用：generated → PATCH images；component(背景/上傳) → PATCH components。
-  const [reassigning, setReassigning] = useState(false);
-  async function reassign(targetClientId: string | null) {
-    setReassigning(true);
-    try {
-      if (libraryImageId) {
-        await fetch(`/api/library/images/${libraryImageId}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clientId: targetClientId }),
-        });
-      } else if (components.length > 0) {
-        await Promise.all(components.map((c) =>
-          fetch(`/api/components/${c.id}`, {
-            method: "PATCH", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ clientId: targetClientId }),
-          })));
-      }
-      onRefresh?.();
-      onClose();
-    } finally { setReassigning(false); }
-  }
-  // 小型「移到…」下拉（客戶清單 + 公用）。
-  const ReassignSelect = () => (clients && clients.length > 0) ? (
-    <select disabled={reassigning} defaultValue=""
-      onChange={(e) => { const v = e.target.value; if (!v) return; reassign(v === "__public__" ? null : v); }}
-      title="移到其他客戶 / 設公用"
-      className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-600 hover:border-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-300 disabled:opacity-50">
-      <option value="">移到…</option>
-      <option value="__public__">公用（全部客戶）</option>
-      {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-    </select>
-  ) : null;
-
+  // 「移到 / 換專案」已從 popup 移除（重複功能）——改用「調整→編輯素材」入面個專案下拉，或 gallery 長按多選移到。
   // Header 「刪除」 — what it removes depends on the image kind:
   //  • generated (has libraryImageId) → delete the LibraryImage row
   //  • uploaded / 背景素材 (only linked components) → delete all of this image's components
@@ -175,7 +172,7 @@ export function ImageDetailModal({
   const effectiveMode = mode || (bgComp?.data?.mode as string | undefined);
   const derivedEngine: "flux" | "nano" = effectiveMode === "nano-banana" ? "nano" : "flux";
   const sorted = [...components]
-    .filter((c) => c.type !== "BACKGROUND")
+    .filter((c) => c.type !== "BACKGROUND" && c.type !== "COPY_TONE") // 語氣已移除（wireframe ⑧）
     .sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type));
 
   // 背景素材 popup：genType==="material" hint 讓 popup 從第一格 render 就用正確框（避免先出主 popup 再縮）。
@@ -187,17 +184,24 @@ export function ImageDetailModal({
           <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0 gap-3 min-w-0">
             <h2 className="text-sm font-semibold flex items-center gap-1.5 min-w-0 truncate">
               <ScanSearch className="h-4 w-4 text-teal-500 shrink-0" />
-              <span className="truncate">背景{bgComp ? ` — ${bgComp.name}` : ""}</span>
+              <span className="truncate">背景</span>
             </h2>
             {!loading && (
               <div className="flex items-center gap-1.5 shrink-0">
+                {/* 重新生成（紫）統一擺 header（IMG_02）*/}
+                {onOpenGenerateAsset && (
+                  <button onClick={() => onOpenGenerateAsset({ description: prompt ?? "", refImageUrl: effectiveRefImageUrl ?? "", type: "background", engine: derivedEngine })}
+                    title="重新生成 / 調整（帶入素材生成）"
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg whitespace-nowrap bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                    <RefreshCw className="h-3.5 w-3.5" />重新生成背景
+                  </button>
+                )}
                 {imageUrl && (
                   <button onClick={handleDownload} title="下載圖片"
                     className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap bg-white border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 transition-colors">
                     <Download className="h-3.5 w-3.5" />下載
                   </button>
                 )}
-                <ReassignSelect />
                 {canDelete && (
                   <button
                     onClick={() => {
@@ -221,12 +225,11 @@ export function ImageDetailModal({
               </button>
             )}
           </div>
-          <div className="p-5 overflow-y-auto">
+          <div className="p-5 overflow-y-auto flex-1 min-h-0">
             {loading ? (
               <div className="text-sm text-gray-400 py-10 text-center">載入中…</div>
             ) : imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={imageUrl} alt={bgComp?.name} className="w-full max-h-[65vh] object-contain rounded-xl border bg-gray-50" />
+              <ImageWithSize src={imageUrl} alt={bgComp?.name} className="w-full max-h-[60vh] object-contain rounded-xl border bg-gray-50" />
             ) : null}
             {!loading && prompt && (
               <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3">
@@ -253,20 +256,25 @@ export function ImageDetailModal({
                 )}
               </div>
             )}
-            {!loading && bgComp && (
-              <button onClick={() => onInject(bgComp)} disabled={injectedIds?.has(bgComp.id)}
-                className={`mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl border transition-colors
-                  ${injectedIds?.has(bgComp.id) ? "bg-gray-100 border-gray-200 text-gray-400 cursor-default" : "bg-teal-600 border-teal-600 text-white hover:bg-teal-700"}`}>
-                <ArrowRightCircle className="h-3.5 w-3.5" />{injectedIds?.has(bgComp.id) ? "已帶入生成圖片（作背景）" : "帶入生成圖片（作背景）"}
-              </button>
-            )}
-            {!loading && onOpenGenerateAsset && (
-              <button onClick={() => onOpenGenerateAsset({ description: prompt ?? "", refImageUrl: effectiveRefImageUrl ?? "", type: "background", engine: derivedEngine })}
-                className="mt-2 w-full flex items-center justify-center gap-1.5 text-xs font-medium border border-violet-300 text-violet-700 bg-violet-50 px-3 py-2 rounded-xl hover:bg-violet-100 transition-colors">
-                <RefreshCw className="h-3.5 w-3.5" />重新生成 / 調整（帶入素材生成）
-              </button>
-            )}
           </div>
+          {/* 固定 footer：帶入掣永遠可見（唔會被高圖 push 走）；兩條統一 outline 風格 */}
+          {!loading && imageUrl && (onUseAsActivityRef || bgComp) && (
+            <div className="px-5 py-3 border-t shrink-0 space-y-2">
+              {bgComp && (
+                <button onClick={() => onInject(bgComp)} disabled={injectedIds?.has(bgComp.id)}
+                  className={`w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl border transition-colors
+                    ${injectedIds?.has(bgComp.id) ? "bg-gray-100 border-gray-200 text-gray-400 cursor-default" : "bg-teal-600 border-teal-600 text-white hover:bg-teal-700"}`}>
+                  <ArrowRightCircle className="h-3.5 w-3.5" />{injectedIds?.has(bgComp.id) ? "已帶入產品圖生成" : "帶入產品圖生成"}
+                </button>
+              )}
+              {onUseAsActivityRef && (
+                <button onClick={() => onUseAsActivityRef(imageUrl)}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                  <Target className="h-3.5 w-3.5" />帶入活動圖生成（作參考圖）
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -282,16 +290,23 @@ export function ImageDetailModal({
           <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0 gap-3 min-w-0">
             <h2 className="text-sm font-semibold flex items-center gap-1.5 min-w-0 truncate">
               <ScanSearch className={`h-4 w-4 shrink-0 ${genType === "person" ? "text-rose-500" : "text-amber-500"}`} />
-              <span className="truncate">{genType === "person" ? "人像" : "插畫"}{displaySubject ? ` — ${displaySubject}` : ""}</span>
+              <span className="truncate">{genType === "person" ? "人像" : "插畫"}</span>
             </h2>
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* 重新生成（紫）統一擺 header（IMG_02）*/}
+              {onOpenGenerateAsset && (
+                <button onClick={() => onOpenGenerateAsset({ description: prompt ?? "", refImageUrl: effectiveRefImageUrl ?? "", type: genType as "person" | "illustration", engine: derivedEngine })}
+                  title="重新生成 / 調整（帶入素材生成）"
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg whitespace-nowrap bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                  <RefreshCw className="h-3.5 w-3.5" />重新生成{genType === "person" ? "人像" : "插畫"}
+                </button>
+              )}
               {imageUrl && (
                 <button onClick={handleDownload} title="下載圖片"
                   className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap bg-white border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 transition-colors">
                   <Download className="h-3.5 w-3.5" />下載
                 </button>
               )}
-              <ReassignSelect />
               {canDelete && (
                 <button
                   onClick={() => { if (confirmDel) handleHeaderDelete(); else { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 3000); } }}
@@ -306,10 +321,9 @@ export function ImageDetailModal({
               </button>
             </div>
           </div>
-          <div className="p-5 overflow-y-auto">
+          <div className="p-5 overflow-y-auto flex-1 min-h-0">
             {imageUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={imageUrl} alt="preview" className="w-full max-h-[64vh] object-contain rounded-xl border bg-gray-50" />
+              <ImageWithSize src={imageUrl} alt="preview" className="w-full max-h-[60vh] object-contain rounded-xl border bg-gray-50" />
             )}
             {prompt && (
               <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3">
@@ -334,13 +348,15 @@ export function ImageDetailModal({
                 )}
               </div>
             )}
-            {onOpenGenerateAsset && (
-              <button onClick={() => onOpenGenerateAsset({ description: prompt ?? "", refImageUrl: effectiveRefImageUrl ?? "", type: genType as "person" | "illustration", engine: derivedEngine })}
-                className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-medium border border-violet-300 text-violet-700 bg-violet-50 px-3 py-2 rounded-xl hover:bg-violet-100 transition-colors">
-                <RefreshCw className="h-3.5 w-3.5" />重新生成 / 調整（帶入素材生成）
-              </button>
-            )}
           </div>
+          {onUseAsActivityRef && imageUrl && (
+            <div className="px-5 py-3 border-t shrink-0">
+              <button onClick={() => onUseAsActivityRef(imageUrl)}
+                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                <Target className="h-3.5 w-3.5" />帶入活動圖生成（作參考圖）
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -353,34 +369,29 @@ export function ImageDetailModal({
       <div className="relative w-full max-w-5xl max-h-[92vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0 gap-3 min-w-0">
-          <h2 className="text-sm font-semibold flex items-center gap-1.5 min-w-0 flex-1">
-            <ScanSearch className={`h-4 w-4 shrink-0 ${libraryImageId ? "text-violet-500" : "text-blue-500"}`} />
-            <span className="shrink-0">{libraryImageId ? "產品成圖" : "參考圖"}</span>
-            {libraryImageId ? (
-              editingTitle ? (
-                <span className="flex items-center gap-1 min-w-0 flex-1">
-                  <span className="text-gray-400 font-normal shrink-0">—</span>
-                  {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
-                  <input autoFocus value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
-                    className="min-w-0 flex-1 text-xs font-normal border border-violet-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-                  <button onClick={saveTitle} disabled={savingTitle} title="儲存標題" className="p-1 rounded hover:bg-gray-100 text-emerald-600 shrink-0">
-                    {savingTitle ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  </button>
-                  <button onClick={() => setEditingTitle(false)} title="取消" className="p-1 rounded hover:bg-gray-100 text-gray-400 shrink-0">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </span>
-              ) : (
-                <button onClick={() => { setTitleDraft(displaySubject ?? ""); setEditingTitle(true); }}
-                  className="flex items-center gap-1 min-w-0 text-gray-400 font-normal hover:text-violet-600 transition-colors group/title" title="點擊編輯標題">
-                  <span className="truncate">— {displaySubject || "（未命名）"}</span>
-                  <Pencil className="h-3 w-3 shrink-0 opacity-50 group-hover/title:opacity-100" />
-                </button>
-              )
-            ) : (displaySubject && <span className="text-gray-400 font-normal truncate">— {displaySubject}</span>)}
+          {/* 標題只 show 類別（唔再用生成文字 / 唔可改名）*/}
+          <h2 className="text-sm font-semibold flex items-center gap-1.5 min-w-0">
+            <ScanSearch className={`h-4 w-4 shrink-0 ${genType === "reference" || !libraryImageId ? "text-blue-500" : "text-violet-500"}`} />
+            <span>{genType === "reference" || !libraryImageId ? "參考圖" : "產品成圖"}</span>
           </h2>
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* header 順序統一（IMG_02）：[重新生成][調整]│[下載]│[刪除][✕]
+                重新生成 = 有 paramsJson 就 reload 原參數；冇就用呢張圖嘅積木（構圖/配色/背景）重組去生成台。*/}
+            {(onRegenerate || (onInjectAll && (sorted.length > 0 || bgComp))) && (
+              <button
+                onClick={onRegenerate ?? (() => onInjectAll?.([...sorted, ...(bgComp ? [bgComp] : [])]))}
+                title="重新生成（用呢張圖嘅原參數 / 積木帶去生成台）"
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg whitespace-nowrap bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                <RefreshCw className="h-3.5 w-3.5" />重新生成{genType === "reference" || !libraryImageId ? "參考圖" : "產品圖"}
+              </button>
+            )}
+            {/* Image-based adjust — edit this image's 構圖/配色/語氣 together（內含「專案」下拉可換資料夾）*/}
+            {onAdjust && imageUrl && sorted.length > 0 && (
+              <button onClick={() => onAdjust(imageUrl, sorted, libraryImageId)}
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap bg-white border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 transition-colors">
+                <Pencil className="h-3.5 w-3.5" />調整
+              </button>
+            )}
             {/* Download the image */}
             {imageUrl && (
               <button onClick={handleDownload} title="下載圖片"
@@ -388,14 +399,6 @@ export function ImageDetailModal({
                 <Download className="h-3.5 w-3.5" />下載
               </button>
             )}
-            {/* Image-based adjust — edit this image's 構圖/配色/語氣 together */}
-            {onAdjust && imageUrl && sorted.length > 0 && (
-              <button onClick={() => onAdjust(imageUrl, sorted, libraryImageId)}
-                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap bg-white border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 transition-colors">
-                <Pencil className="h-3.5 w-3.5" />調整
-              </button>
-            )}
-            <ReassignSelect />
             {canDelete && (
               <button
                 onClick={() => {
@@ -416,16 +419,11 @@ export function ImageDetailModal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* Image */}
           <div>
             {imageUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={imageUrl}
-                alt="preview"
-                className="w-full rounded-xl border object-contain bg-gray-50"
-              />
+              <ImageWithSize src={imageUrl} alt="preview" className="w-full max-h-[70vh] rounded-xl border object-contain bg-gray-50" />
             )}
             {/* 參考文案 intentionally hidden (not needed). AI Prompt is shown below. */}
             {prompt && (
@@ -451,25 +449,12 @@ export function ImageDetailModal({
                 )}
               </div>
             )}
-            {onRegenerate && (
-              <button onClick={onRegenerate}
-                className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-medium bg-violet-600 text-white px-3 py-2 rounded-lg hover:bg-violet-700 transition-colors">
-                <RefreshCw className="h-3.5 w-3.5" />
-                重新生成 / 調整（載入原參數到生成台）
-              </button>
-            )}
+            {/* 「重新生成 / 調整」已搬上右上 header（避免被長 AI prompt 推到落底）*/}
           </div>
 
           {/* Linked components — 構圖/配色/語氣 + 背景（合成會直接用到，所以顯示出嚟）。 */}
           <div className="space-y-3">
-            {/* 右欄頂主掣：只有參考圖顯示「全部帶入生成圖片」；產品成圖用左下「重新生成」掣。 */}
-            {!loading && !libraryImageId && onInjectAll && (sorted.length > 0 || bgComp) && (
-              <button
-                onClick={() => onInjectAll([...sorted, ...(bgComp ? [bgComp] : [])])}
-                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium bg-violet-600 text-white px-3 py-2.5 rounded-xl hover:bg-violet-700 transition-colors">
-                <ArrowRightCircle className="h-4 w-4" />全部帶入生成圖片（{sorted.length + (bgComp ? 1 : 0)} 個積木）
-              </button>
-            )}
+            {/* 「全部帶入生成圖片」已併入 header 嘅「重新生成」（同一動作：積木 → 生成台），避免兩粒紫掣重複。 */}
             {/* 來源產品圖：合成時用咗邊張（如有）。 */}
             {sourceImages && sourceImages.length > 0 && (
               <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
@@ -485,23 +470,6 @@ export function ImageDetailModal({
                 </div>
               </div>
             )}
-            {!loading && bgComp && (
-              <div className="rounded-xl border border-teal-200 bg-teal-50 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-teal-50 border-teal-200 text-teal-700">背景</span>
-                  <span className="text-xs font-semibold text-gray-800 truncate ml-2">{bgComp.name}</span>
-                </div>
-                {sorted.length > 0 && Boolean(bgComp.data.imageUrl || bgComp.previewUrl) && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={(bgComp.data.imageUrl as string) || bgComp.previewUrl!} alt="bg" loading="lazy" decoding="async" className="w-full aspect-square object-contain bg-gray-50 rounded-lg border mb-2" />
-                )}
-                <button onClick={() => onInject(bgComp)} disabled={injectedIds?.has(bgComp.id)}
-                  className={`w-full flex items-center justify-center gap-1 text-[11px] font-medium py-1.5 rounded-lg border transition-colors
-                    ${injectedIds?.has(bgComp.id) ? "bg-gray-100 border-gray-200 text-gray-400" : "bg-white border-teal-200 text-teal-700 hover:opacity-80"}`}>
-                  <ArrowRightCircle className="h-3.5 w-3.5" />{injectedIds?.has(bgComp.id) ? "已帶入" : "帶入生成（背景）"}
-                </button>
-              </div>
-            )}
             {loading ? (
               <div className="text-sm text-gray-400 py-6 text-center">載入中…</div>
             ) : sorted.length === 0 && !bgComp ? (
@@ -510,7 +478,7 @@ export function ImageDetailModal({
                 <p className="text-xs text-gray-400 mb-4">分析後可取得構圖・配色・語氣，並加入素材庫</p>
                 {imageUrl && onAnalyze && (
                   <button
-                    onClick={() => onAnalyze(imageUrl)}
+                    onClick={() => onAnalyze(imageUrl, libraryImageId)}
                     className="inline-flex items-center gap-1.5 text-xs font-medium bg-violet-600 text-white px-3 py-1.5 rounded-lg hover:bg-violet-700 transition-colors"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
@@ -519,18 +487,38 @@ export function ImageDetailModal({
                 )}
               </div>
             ) : (
-              sorted.map((comp) => (
-                <ComponentRow
-                  key={comp.id}
-                  comp={comp}
-                  injected={injectedIds?.has(comp.id) ?? false}
-                  onInject={onInject}
-                  onDelete={onDeleteComponents ? (id) => onDeleteComponents([id]) : undefined}
-                />
-              ))
+              <>
+                {/* 構圖/配色 + 背景 全部行同一個 ComponentRow（Plan B：統一 block，背景 teal 主題 + 大預覽圖）*/}
+                {sorted.map((comp) => (
+                  <ComponentRow
+                    key={comp.id}
+                    comp={comp}
+                    injected={injectedIds?.has(comp.id) ?? false}
+                    onInject={onInject}
+                    onDelete={onDeleteComponents ? (id) => onDeleteComponents([id]) : undefined}
+                  />
+                ))}
+                {bgComp && (
+                  <ComponentRow
+                    key={bgComp.id}
+                    comp={bgComp}
+                    injected={injectedIds?.has(bgComp.id) ?? false}
+                    onInject={onInject}
+                    onDelete={onDeleteComponents ? (id) => onDeleteComponents([id]) : undefined}
+                  />
+                )}
+              </>
             )}
           </div>
         </div>
+        {onUseAsActivityRef && imageUrl && (
+          <div className="px-5 py-3 border-t shrink-0">
+            <button onClick={() => onUseAsActivityRef(imageUrl)}
+              className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+              <Target className="h-3.5 w-3.5" />帶入活動圖生成（作參考圖）
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -572,9 +560,9 @@ function ComponentRow({
           ))}
         </div>
       )}
-      {comp.type === "BACKGROUND" && Boolean(comp.data.imageUrl) && (
+      {comp.type === "BACKGROUND" && Boolean(comp.data.imageUrl || comp.previewUrl) && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={comp.data.imageUrl as string} alt="bg" className="w-full h-20 object-contain bg-gray-50 rounded-lg border" />
+        <img src={(comp.data.imageUrl as string) || comp.previewUrl!} alt="bg" loading="lazy" decoding="async" className="w-full aspect-square max-h-56 object-contain bg-gray-50 rounded-lg border" />
       )}
 
       {/* 小說明文字（aiPromptText）唔喺方塊度展示 */}
@@ -590,7 +578,7 @@ function ComponentRow({
               : "bg-white border-gray-200 text-gray-700 hover:border-gray-400"}`}
         >
           <ArrowRightCircle className="h-3 w-3" />
-          {injected ? "已帶入" : "帶入生成"}
+          {injected ? "已帶入" : "帶入產品圖生成"}
         </button>
         {onDelete && (
           <button

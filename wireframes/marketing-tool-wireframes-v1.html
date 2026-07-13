@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Marketing Tool — 整合 Wireframes（v1.0 原始版本）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/dist/tabler-icons.min.css" />
+<style>
+:root{
+  --color-background-primary:#ffffff;
+  --color-background-secondary:#f4f3ee;
+  --color-background-tertiary:#faf9f5;
+  --color-background-info:#e6f1fb;
+  --color-background-success:#e1f5ee;
+  --color-background-warning:#faeeda;
+  --color-background-danger:#fcebeb;
+  --color-text-primary:#1a1a18;
+  --color-text-secondary:#5f5e5a;
+  --color-text-tertiary:#888780;
+  --color-text-info:#185fa5;
+  --color-text-success:#0f6e56;
+  --color-text-warning:#854f0b;
+  --color-text-danger:#a32d2d;
+  --color-border-tertiary:rgba(0,0,0,0.15);
+  --color-border-secondary:rgba(0,0,0,0.30);
+  --color-border-primary:rgba(0,0,0,0.40);
+  --color-border-info:#378add;
+  --border-radius-md:8px;--border-radius-lg:12px;--border-radius-xl:16px;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--color-background-tertiary);color:var(--color-text-primary);font-family:-apple-system,"PingFang HK","PingFang TC","Microsoft JhengHei",Helvetica,Arial,sans-serif;line-height:1.6;}
+h1{font-size:24px;font-weight:500;margin:0 0 4px;}
+h2{font-size:18px;font-weight:500;margin:0 0 12px;}
+p{margin:0 0 8px;}
+button{font:inherit;font-size:14px;background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:8px;padding:7px 14px;cursor:pointer;color:var(--color-text-primary);display:inline-flex;align-items:center;gap:6px;min-height:34px;}
+input,textarea,select{font:inherit;font-size:14px;padding:7px 12px;border:0.5px solid var(--color-border-secondary);border-radius:8px;background:var(--color-background-primary);color:var(--color-text-primary);}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
+.wrap{max-width:760px;margin:0 auto;padding:24px 20px 60px;}
+.cover{margin-bottom:24px;padding-bottom:16px;border-bottom:0.5px solid var(--color-border-secondary);}
+.toc{font-size:14px;color:var(--color-text-secondary);}
+.toc a{color:var(--color-text-info);text-decoration:none;}
+section{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:14px;padding:18px 20px;margin:0 0 20px;}
+section>.note{font-size:13px;color:var(--color-text-secondary);margin:-4px 0 14px;}
+/* SVG helper classes (host-provided in app, defined here for standalone) */
+.t{fill:var(--color-text-primary);font-family:inherit;font-size:14px;}
+.ts{fill:var(--color-text-secondary);font-family:inherit;font-size:13px;}
+.th{fill:var(--color-text-primary);font-family:inherit;font-size:14px;font-weight:500;}
+.c-gray rect{fill:#e9e7df;} .c-blue rect{fill:#e6f1fb;} .c-teal rect{fill:#e1f5ee;}
+.c-purple rect{fill:#eeedfe;} .c-coral rect{fill:#faece7;}
+@media print{
+  body{background:#fff;}
+  .wrap{max-width:none;padding:0;}
+  section{break-inside:avoid;page-break-inside:avoid;border:none;padding:8px 0;margin:0 0 12px;}
+  .cover{page-break-after:always;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="cover">
+  <h1>Marketing Tool — 整合 Wireframes</h1>
+  <p class="toc"><strong>版本 v1.0（原始版本）</strong> · 2026-06-18 · 品牌／活動 ＋ 素材庫 統一體驗 · 配套文件：docs/INTEGRATION_ROADMAP.md</p>
+  <p class="toc" style="margin-top:8px;">列印做 PDF：瀏覽器 → 列印（⌘P / Ctrl+P）→ 另存為 PDF。每節會自動分頁。</p>
+  <p class="toc">① 登入→連動 · ② 順過流程 · ③ 側邊欄 · ④ 權限 · ⑤ 廣告活動圖 · ⑥ 風格組件 · ⑦ 圖庫加分類 · ⑧ 新增圖片/素材 · ⑨ 連動帳號 · ⑩ 廣告 asset · ⑪ 四種對照 · ⑫ 四種 asset model</p>
+</div>
+
+<!-- ① 登入 → 連動帳號 -->
+<section>
+<h2>① 登入 → 連動帳號</h2>
+<div style="background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 1rem;">
+<p style="margin:0 0 8px; font-size:13px; color:var(--color-text-secondary);">畫面 1 · 登入</p>
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:1.5rem; margin-bottom:16px; max-width:360px;">
+  <p style="margin:0 0 4px; font-size:18px; font-weight:500;">行銷圖文工具</p>
+  <p style="margin:0 0 16px; font-size:13px; color:var(--color-text-secondary);">登入開始</p>
+  <input type="text" placeholder="公司 email" style="width:100%; margin-bottom:8px;" />
+  <button style="width:100%; background:var(--color-text-primary); color:var(--color-background-primary); border:none; margin-bottom:8px;">繼續</button>
+  <button style="width:100%;"><i class="ti ti-brand-google"></i> 用 Google 登入</button>
+</div>
+<p style="margin:0 0 8px; font-size:13px; color:var(--color-text-secondary);">畫面 2 · 連動帳號（登入後第一步）</p>
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:1rem 1.25rem;">
+  <p style="margin:0 0 2px; font-size:18px; font-weight:500;">連動你嘅廣告帳戶</p>
+  <p style="margin:0 0 14px; font-size:13px; color:var(--color-text-secondary);">授權之後，我哋會拉返你嘅廣告圖、活動圖同 IG 貼文相，自動入「風格組件 / 參考圖」。</p>
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:0.5px solid var(--color-border-tertiary);">
+    <span style="font-size:14px;"><i class="ti ti-brand-meta" style="color:#534AB7;"></i> Meta（Facebook + Instagram）</span>
+    <span style="font-size:12px; color:var(--color-text-success); background:var(--color-background-success); padding:4px 10px; border-radius:99px;"><i class="ti ti-check"></i> 已連動</span>
+  </div>
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:0.5px solid var(--color-border-tertiary);">
+    <span style="font-size:14px;"><i class="ti ti-brand-google"></i> Google Ads</span>
+    <button style="font-size:13px; background:var(--color-text-primary); color:var(--color-background-primary); border:none;">連動</button>
+  </div>
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 0;">
+    <span style="font-size:14px;"><i class="ti ti-brand-instagram"></i> Instagram（商業帳號）</span>
+    <button style="font-size:13px; background:var(--color-text-primary); color:var(--color-background-primary); border:none;">連動</button>
+  </div>
+  <div style="margin-top:14px; background:var(--color-background-secondary); border-radius:var(--border-radius-md); padding:12px;">
+    <p style="margin:0 0 8px; font-size:13px; font-weight:500;"><i class="ti ti-download"></i> 由 Meta 拉返 18 張素材</p>
+    <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:6px;">
+      <div style="aspect-ratio:1; border-radius:6px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary); position:relative;"><i class="ti ti-photo"></i><span style="position:absolute; bottom:2px; left:2px; font-size:9px; background:#534AB7; color:#fff; padding:0 4px; border-radius:3px;">廣告圖</span></div>
+      <div style="aspect-ratio:1; border-radius:6px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary); position:relative;"><i class="ti ti-photo"></i><span style="position:absolute; bottom:2px; left:2px; font-size:9px; background:#D4537E; color:#fff; padding:0 4px; border-radius:3px;">IG</span></div>
+      <div style="aspect-ratio:1; border-radius:6px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo"></i></div>
+      <div style="aspect-ratio:1; border-radius:6px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo"></i></div>
+      <div style="aspect-ratio:1; border-radius:6px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary); font-size:12px;">+13</div>
+    </div>
+  </div>
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-top:14px;">
+    <button style="font-size:13px;"><i class="ti ti-upload"></i> 暫時用手動上載</button>
+    <button style="background:var(--color-text-primary); color:var(--color-background-primary); border:none;">下一步：品牌設定 →</button>
+  </div>
+  <p style="margin:10px 0 0; font-size:11px; color:var(--color-text-tertiary);"><i class="ti ti-info-circle"></i> 連動須平台 OAuth 授權；正式抽取前 Meta / Google 要過 app review，期間用「手動上載」頂住。</p>
+</div>
+</div>
+</section>
+
+<!-- ② 順過流程圖 -->
+<section>
+<h2>② 順過之後嘅整體流程</h2>
+<svg width="100%" viewBox="0 0 680 500" role="img" xmlns="http://www.w3.org/2000/svg">
+<text x="40" y="28" class="th" style="font-size:16px">順過之後的流程</text>
+<g class="c-gray"><rect x="40" y="44" width="150" height="46" rx="8"/></g>
+<text x="115" y="71" class="t" text-anchor="middle" style="font-weight:500">① 登入</text>
+<line x1="190" y1="67" x2="226" y2="67" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<g class="c-coral"><rect x="226" y="44" width="170" height="46" rx="8"/></g>
+<text x="311" y="66" class="t" text-anchor="middle" style="font-weight:500">② 連動帳號</text>
+<text x="311" y="82" class="ts" text-anchor="middle" style="font-size:11px">Meta/Google/IG · 拉素材</text>
+<line x1="396" y1="67" x2="432" y2="67" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<g class="c-gray"><rect x="432" y="44" width="170" height="46" rx="8"/></g>
+<text x="517" y="71" class="t" text-anchor="middle" style="font-weight:500">③ 品牌設定</text>
+<path d="M517,90 L517,112 L340,112 L340,128" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<g class="c-purple"><rect x="240" y="128" width="200" height="44" rx="8"/></g>
+<text x="340" y="155" class="t" text-anchor="middle" style="font-weight:500">品牌工作區</text>
+<path d="M340,172 L340,186 L140,186 L140,200" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="340" y1="186" x2="340" y2="200" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M340,186 L540,186 L540,200" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<g class="c-purple"><rect x="40" y="200" width="200" height="42" rx="8"/></g>
+<text x="140" y="226" class="t" text-anchor="middle">廣告活動圖</text>
+<g class="c-purple"><rect x="252" y="200" width="176" height="42" rx="8"/></g>
+<text x="340" y="226" class="t" text-anchor="middle">風格組件</text>
+<g class="c-purple"><rect x="440" y="200" width="200" height="42" rx="8"/></g>
+<text x="540" y="226" class="t" text-anchor="middle">連動帳號</text>
+<line x1="140" y1="242" x2="140" y2="258" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="40" y="270" class="ts" style="font-size:11px">頁內生成動作（唔再喺 tab 重複）</text>
+<g class="c-teal"><rect x="40" y="276" width="86" height="38" rx="8"/></g>
+<text x="83" y="300" class="t" text-anchor="middle" style="font-size:12px">新增活動</text>
+<g class="c-blue"><rect x="134" y="276" width="86" height="38" rx="8"/></g>
+<text x="177" y="300" class="t" text-anchor="middle" style="font-size:12px">新增圖片</text>
+<g class="c-blue"><rect x="228" y="276" width="86" height="38" rx="8"/></g>
+<text x="271" y="300" class="t" text-anchor="middle" style="font-size:12px">新增素材</text>
+<line x1="83" y1="314" x2="83" y2="330" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<g class="c-teal"><rect x="30" y="330" width="120" height="38" rx="8"/></g>
+<text x="90" y="354" class="t" text-anchor="middle" style="font-size:12px">3 版型挑選</text>
+<line x1="90" y1="368" x2="90" y2="384" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<g class="c-teal"><rect x="30" y="384" width="120" height="38" rx="8"/></g>
+<text x="90" y="408" class="t" text-anchor="middle" style="font-size:12px">微調畫布</text>
+<line x1="177" y1="314" x2="177" y2="330" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<g class="c-blue"><rect x="160" y="330" width="150" height="38" rx="8"/></g>
+<text x="235" y="354" class="t" text-anchor="middle" style="font-size:12px">Prompt 組合台</text>
+<line x1="340" y1="242" x2="340" y2="258" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<g class="c-blue"><rect x="252" y="258" width="176" height="54" rx="8"/></g>
+<text x="340" y="282" class="t" text-anchor="middle" style="font-size:12px">圖庫（分類+引擎）</text>
+<text x="340" y="300" class="ts" text-anchor="middle" style="font-size:11px">含拉返嘅參考圖</text>
+<line x1="540" y1="242" x2="540" y2="258" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<g class="c-coral"><rect x="452" y="258" width="176" height="54" rx="8"/></g>
+<text x="540" y="282" class="t" text-anchor="middle" style="font-size:12px">管理連動</text>
+<text x="540" y="300" class="ts" text-anchor="middle" style="font-size:11px">重新拉素材</text>
+<text x="40" y="450" class="ts" style="font-size:11px">珊瑚 = 新增（連動）· 紫 = 導覽 · 綠 = 活動（同事）· 藍 = 素材庫（你，功能全保留）</text>
+<text x="40" y="470" class="ts" style="font-size:11px">取消「生成圖片」tab：佢嘅功能 = 廣告活動圖頁嘅「新增圖片」。</text>
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#888780"/></marker></defs>
+</svg>
+</section>
+
+<!-- ③ 統一側邊欄 -->
+<section>
+<h2>③ 統一側邊欄（內部 vs 客戶）</h2>
+<div style="background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 1rem;">
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+  <div>
+    <p style="margin:0 0 6px; font-size:12px; color:var(--color-text-secondary);">內部員工（睇所有品牌）</p>
+    <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:10px; font-size:13px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; background:var(--color-background-secondary); border-radius:6px; padding:6px 8px; margin-bottom:10px;"><span><i class="ti ti-user-cog"></i> 內部視圖</span><i class="ti ti-chevron-down" style="font-size:14px; color:var(--color-text-secondary);"></i></div>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;"><span style="font-weight:500;">品牌</span><i class="ti ti-plus" style="font-size:14px;"></i></div>
+      <div style="background:var(--color-background-secondary); border-radius:6px; padding:6px 8px; display:flex; align-items:center; gap:6px;"><span style="width:14px; height:14px; border-radius:4px; background:#3b82f6;"></span><span style="font-weight:500;">舒適牌 Lady's Talk</span><i class="ti ti-chevron-down" style="margin-left:auto; font-size:13px;"></i></div>
+      <div style="padding:4px 0 4px 14px; color:var(--color-text-secondary); line-height:2;">
+        <div style="color:var(--color-text-primary); border-left:2px solid var(--color-text-primary); padding-left:8px;"><i class="ti ti-target"></i> 廣告活動圖</div>
+        <div style="padding-left:10px;"><i class="ti ti-stack-2"></i> 風格組件</div>
+        <div style="padding-left:10px;"><i class="ti ti-plug"></i> 連動帳號</div>
+        <div style="padding-left:10px; color:var(--color-text-tertiary);"><i class="ti ti-settings"></i> 品牌設定</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; padding:6px 8px; color:var(--color-text-secondary);"><span style="width:14px; height:14px; border-radius:4px; background:#639922;"></span><span>S Bar By SOCIE</span><i class="ti ti-chevron-right" style="margin-left:auto; font-size:13px;"></i></div>
+    </div>
+  </div>
+  <div>
+    <p style="margin:0 0 6px; font-size:12px; color:var(--color-text-success);">客戶（只睇自己品牌）</p>
+    <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:10px; font-size:13px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; background:var(--color-background-success); color:var(--color-text-success); border-radius:6px; padding:6px 8px; margin-bottom:10px;"><span><i class="ti ti-user"></i> 客戶視圖</span></div>
+      <div style="background:var(--color-background-secondary); border-radius:6px; padding:6px 8px; display:flex; align-items:center; gap:6px;"><span style="width:14px; height:14px; border-radius:4px; background:#D4537E;"></span><span style="font-weight:500;">舒適牌 Lady's Talk</span></div>
+      <div style="padding:4px 0 4px 14px; color:var(--color-text-secondary); line-height:2;">
+        <div style="color:var(--color-text-primary); border-left:2px solid var(--color-text-primary); padding-left:8px;"><i class="ti ti-target"></i> 廣告活動圖</div>
+        <div style="padding-left:10px;"><i class="ti ti-stack-2"></i> 風格組件</div>
+        <div style="padding-left:10px;"><i class="ti ti-plug"></i> 連動帳號</div>
+        <div style="padding-left:10px; color:var(--color-text-tertiary);"><i class="ti ti-settings"></i> 品牌設定</div>
+      </div>
+      <div style="margin-top:6px; padding:6px 8px; font-size:11px; color:var(--color-text-tertiary); border-top:0.5px solid var(--color-border-tertiary);"><i class="ti ti-lock"></i> 冇「+ 品牌」、睇唔到其他客戶</div>
+    </div>
+  </div>
+</div>
+<p style="margin:12px 2px 0; font-size:12px; color:var(--color-text-tertiary);">同一套側欄：品牌 → 展開即見 3 個 tab + 品牌設定。素材庫唔再係另一個世界。</p>
+</div>
+</section>
+
+<!-- ④ 權限 -->
+<section>
+<h2>④ 權限：內部「全部」vs 客戶單一品牌</h2>
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+  <div>
+    <p style="margin:0 0 6px; font-size:12px; color:var(--color-text-info);">內部員工</p>
+    <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:10px; font-size:13px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; background:var(--color-background-secondary); border-radius:6px; padding:6px 8px; margin-bottom:8px;"><span><i class="ti ti-user-cog"></i> 內部視圖</span><i class="ti ti-chevron-down" style="font-size:13px;"></i></div>
+      <div style="background:var(--color-background-info); color:var(--color-text-info); border-radius:6px; padding:5px 8px; margin-bottom:6px; font-weight:500;"><i class="ti ti-stack-2"></i> 全部（跨品牌素材庫）</div>
+      <div style="line-height:2; color:var(--color-text-secondary);">
+        <div><i class="ti ti-folder"></i> 舒適牌 Lady's Talk</div>
+        <div><i class="ti ti-folder"></i> S Bar By SOCIE</div>
+        <div><i class="ti ti-plus"></i> 新增品牌</div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p style="margin:0 0 6px; font-size:12px; color:var(--color-text-success);">客戶</p>
+    <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:10px; font-size:13px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; background:var(--color-background-success); color:var(--color-text-success); border-radius:6px; padding:6px 8px; margin-bottom:8px;"><span><i class="ti ti-user"></i> 客戶視圖</span></div>
+      <div style="background:var(--color-background-secondary); border-radius:6px; padding:5px 8px; font-weight:500;"><i class="ti ti-folder-open"></i> 舒適牌 Lady's Talk</div>
+      <div style="line-height:2; color:var(--color-text-tertiary); margin-top:4px;">
+        <div><i class="ti ti-lock"></i> 冇「全部」</div>
+        <div><i class="ti ti-lock"></i> 睇唔到其他品牌</div>
+        <div><i class="ti ti-lock"></i> 冇「新增品牌」</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:1rem 1.25rem; margin-top:12px;">
+  <p style="margin:0 0 8px; font-size:14px; font-weight:500;">兩者差幾遠？</p>
+  <p style="margin:0 0 6px; font-size:13px; color:var(--color-text-secondary); line-height:1.7;">進入單一品牌之後，<strong style="font-weight:500;">3 個 tab 嘅介面完全一樣</strong>。差別只喺：</p>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:12px;">
+    <div style="background:var(--color-background-info); color:var(--color-text-info); border-radius:var(--border-radius-md); padding:10px;"><p style="margin:0 0 4px; font-weight:500;">內部多咗</p>「全部」跨品牌庫 · 切換任何客戶 · 新增品牌 · 睇到內部草稿 / 未發布</div>
+    <div style="background:var(--color-background-success); color:var(--color-text-success); border-radius:var(--border-radius-md); padding:10px;"><p style="margin:0 0 4px; font-weight:500;">客戶只有</p>自己一個品牌 · 只見已提供素材 + 自己生成嘅圖（隱藏草稿 / 其他客戶）</div>
+  </div>
+</div>
+</section>
+
+<!-- ⑤ 廣告活動圖 -->
+<section>
+<h2>⑤ 廣告活動圖（List View + 撳入詳情）</h2>
+<div style="background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 1rem;">
+<p style="margin:0 0 8px; font-size:13px; color:var(--color-text-secondary);">畫面 1 · 活動列表（List View）</p>
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:1rem 1.25rem; margin-bottom:14px;">
+  <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:160px; display:flex; align-items:center; gap:6px; border:0.5px solid var(--color-border-secondary); border-radius:99px; padding:5px 12px;"><i class="ti ti-search" style="color:var(--color-text-tertiary);"></i><span style="font-size:13px; color:var(--color-text-tertiary);">搜尋活動主題 / 文案…</span></div>
+    <span style="font-size:13px; border:0.5px solid var(--color-border-secondary); padding:5px 12px; border-radius:99px;"><i class="ti ti-filter"></i> 篩選</span>
+    <button style="background:var(--color-text-primary); color:var(--color-background-primary); border:none;"><i class="ti ti-plus"></i> 新增活動</button>
+  </div>
+  <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:0.5px solid var(--color-border-tertiary);">
+    <div style="width:52px; height:52px; border-radius:8px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-layout-collage"></i></div>
+    <div style="flex:1;"><p style="margin:0; font-size:14px; font-weight:500;">夏日限定優惠</p><p style="margin:2px 0 0; font-size:12px; color:var(--color-text-secondary);">訴求：買二送一 · 3 張圖 + 文案</p></div>
+    <span style="font-size:11px; color:var(--color-text-success); background:var(--color-background-success); padding:2px 8px; border-radius:99px;">完成</span>
+    <span style="font-size:12px; color:var(--color-text-tertiary);">06/15</span>
+    <i class="ti ti-chevron-right" style="color:var(--color-text-tertiary);"></i>
+  </div>
+  <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:0.5px solid var(--color-border-tertiary);">
+    <div style="width:52px; height:52px; border-radius:8px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo"></i></div>
+    <div style="flex:1;"><p style="margin:0; font-size:14px; font-weight:500;">母親節感謝祭</p><p style="margin:2px 0 0; font-size:12px; color:var(--color-text-secondary);">訴求：溫柔呵護 · 2 張圖 + 文案</p></div>
+    <span style="font-size:11px; color:var(--color-text-success); background:var(--color-background-success); padding:2px 8px; border-radius:99px;">完成</span>
+    <span style="font-size:12px; color:var(--color-text-tertiary);">05/02</span>
+    <i class="ti ti-chevron-right" style="color:var(--color-text-tertiary);"></i>
+  </div>
+  <div style="display:flex; align-items:center; gap:12px; padding:10px 0;">
+    <div style="width:52px; height:52px; border-radius:8px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-warning);"><i class="ti ti-loader"></i></div>
+    <div style="flex:1;"><p style="margin:0; font-size:14px; font-weight:500;">新品上市預告</p><p style="margin:2px 0 0; font-size:12px; color:var(--color-text-secondary);">生成中…</p></div>
+    <span style="font-size:11px; color:var(--color-text-warning); background:var(--color-background-warning); padding:2px 8px; border-radius:99px;">生成中</span>
+    <span style="font-size:12px; color:var(--color-text-tertiary);">今日</span>
+    <i class="ti ti-chevron-right" style="color:var(--color-text-tertiary);"></i>
+  </div>
+</div>
+<p style="margin:0 0 8px; font-size:13px; color:var(--color-text-secondary);">畫面 2 · 撳入「夏日限定優惠」→ 1–3 張圖 + 文案 + 調整</p>
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:1rem 1.25rem;">
+  <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+    <i class="ti ti-chevron-left" style="color:var(--color-text-secondary);"></i>
+    <span style="font-size:16px; font-weight:500;">夏日限定優惠</span>
+    <span style="flex:1;"></span>
+    <span style="font-size:12px; color:var(--color-text-secondary);">FLUX.2 edit · 1200×1200</span>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+    <div style="border:2px solid var(--color-border-info); border-radius:8px; overflow:hidden;"><div style="height:100px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary); position:relative;"><i class="ti ti-photo" style="font-size:22px;"></i><span style="position:absolute; top:4px; left:4px; font-size:9px; background:var(--color-text-info); color:#fff; padding:1px 6px; border-radius:4px;">選中</span></div></div>
+    <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="height:100px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo" style="font-size:22px;"></i></div></div>
+    <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="height:100px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo" style="font-size:22px;"></i></div></div>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin:12px 0;">
+    <button style="font-size:13px;"><i class="ti ti-crop"></i> 框選範圍改善</button>
+    <button style="font-size:13px;"><i class="ti ti-refresh"></i> 重新生成</button>
+    <button style="font-size:13px;"><i class="ti ti-device-floppy"></i> 儲存（複製入風格組件）</button>
+  </div>
+  <div style="background:var(--color-background-secondary); border-radius:var(--border-radius-md); padding:12px;">
+    <p style="margin:0 0 4px; font-size:12px; color:var(--color-text-secondary);"><i class="ti ti-message"></i> 廣告文案（可編輯）</p>
+    <p style="margin:0; font-size:13px; line-height:1.6;">夏日寵愛自己 ☀️ 買二送一限時開跑！溫和不刺激，沐浴同時完成除毛保濕 —— 滑嫩肌膚一次到位。#舒芙Intuition</p>
+  </div>
+  <p style="margin:10px 0 0; font-size:12px; color:var(--color-text-tertiary);"><i class="ti ti-info-circle"></i> 未來：組合式活動圖（例：FB 一橫圖大圖 + 三方圖）—— 尚未製作。</p>
+</div>
+</div>
+</section>
+
+<!-- ⑥ 風格組件 -->
+<section>
+<h2>⑥ 風格組件（忠實 + search/filter）</h2>
+<div style="background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 1rem;">
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:0.75rem 1.25rem; margin-bottom:12px;">
+  <div style="display:flex; gap:20px; font-size:14px;">
+    <span style="color:var(--color-text-secondary);">廣告活動圖</span>
+    <span style="font-weight:500; border-bottom:2px solid var(--color-text-primary); padding-bottom:4px;">風格組件</span>
+    <span style="color:var(--color-text-secondary);">連動帳號</span>
+  </div>
+</div>
+<div style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+  <div style="flex:1; min-width:180px; display:flex; align-items:center; gap:6px; background:var(--color-background-primary); border:0.5px solid var(--color-border-secondary); border-radius:99px; padding:6px 14px;"><i class="ti ti-search" style="color:var(--color-text-tertiary);"></i><span style="font-size:13px; color:var(--color-text-tertiary);">搜尋標題 / 內文 / Prompt…</span></div>
+  <span style="font-size:13px; background:var(--color-background-primary); border:0.5px solid var(--color-border-secondary); padding:6px 12px; border-radius:99px;"><i class="ti ti-adjustments"></i> 進階篩選</span>
+  <span style="font-size:13px; background:var(--color-background-primary); border:0.5px solid var(--color-border-secondary); padding:6px 12px; border-radius:99px;">引擎 <i class="ti ti-chevron-down"></i></span>
+  <span style="font-size:13px; background:var(--color-background-info); color:var(--color-text-info); border:0.5px solid var(--color-border-info); padding:6px 12px; border-radius:99px;"><i class="ti ti-arrows-sort"></i> 排序：最新先</span>
+</div>
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:10px 12px; margin-bottom:10px; display:flex; gap:8px; flex-wrap:wrap; font-size:13px;">
+  <span style="background:var(--color-text-primary); color:var(--color-background-primary); padding:4px 10px; border-radius:6px;"><i class="ti ti-layout-board"></i> 圖庫 226</span>
+  <span style="color:var(--color-text-secondary); padding:4px 10px;">積木 63</span>
+  <span style="color:var(--color-text-tertiary);">·</span>
+  <span style="color:var(--color-text-secondary); padding:4px 10px;">構圖 10</span>
+  <span style="color:var(--color-text-secondary); padding:4px 10px;">配色 10</span>
+  <span style="color:var(--color-text-secondary); padding:4px 10px;">語氣 10</span>
+  <span style="color:var(--color-text-secondary); padding:4px 10px;">背景 33</span>
+</div>
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+  <button style="background:#534AB7; color:#fff; border:none;"><i class="ti ti-sparkles"></i> 新增圖片</button>
+  <button style="background:#534AB7; color:#fff; border:none;"><i class="ti ti-sparkles"></i> 新增素材</button>
+  <button style="background:var(--color-text-primary); color:var(--color-background-primary); border:none;"><i class="ti ti-plus"></i> 上傳參考圖</button>
+</div>
+<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; font-size:12px;">
+  <span style="background:#534AB7; color:#fff; padding:4px 10px; border-radius:99px;">全部 226</span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">參考圖 8</span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">背景 33</span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">人像 12</span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">插畫 7</span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">產品成圖 166</span>
+</div>
+<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="aspect-ratio:1; background:var(--color-background-secondary); position:relative; display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo" style="font-size:22px;"></i><span style="position:absolute; top:5px; left:5px; font-size:9px; background:#534AB7; color:#fff; padding:1px 6px; border-radius:4px;">產品成圖</span><span style="position:absolute; top:5px; right:5px; font-size:9px; background:var(--color-background-primary); border:0.5px solid var(--color-border-secondary); padding:1px 5px; border-radius:4px;">FLUX.2</span></div></div>
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="aspect-ratio:1; background:var(--color-background-secondary); position:relative; display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-user" style="font-size:22px;"></i><span style="position:absolute; top:5px; left:5px; font-size:9px; background:#D4537E; color:#fff; padding:1px 6px; border-radius:4px;">人像</span></div></div>
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="aspect-ratio:1; background:var(--color-background-secondary); position:relative; display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-mountain" style="font-size:22px;"></i><span style="position:absolute; top:5px; left:5px; font-size:9px; background:#1D9E75; color:#fff; padding:1px 6px; border-radius:4px;">背景</span></div></div>
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="aspect-ratio:1; background:var(--color-background-secondary); position:relative; display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo" style="font-size:22px;"></i><span style="position:absolute; top:5px; left:5px; font-size:9px; background:#378ADD; color:#fff; padding:1px 6px; border-radius:4px;">參考圖</span></div></div>
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="aspect-ratio:1; background:var(--color-background-secondary); position:relative; display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-palette" style="font-size:22px;"></i><span style="position:absolute; top:5px; left:5px; font-size:9px; background:#BA7517; color:#fff; padding:1px 6px; border-radius:4px;">插畫</span></div></div>
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="aspect-ratio:1; background:var(--color-background-secondary); position:relative; display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo" style="font-size:22px;"></i><span style="position:absolute; top:5px; left:5px; font-size:9px; background:#534AB7; color:#fff; padding:1px 6px; border-radius:4px;">產品成圖</span><span style="position:absolute; top:5px; right:5px; font-size:9px; background:var(--color-background-primary); border:0.5px solid var(--color-border-secondary); padding:1px 5px; border-radius:4px;">Nano Banana</span></div></div>
+</div>
+</div>
+</section>
+
+<!-- ⑦ 圖庫加「廣告活動圖」分類 -->
+<section>
+<h2>⑦ 圖庫加「廣告活動圖」分類 · 日期改排序</h2>
+<div style="background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 1rem;">
+<div style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+  <div style="flex:1; min-width:170px; display:flex; align-items:center; gap:6px; background:var(--color-background-primary); border:0.5px solid var(--color-border-secondary); border-radius:99px; padding:6px 14px;"><i class="ti ti-search" style="color:var(--color-text-tertiary);"></i><span style="font-size:13px; color:var(--color-text-tertiary);">搜尋標題 / 內文 / Prompt…</span></div>
+  <span style="font-size:13px; background:var(--color-background-primary); border:0.5px solid var(--color-border-secondary); padding:6px 12px; border-radius:99px;"><i class="ti ti-adjustments"></i> 進階篩選</span>
+  <span style="font-size:13px; background:var(--color-background-primary); border:0.5px solid var(--color-border-secondary); padding:6px 12px; border-radius:99px;">引擎 <i class="ti ti-chevron-down"></i></span>
+  <span style="font-size:13px; background:var(--color-background-info); color:var(--color-text-info); border:0.5px solid var(--color-border-info); padding:6px 12px; border-radius:99px;"><i class="ti ti-arrows-sort"></i> 排序：最新先</span>
+</div>
+<p style="margin:-4px 2px 12px; font-size:11px; color:var(--color-text-tertiary);"><i class="ti ti-info-circle"></i> 日期 range 拎走（生成頻率低，多餘）→ 改成輕量「排序」。</p>
+<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; font-size:12px;">
+  <span style="background:#534AB7; color:#fff; padding:4px 10px; border-radius:99px;">全部 240</span>
+  <span style="border:1.5px solid var(--color-border-info); color:var(--color-text-info); padding:4px 10px; border-radius:99px; font-weight:500;">廣告活動圖 14 <span style="font-size:9px; background:var(--color-text-info); color:#fff; padding:0 5px; border-radius:99px;">新</span></span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">產品成圖 166</span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">人像 12</span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">插畫 7</span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">背景 33</span>
+  <span style="border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">參考圖 8</span>
+</div>
+<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="aspect-ratio:1; background:var(--color-background-secondary); position:relative; display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-layout-collage" style="font-size:22px;"></i><span style="position:absolute; top:5px; left:5px; font-size:9px; background:var(--color-text-info); color:#fff; padding:1px 6px; border-radius:4px;">廣告活動圖</span><span style="position:absolute; bottom:5px; left:5px; font-size:9px; background:rgba(0,0,0,0.55); color:#fff; padding:1px 5px; border-radius:4px;"><i class="ti ti-message"></i> 有文案</span></div></div>
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="aspect-ratio:1; background:var(--color-background-secondary); position:relative; display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-layout-collage" style="font-size:22px;"></i><span style="position:absolute; top:5px; left:5px; font-size:9px; background:var(--color-text-info); color:#fff; padding:1px 6px; border-radius:4px;">廣告活動圖</span><span style="position:absolute; bottom:5px; left:5px; font-size:9px; background:rgba(0,0,0,0.55); color:#fff; padding:1px 5px; border-radius:4px;"><i class="ti ti-message"></i> 有文案</span></div></div>
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:8px; overflow:hidden;"><div style="aspect-ratio:1; background:var(--color-background-secondary); position:relative; display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo" style="font-size:22px;"></i><span style="position:absolute; top:5px; left:5px; font-size:9px; background:#534AB7; color:#fff; padding:1px 6px; border-radius:4px;">產品成圖</span></div></div>
+</div>
+<p style="margin:12px 2px 0; font-size:12px; color:var(--color-text-secondary);">由活動 save 過嚟嘅成品 → 自動入「廣告活動圖」分類，卡片標「有文案」。</p>
+</div>
+</section>
+
+<!-- ⑧ 新增圖片 vs 新增素材 -->
+<section>
+<h2>⑧ 新增圖片（無參考圖）vs 新增素材</h2>
+<div style="background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 1rem;">
+<p style="margin:0 0 8px; font-size:14px; font-weight:500;"><i class="ti ti-sparkles" style="color:#534AB7;"></i> 新增圖片（生成產品圖片）</p>
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:1rem 1.25rem; margin-bottom:16px;">
+  <p style="margin:0 0 6px; font-size:13px; color:var(--color-text-secondary);">套用行業範本（一鍵填積木）</p>
+  <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;">
+    <span style="font-size:12px; border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">護膚品</span>
+    <span style="font-size:12px; border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">女性用品</span>
+    <span style="font-size:12px; border:0.5px solid var(--color-border-secondary); padding:4px 10px; border-radius:99px;">食品飲料</span>
+  </div>
+  <p style="margin:0 0 6px; font-size:13px; color:var(--color-text-secondary);">主體物件（二選一）</p>
+  <div style="display:flex; gap:8px; margin-bottom:10px;">
+    <span style="font-size:13px; background:#534AB7; color:#fff; padding:6px 12px; border-radius:var(--border-radius-md);">產品圖（合成用原圖）</span>
+    <span style="font-size:13px; border:0.5px solid var(--color-border-secondary); padding:6px 12px; border-radius:var(--border-radius-md);">文字主體</span>
+  </div>
+  <div style="border:0.5px dashed var(--color-border-secondary); border-radius:var(--border-radius-md); padding:14px; text-align:center; color:var(--color-text-tertiary); font-size:13px; margin-bottom:10px;"><i class="ti ti-upload"></i> 上傳產品主圖（最多 3 件，自動去背合成）</div>
+  <p style="margin:0 0 6px; font-size:13px; color:var(--color-text-secondary);">文字積木（構圖／配色／背景／語氣）</p>
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:10px;">
+    <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:8px; text-align:center; font-size:12px;">構圖</div>
+    <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:8px; text-align:center; font-size:12px;">配色</div>
+    <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:8px; text-align:center; font-size:12px;">背景</div>
+    <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:8px; text-align:center; font-size:12px;">語氣</div>
+  </div>
+  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; font-size:13px; color:var(--color-text-secondary);">
+    <span>尺寸：<span style="color:var(--color-text-primary);">1200×1200</span></span>
+    <span>引擎：<span style="color:var(--color-text-primary);">FLUX.2 edit</span></span>
+    <span>數量：<span style="color:var(--color-text-primary);">3</span></span>
+  </div>
+  <div style="background:var(--color-background-danger); color:var(--color-text-danger); font-size:12px; padding:6px 10px; border-radius:var(--border-radius-md); margin-bottom:10px;"><i class="ti ti-circle-x"></i> 冇「參考圖」區（依你決定：產品圖最後跟文字行，參考圖無用）</div>
+  <button style="width:100%; background:#534AB7; color:#fff; border:none;"><i class="ti ti-sparkles"></i> 生成（出完入風格組件）</button>
+</div>
+<p style="margin:0 0 8px; font-size:14px; font-weight:500;"><i class="ti ti-sparkles" style="color:#534AB7;"></i> 新增素材（純素材，無產品 / 無文案）</p>
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:1rem 1.25rem;">
+  <p style="margin:0 0 8px; font-size:13px; color:var(--color-text-secondary);">揀素材類型</p>
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;">
+    <div style="border:2px solid var(--color-border-info); border-radius:var(--border-radius-md); padding:12px; text-align:center;"><i class="ti ti-mountain" style="font-size:20px; color:var(--color-text-info);"></i><p style="margin:6px 0 0; font-size:13px; font-weight:500;">純背景</p></div>
+    <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:12px; text-align:center;"><i class="ti ti-user" style="font-size:20px;"></i><p style="margin:6px 0 0; font-size:13px; font-weight:500;">人像</p></div>
+    <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:12px; text-align:center;"><i class="ti ti-palette" style="font-size:20px;"></i><p style="margin:6px 0 0; font-size:13px; font-weight:500;">2D 插圖</p></div>
+  </div>
+  <input type="text" value="柔和大理石檯面，自然光，留白" style="width:100%; margin-bottom:10px;" />
+  <button style="width:100%; background:#534AB7; color:#fff; border:none;"><i class="ti ti-sparkles"></i> 生成素材（可重用，入風格組件）</button>
+</div>
+</div>
+</section>
+
+<!-- ⑨ 連動帳號 -->
+<section>
+<h2>⑨ 連動帳號（FB / IG 分開開關 + Google）</h2>
+<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:1rem 1.25rem;">
+  <p style="margin:0 0 2px; font-size:16px; font-weight:500;">連動帳號</p>
+  <p style="margin:0 0 14px; font-size:13px; color:var(--color-text-secondary);">授權後拉返廣告圖 / IG 貼文相，自動入「風格組件」。</p>
+  <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:12px; margin-bottom:10px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+      <span style="font-size:14px; font-weight:500;"><i class="ti ti-brand-meta" style="color:#534AB7;"></i> Meta</span>
+      <span style="font-size:11px; color:var(--color-text-success); background:var(--color-background-success); padding:2px 8px; border-radius:99px;"><i class="ti ti-check"></i> 已授權</span>
+    </div>
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-top:0.5px solid var(--color-border-tertiary);">
+      <span style="font-size:13px;"><i class="ti ti-brand-facebook" style="color:#378ADD;"></i> Facebook 廣告圖</span>
+      <span style="font-size:12px; color:var(--color-text-success);">拉緊 · 18 張 <i class="ti ti-toggle-right" style="font-size:18px; vertical-align:-3px;"></i></span>
+    </div>
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-top:0.5px solid var(--color-border-tertiary);">
+      <span style="font-size:13px;"><i class="ti ti-brand-instagram" style="color:#D4537E;"></i> Instagram 貼文相</span>
+      <span style="font-size:12px; color:var(--color-text-tertiary);">未開 <i class="ti ti-toggle-left" style="font-size:18px; vertical-align:-3px;"></i></span>
+    </div>
+    <p style="margin:8px 0 0; font-size:11px; color:var(--color-text-tertiary);"><i class="ti ti-info-circle"></i> 一次 Meta 授權；FB / IG 可分開開關（IG 需 link FB 專頁）。</p>
+  </div>
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); margin-bottom:10px;">
+    <span style="font-size:14px;"><i class="ti ti-brand-google"></i> Google Ads 圖片素材</span>
+    <button style="font-size:13px; background:var(--color-text-primary); color:var(--color-background-primary); border:none;">連動</button>
+  </div>
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; border:0.5px dashed var(--color-border-secondary); border-radius:var(--border-radius-md);">
+    <span style="font-size:14px;"><i class="ti ti-upload"></i> 手動上載(過渡後備)</span>
+    <button style="font-size:13px;">上載</button>
+  </div>
+  <p style="margin:12px 0 0; font-size:11px; color:var(--color-text-tertiary);"><i class="ti ti-alert-triangle"></i> 攞廣告圖一定要行 Facebook/Marketing API；正式抽取前需過 app review，期間用手動上載。</p>
+</div>
+</section>
+
+<!-- ⑩ 廣告活動圖 asset modal -->
+<section>
+<h2>⑩ 撳入廣告活動圖 asset</h2>
+<div style="background:rgba(0,0,0,0.06); border-radius:var(--border-radius-lg); display:flex; align-items:center; justify-content:center; padding:1rem;">
+<div style="width:100%; max-width:460px; background:var(--color-background-primary); border-radius:var(--border-radius-lg); border:1.5px solid #993C1D; overflow:hidden;">
+  <div style="display:flex; align-items:center; gap:8px; padding:9px 13px; border-bottom:0.5px solid var(--color-border-tertiary); font-size:12px; flex-wrap:wrap;">
+    <i class="ti ti-layout-collage" style="color:#993C1D;"></i><span style="font-weight:500;">廣告活動圖</span>
+    <span style="flex:1;"></span>
+    <span style="color:var(--color-text-secondary);"><i class="ti ti-download"></i> 下載</span>
+    <span style="color:var(--color-text-secondary);"><i class="ti ti-edit"></i> 調整</span>
+    <span style="color:var(--color-text-secondary);">移到… <i class="ti ti-chevron-down"></i></span>
+    <span style="color:var(--color-text-danger);"><i class="ti ti-trash"></i></span>
+    <i class="ti ti-x" style="color:var(--color-text-secondary);"></i>
+  </div>
+  <div style="height:175px; background:var(--color-background-secondary); display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--color-text-tertiary); gap:6px;">
+    <i class="ti ti-photo" style="font-size:30px;"></i>
+    <span style="font-size:11px; background:rgba(0,0,0,0.5); color:#fff; padding:1px 8px; border-radius:4px;">有文字嘅 AI 生成圖</span>
+  </div>
+  <div style="padding:11px 13px;">
+    <p style="margin:0 0 8px; font-size:11px; color:var(--color-text-tertiary);">完整廣告 ＝ 圖 ＋ 文案 ＋ 有文字 AI 圖</p>
+    <div style="background:var(--color-background-secondary); border-radius:var(--border-radius-md); padding:10px; margin-bottom:8px;">
+      <p style="margin:0 0 4px; font-size:11px; color:#534AB7; font-weight:500;"><i class="ti ti-sparkles"></i> AI Prompt（積木）</p>
+      <p style="margin:0; font-size:11px; line-height:1.6; color:var(--color-text-secondary);">構圖：置中大圖。配色：粉嫩。語氣：溫柔</p>
+    </div>
+    <div style="background:#FAECE7; border-radius:var(--border-radius-md); padding:10px; margin-bottom:8px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+        <p style="margin:0; font-size:11px; color:#993C1D; font-weight:500;"><i class="ti ti-message"></i> 廣告文案</p>
+        <button style="font-size:11px; padding:2px 8px; min-height:0;"><i class="ti ti-copy"></i> 複製</button>
+      </div>
+      <p style="margin:0; font-size:11px; line-height:1.6; color:#712B13;">夏日寵愛自己☀️買二送一限時開跑！溫和不刺激，沐浴同時完成除毛保濕 #舒芙Intuition</p>
+    </div>
+    <p style="margin:0 0 10px; font-size:11px; color:var(--color-text-secondary);"><i class="ti ti-link"></i> 來源活動：<span style="color:var(--color-text-info);">夏日限定優惠 ↗</span></p>
+    <p style="margin:0 0 6px; font-size:11px; color:var(--color-text-info); font-weight:500;"><i class="ti ti-arrow-right"></i> 用作參考（帶入生成）</p>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button style="font-size:12px;"><i class="ti ti-layout-collage"></i> 去新增活動 ↗</button>
+      <button style="font-size:12px;"><i class="ti ti-photo"></i> 去新增圖片 ↗</button>
+    </div>
+  </div>
+</div>
+</div>
+</section>
+
+<!-- ⑪ 四種類型對照 -->
+<section>
+<h2>⑪ 四種類型對照（引擎/輸入/參考圖/積木/文案/用途）</h2>
+<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px;">
+  <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); overflow:hidden;">
+    <div style="background:#534AB7; color:#fff; padding:8px 12px; font-size:13px; font-weight:500;"><i class="ti ti-photo"></i> 產品成圖</div>
+    <div style="padding:10px 12px; font-size:12px; line-height:1.5;">
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">引擎</p><p style="margin:0 0 8px;">FLUX.2 edit · nano-banana · Seedream</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">輸入</p><p style="margin:0 0 8px;">產品主圖 或 文字</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">參考圖</p><p style="margin:0 0 8px; color:var(--color-text-danger);">✗ 冇</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">積木</p><p style="margin:0 0 8px; color:var(--color-text-success);">⬇ 攞積木做輸入</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">文案</p><p style="margin:0 0 8px; color:var(--color-text-danger);">✗ 冇</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">用途</p><p style="margin:0;">乾淨產品合成圖</p>
+    </div>
+  </div>
+  <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); overflow:hidden;">
+    <div style="background:#0F6E56; color:#fff; padding:8px 12px; font-size:13px; font-weight:500;"><i class="ti ti-stack-2"></i> 素材圖片</div>
+    <div style="padding:10px 12px; font-size:12px; line-height:1.5;">
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">引擎（按類）</p><p style="margin:0 0 8px;">背景 FLUX.1 · 人像 FLUX.2 pro · 插畫 Recraft V3 · Nano Banana 風格遷移</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">輸入</p><p style="margin:0 0 8px;">文字描述</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">參考圖</p><p style="margin:0 0 8px; color:var(--color-text-success);">✓ 有（選填）</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">積木</p><p style="margin:0 0 8px; color:var(--color-text-info);">⬆ 成品自動抽出</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">文案</p><p style="margin:0 0 8px; color:var(--color-text-danger);">✗ 冇</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">用途</p><p style="margin:0;">純背景 / 人像 / 2D 插圖</p>
+    </div>
+  </div>
+  <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); overflow:hidden;">
+    <div style="background:#185FA5; color:#fff; padding:8px 12px; font-size:13px; font-weight:500;"><i class="ti ti-photo-up"></i> 參考圖</div>
+    <div style="padding:10px 12px; font-size:12px; line-height:1.5;">
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">引擎</p><p style="margin:0 0 8px;">唔生成</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">輸入</p><p style="margin:0 0 8px;">上傳 或 由連動拉</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">參考圖</p><p style="margin:0 0 8px; color:var(--color-text-secondary);">自己就係參考</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">積木</p><p style="margin:0 0 8px; color:var(--color-text-info);">⬆ 拉返自動抽出</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">文案</p><p style="margin:0 0 8px; color:var(--color-text-danger);">✗ 冇</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">用途</p><p style="margin:0;">餵生成做參考 ＋ 拆出積木</p>
+    </div>
+  </div>
+  <div style="background:var(--color-background-primary); border:1.5px solid #993C1D; border-radius:var(--border-radius-lg); overflow:hidden;">
+    <div style="background:#993C1D; color:#fff; padding:8px 12px; font-size:13px; font-weight:500;"><i class="ti ti-layout-collage"></i> 廣告活動圖</div>
+    <div style="padding:10px 12px; font-size:12px; line-height:1.5;">
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">引擎</p><p style="margin:0 0 8px;">活動流程（生圖＋圖上文字）</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">輸入</p><p style="margin:0 0 8px;">主題＋訴求＋產品主圖＋參考圖</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">參考圖</p><p style="margin:0 0 8px; color:var(--color-text-success);">✓ 有</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">積木</p><p style="margin:0 0 8px; color:var(--color-text-info);">⬆ 成品自動記低</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">文案</p><p style="margin:0 0 8px; color:var(--color-text-success);">✓ 有（生成）</p>
+      <p style="margin:0 0 2px; color:var(--color-text-tertiary);">用途</p><p style="margin:0;">完整廣告：圖＋文案＋文字 AI 圖</p>
+    </div>
+  </div>
+</div>
+<p style="margin:12px 2px 0; font-size:12px; color:var(--color-text-secondary);">⬇ 攞積木做輸入 · ⬆ 成品 / 拉返抽出積木。只有「產品成圖」係輸入用積木。</p>
+</section>
+
+<!-- ⑫ 四種 asset model -->
+<section>
+<h2>⑫ 四種 asset model（撳入詳情欄位）</h2>
+<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px;">
+  <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); overflow:hidden;">
+    <div style="background:#534AB7; color:#fff; padding:8px 12px; font-size:13px; font-weight:500;"><i class="ti ti-photo"></i> 產品成圖 · asset</div>
+    <div style="padding:10px 12px; font-size:12px;">
+      <div style="display:flex; gap:8px; margin-bottom:8px;"><div style="width:40px; height:40px; border-radius:6px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo"></i></div><div><p style="margin:0; font-weight:500;">標題</p><p style="margin:0; color:var(--color-text-tertiary); font-size:11px;">分類：產品成圖 · 1200²</p></div></div>
+      <p style="margin:0 0 3px;"><i class="ti ti-sparkles" style="color:#534AB7;"></i> AI Prompt（合併）</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-refresh" style="color:var(--color-text-info);"></i> 重新生成（載入原參數）</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-box"></i> 來源產品圖（1）</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-stack-2"></i> 積木：構圖／配色／語氣 <span style="color:var(--color-text-info);">＋帶入生成</span></p>
+      <p style="margin:0 0 3px; color:var(--color-text-tertiary); text-decoration:line-through;"><i class="ti ti-message"></i> 廣告文案</p>
+      <p style="margin:6px 0 0; color:var(--color-text-secondary); font-size:11px;">移到：公用／客戶 · 下載／調整／刪除</p>
+    </div>
+  </div>
+  <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); overflow:hidden;">
+    <div style="background:#0F6E56; color:#fff; padding:8px 12px; font-size:13px; font-weight:500;"><i class="ti ti-stack-2"></i> 素材圖 · asset</div>
+    <div style="padding:10px 12px; font-size:12px;">
+      <div style="display:flex; gap:8px; margin-bottom:8px;"><div style="width:40px; height:40px; border-radius:6px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-mountain"></i></div><div><p style="margin:0; font-weight:500;">標題</p><p style="margin:0; color:var(--color-text-tertiary); font-size:11px;">分類：背景／人像／插畫</p></div></div>
+      <p style="margin:0 0 3px;"><i class="ti ti-sparkles" style="color:#534AB7;"></i> AI Prompt（背景描述）</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-refresh" style="color:var(--color-text-info);"></i> 重新生成（載入原參數）</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-link"></i> 參考風格圖（選填）</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-stack-2"></i> 積木：配色／背景… <span style="color:var(--color-text-info);">＋帶入生成</span></p>
+      <p style="margin:0 0 3px; color:var(--color-text-tertiary); text-decoration:line-through;"><i class="ti ti-message"></i> 廣告文案</p>
+      <p style="margin:6px 0 0; color:var(--color-text-secondary); font-size:11px;">移到：公用／客戶 · 下載／調整／刪除</p>
+    </div>
+  </div>
+  <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); overflow:hidden;">
+    <div style="background:#185FA5; color:#fff; padding:8px 12px; font-size:13px; font-weight:500;"><i class="ti ti-photo-up"></i> 網頁參考圖 · asset</div>
+    <div style="padding:10px 12px; font-size:12px;">
+      <div style="display:flex; gap:8px; margin-bottom:8px;"><div style="width:40px; height:40px; border-radius:6px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-photo"></i></div><div><p style="margin:0; font-weight:500;">標題</p><p style="margin:0; color:var(--color-text-tertiary); font-size:11px;">分類：參考圖</p></div></div>
+      <p style="margin:0 0 3px; color:var(--color-text-tertiary); text-decoration:line-through;"><i class="ti ti-sparkles"></i> AI Prompt（非生成）</p>
+      <p style="margin:0 0 3px; color:var(--color-text-tertiary); text-decoration:line-through;"><i class="ti ti-refresh"></i> 重新生成</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-upload"></i> 來源：上傳／連動拉</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-stack-2"></i> 抽出積木：構圖／配色／語氣 <span style="color:var(--color-text-info);">＋帶入生成</span></p>
+      <p style="margin:0 0 3px; color:var(--color-text-tertiary); text-decoration:line-through;"><i class="ti ti-message"></i> 廣告文案</p>
+      <p style="margin:6px 0 0; color:var(--color-text-secondary); font-size:11px;">移到：公用／客戶 · 下載／刪除 ·「自己就係參考」</p>
+    </div>
+  </div>
+  <div style="background:var(--color-background-primary); border:1.5px solid #993C1D; border-radius:var(--border-radius-lg); overflow:hidden;">
+    <div style="background:#993C1D; color:#fff; padding:8px 12px; font-size:13px; font-weight:500;"><i class="ti ti-layout-collage"></i> 廣告活動圖 · asset</div>
+    <div style="padding:10px 12px; font-size:12px;">
+      <div style="display:flex; gap:8px; margin-bottom:8px;"><div style="width:40px; height:40px; border-radius:6px; background:var(--color-background-secondary); display:flex; align-items:center; justify-content:center; color:var(--color-text-tertiary);"><i class="ti ti-layout-collage"></i></div><div><p style="margin:0; font-weight:500;">標題</p><p style="margin:0; color:var(--color-text-tertiary); font-size:11px;">分類：廣告活動圖 · 有文字 AI 圖</p></div></div>
+      <p style="margin:0 0 3px;"><i class="ti ti-sparkles" style="color:#534AB7;"></i> AI Prompt（積木）</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-refresh" style="color:var(--color-text-info);"></i> 重新生成（載入原參數）</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-link"></i> 來源活動 ↗</p>
+      <p style="margin:0 0 3px;"><i class="ti ti-stack-2"></i> 積木：構圖／配色／語氣 <span style="color:var(--color-text-info);">＋帶入生成</span></p>
+      <p style="margin:0 0 3px; color:#993C1D; font-weight:500;"><i class="ti ti-message"></i> 廣告文案（＋複製）</p>
+      <p style="margin:6px 0 0; color:var(--color-text-secondary); font-size:11px;">移到：公用／客戶 · 下載／調整／刪除</p>
+    </div>
+  </div>
+</div>
+</section>
+
+</div>
+<script>function sendPrompt(){}function openLink(){}</script>
+</body>
+</html>

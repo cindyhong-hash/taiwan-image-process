@@ -13,25 +13,35 @@ model Client {
   secondaryColor String?
   logoUrl        String?
   toneLabels         String     @default("[]")
-  taboos             String     @default("[]")
+  taboos             String     @default("[]")  // [WIP/素材庫] 保留
+  commonText         String     @default("")    // [COLLEAGUE] 合併新增
   pastPostImageUrls  String     @default("[]")
-  paletteColors      String     @default("[]")
+  paletteColors      String     @default("[]")  // [WIP/素材庫] 保留
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   activities     Activity[]
 }
 
 model Activity {
-  id                 String            @id @default(cuid())
-  clientId           String
-  client             Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  theme              String
-  focusPoint         String
-  productImageUrl    String
-  referenceImageUrls String            @default("[]")
-  status             String            @default("PENDING")
-  createdAt          DateTime          @default(now())
-  generatedLayouts   GeneratedLayout[]
+  id                   String            @id @default(cuid())
+  clientId             String
+  client               Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  theme                String
+  focusPoint           String
+  titleText            String?           // [COLLEAGUE] 畫面上必放的主標題文字
+  subtitleText         String?           // [COLLEAGUE] 畫面上必放的副標題文字
+  imagePrompt          String?           // [COLLEAGUE] 使用者描述的腦中畫面 prompt
+  productImageUrl      String            @default("")   // [COLLEAGUE] backward compat (first image)
+  productImageUrls     String            @default("[]") // [COLLEAGUE] 最多 5 張（JSON array）
+  referenceImageUrls   String            @default("[]")
+  selectedComponentIds String            @default("[]") // [COLLEAGUE] 選取的風格組件 IDs
+  imageRatio           String            @default("1:1") // [COLLEAGUE] 圖片比例
+  customW              Int               @default(0)     // 輸出寬（px）；0=用比例預設。同產品圖一致嘅尺寸設定
+  customH              Int               @default(0)     // 輸出高（px）；0=用比例預設
+  imageModel           String            @default("google/gemini-3-pro-image-preview") // [COLLEAGUE] 生圖模型
+  status               String            @default("PENDING")
+  createdAt            DateTime          @default(now())
+  generatedLayouts     GeneratedLayout[]
 }
 
 model GeneratedLayout {
@@ -43,6 +53,8 @@ model GeneratedLayout {
   copyText        String
   styleComponents String   @default("{}")
   isSelected      Boolean  @default(false)
+  textBurnedIn    Boolean  @default(false)  // [COLLEAGUE] 文字是否已由 AI 燒入圖片
+  savedToLibrary  Boolean  @default(false)  // [COLLEAGUE] 是否已加入素材庫（策展）
   createdAt       DateTime @default(now())
 }
 

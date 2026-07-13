@@ -25,7 +25,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
   const body = await request.json();
   const updateData: Record<string, unknown> = { ...body };
   if (body.toneLabels) updateData.toneLabels = JSON.stringify(body.toneLabels);
-  if (body.taboos) updateData.taboos = JSON.stringify(body.taboos);
+  if (body.taboos) updateData.taboos = JSON.stringify(body.taboos);                        // [WIP/素材庫]
+  if (body.paletteColors) updateData.paletteColors = JSON.stringify(body.paletteColors);   // [WIP/素材庫] 防呆：array→string
   if (body.pastPostImageUrls) updateData.pastPostImageUrls = JSON.stringify(body.pastPostImageUrls);
 
   const client = await db.client.update({

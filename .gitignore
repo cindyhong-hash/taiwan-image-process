@@ -55,3 +55,8 @@ public/uploads/
 
 # local backups
 .backup/
+*.pre-merge-bak
+prisma/dev.db.pre-merge-bak
+
+# packed material bundles (pack-materials.sh)
+dist/

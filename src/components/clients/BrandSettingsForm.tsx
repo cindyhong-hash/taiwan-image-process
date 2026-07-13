@@ -6,12 +6,15 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { X, Upload, Loader2 } from "lucide-react";
 
+// [MERGED] union of WIP(素材庫: taboos) + COLLEAGUE(clients: logoUrl/commonText)
 export type BrandFormValues = {
   name: string;
   primaryColor: string;
   secondaryColor: string;
+  logoUrl: string;
   toneLabels: string[];
-  taboos: string[];
+  taboos: string[];      // [WIP/素材庫] 禁忌事項（negative prompts）
+  commonText: string;    // [COLLEAGUE] 常用字體
   pastPostImageUrls: string[];
 };
 
@@ -26,13 +29,16 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
     name: initialValues?.name ?? "",
     primaryColor: initialValues?.primaryColor ?? "#000000",
     secondaryColor: initialValues?.secondaryColor ?? "",
+    logoUrl: initialValues?.logoUrl ?? "",
     toneLabels: initialValues?.toneLabels ?? [],
     taboos: initialValues?.taboos ?? [],
+    commonText: initialValues?.commonText ?? "",
     pastPostImageUrls: initialValues?.pastPostImageUrls ?? [],
   });
   const [toneInput, setToneInput] = useState("");
   const [tabooInput, setTabooInput] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const addTone = () => {
@@ -57,6 +63,16 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
     const res = await fetch("/api/upload", { method: "POST", body: formData });
     const data = await res.json();
     return data.url;
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingLogo(true);
+    const url = await uploadImage(file);
+    setValues((v) => ({ ...v, logoUrl: url }));
+    setUploadingLogo(false);
+    e.target.value = "";
   };
 
   const handlePastPostUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -128,6 +144,42 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
         </div>
       </div>
 
+      {/* 品牌 Logo — [COLLEAGUE] */}
+      <div className="space-y-2">
+        <Label>品牌 Logo</Label>
+        <p className="text-xs text-gray-400">上傳品牌標誌（建議去背 PNG），可用於合成與識別</p>
+        <div className="flex items-center gap-3">
+          {values.logoUrl ? (
+            <div className="relative w-24 h-24">
+              <img
+                src={values.logoUrl}
+                alt="logo"
+                className="w-24 h-24 object-contain rounded-lg border bg-gray-50 p-1"
+              />
+              <button
+                type="button"
+                className="absolute -top-1 -right-1 bg-white rounded-full border p-0.5 shadow"
+                onClick={() => setValues((v) => ({ ...v, logoUrl: "" }))}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <label className="flex flex-col items-center justify-center w-24 h-24 border-2 border-dashed rounded-lg cursor-pointer hover:bg-gray-50">
+              {uploadingLogo ? (
+                <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+              ) : (
+                <>
+                  <Upload className="h-6 w-6 text-gray-400" />
+                  <span className="text-xs text-gray-400 mt-1 text-center px-1">上傳 Logo</span>
+                </>
+              )}
+              <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+            </label>
+          )}
+        </div>
+      </div>
+
       {/* 品牌調性 — 自由輸入 */}
       <div className="space-y-2">
         <Label>品牌調性</Label>
@@ -145,18 +197,22 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
           {values.toneLabels.map((t) => (
             <Badge key={t} variant="secondary" className="flex items-center gap-1">
               {t}
-              <X
-                className="h-3 w-3 cursor-pointer"
+              <button
+                type="button"
+                className="cursor-pointer rounded-full hover:bg-black/10 p-0.5 -mr-1"
                 onClick={() => setValues((v) => ({ ...v, toneLabels: v.toneLabels.filter((x) => x !== t) }))}
-              />
+              >
+                <X className="h-3 w-3" />
+              </button>
             </Badge>
           ))}
         </div>
       </div>
 
-      {/* 禁忌事項 */}
+      {/* 禁忌事項 — [WIP/素材庫] negative prompts */}
       <div className="space-y-2">
         <Label>禁忌事項</Label>
+        <p className="text-xs text-gray-400">AI 生成時會避開這些內容（negative prompts）</p>
         <div className="flex gap-2">
           <Input
             value={tabooInput}
@@ -170,13 +226,27 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
           {values.taboos.map((t) => (
             <Badge key={t} variant="secondary" className="flex items-center gap-1 bg-red-50 text-red-700 border-red-200">
               {t}
-              <X
-                className="h-3 w-3 cursor-pointer"
+              <button
+                type="button"
+                className="cursor-pointer rounded-full hover:bg-black/10 p-0.5 -mr-1"
                 onClick={() => setValues((v) => ({ ...v, taboos: v.taboos.filter((x) => x !== t) }))}
-              />
+              >
+                <X className="h-3 w-3" />
+              </button>
             </Badge>
           ))}
         </div>
+      </div>
+
+      {/* 常用字體 — [COLLEAGUE] */}
+      <div className="space-y-1">
+        <Label>常用字體</Label>
+        <p className="text-xs text-gray-400">填入品牌慣用的字體名稱，AI 生成文案時會參考</p>
+        <Input
+          value={values.commonText}
+          onChange={(e) => setValues((v) => ({ ...v, commonText: e.target.value }))}
+          placeholder="例：Noto Sans TC、思源黑體、微軟正黑體"
+        />
       </div>
 
       {/* 過往貼文圖片 */}

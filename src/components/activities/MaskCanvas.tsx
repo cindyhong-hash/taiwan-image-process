@@ -1,285 +1,227 @@
 "use client";
 /**
- * MaskCanvas
- * ----------
- * Renders a transparent <canvas> perfectly on top of an <img>.
- * The user can paint a semi-transparent mask (inpainting area) with
- * a brush or erase parts of it. The final mask is exposed both as a
- * live base-64 PNG and via the onMaskChange callback so callers can
- * POST { imageUrl, maskDataUrl } to an AI inpainting API.
+ * SelectionCanvas
+ * ---------------
+ * 拖拉矩形選框工具。
+ * 不產生 mask bitmap — 只回傳圈選區域的正規化邊界框 (0~1)，
+ * 讓後端知道使用者想修改圖片的「大概位置」，交給 Kontext AI 照指令精確處理。
  *
- * RWD alignment strategy
- * ----------------------
- * The image is rendered with `object-fit: cover` inside a square container.
- * The canvas sits on top via absolute positioning and always matches the
- * container's rendered pixel dimensions (tracked with ResizeObserver).
- * When exporting the mask we additionally scale it to the image's natural
- * resolution so the AI receives a same-size mask regardless of screen size.
+ * Props:
+ *   onMaskChange(maskDataUrl | null)  — 維持 API 相容，傳 null（不再需要 bitmap）
+ *   onSelectionChange(bounds | null)  — 回傳正規化的邊界框
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Eraser, PaintbrushVertical, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
-type Tool = "brush" | "eraser";
+export type SelectionBounds = {
+  x: number;      // 0~1，左邊比例
+  y: number;      // 0~1，上邊比例
+  width: number;  // 0~1，寬度比例
+  height: number; // 0~1，高度比例
+};
 
 type Props = {
   imageUrl: string;
-  /** Brush radius in CSS pixels (default 20) */
-  brushSize?: number;
-  /** Called every time the mask changes with a base-64 PNG (white mask on black bg, same size as natural image) */
+  brushSize?: number;           // 保留 API 相容性，不使用
   onMaskChange?: (maskDataUrl: string | null) => void;
+  onSelectionChange?: (bounds: SelectionBounds | null) => void;
 };
 
-// ─── helpers ───────────────────────────────────────────────────────────────
+type DragState = { startX: number; startY: number } | null;
+type Rect      = { x: number; y: number; w: number; h: number } | null;
 
-function getPos(
-  e: React.MouseEvent | React.TouchEvent,
-  canvas: HTMLCanvasElement
-): { x: number; y: number } {
-  const rect = canvas.getBoundingClientRect();
-  const src =
-    "touches" in e
-      ? (e as React.TouchEvent).touches[0] ?? (e as React.TouchEvent).changedTouches[0]
-      : (e as React.MouseEvent);
-  return {
-    x: src.clientX - rect.left,
-    y: src.clientY - rect.top,
-  };
-}
-
-// ─── component ─────────────────────────────────────────────────────────────
-
-export function MaskCanvas({ imageUrl, brushSize = 20, onMaskChange }: Props) {
+export function MaskCanvas({ imageUrl, onMaskChange, onSelectionChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const isDrawing = useRef(false);
-  const lastPos = useRef<{ x: number; y: number } | null>(null);
+  const canvasRef    = useRef<HTMLCanvasElement>(null);
+  const imgRef       = useRef<HTMLImageElement>(null);
+  const drag         = useRef<DragState>(null);
 
-  const [tool, setTool] = useState<Tool>("brush");
-  const [hasMask, setHasMask] = useState(false);
+  const [rect, setRect]       = useState<Rect>(null);
+  const [hasSelection, setHasSelection] = useState(false);
 
-  // ── keep canvas pixel-perfect with the container ──────────────────────────
+  // ── Canvas size synced to container ──────────────────────────────────────────
   useEffect(() => {
     const container = containerRef.current;
-    const canvas = canvasRef.current;
+    const canvas    = canvasRef.current;
     if (!container || !canvas) return;
-
-    const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      // Save current drawing, resize, then restore
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      canvas.width = Math.round(width);
-      canvas.height = Math.round(height);
-      // Restore (best-effort; exact pixel mapping preserved when only reflow)
-      ctx.putImageData(snapshot, 0, 0);
+    const ro = new ResizeObserver(([e]) => {
+      canvas.width  = Math.round(e.contentRect.width);
+      canvas.height = Math.round(e.contentRect.height);
+      // Repaint handled by rect state
     });
-
-    observer.observe(container);
-    return () => observer.disconnect();
+    ro.observe(container);
+    return () => ro.disconnect();
   }, []);
 
-  // ── drawing core ──────────────────────────────────────────────────────────
-
-  const paint = useCallback(
-    (ctx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }) => {
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.lineWidth = brushSize * 2;
-
-      if (tool === "brush") {
-        ctx.globalCompositeOperation = "source-over";
-        // Semi-transparent blue tint — visible over any image content
-        ctx.strokeStyle = "rgba(59, 130, 246, 0.45)";
-      } else {
-        // Eraser: punch a hole back to transparent
-        ctx.globalCompositeOperation = "destination-out";
-        ctx.strokeStyle = "rgba(0,0,0,1)";
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.stroke();
-    },
-    [tool, brushSize]
-  );
-
-  // ── export mask (white on black, natural-image resolution) ────────────────
-
-  const exportMask = useCallback(() => {
-    const canvas = canvasRef.current;
-    const img = imgRef.current;
-    if (!canvas || !img) return null;
-
-    const natW = img.naturalWidth || canvas.width;
-    const natH = img.naturalHeight || canvas.height;
-
-    // Off-screen canvas at natural resolution
-    const off = document.createElement("canvas");
-    off.width = natW;
-    off.height = natH;
-    const ctx = off.getContext("2d")!;
-
-    // Black background
-    ctx.fillStyle = "#000000";
-    ctx.fillRect(0, 0, natW, natH);
-
-    // Scale and stamp our alpha mask as white
-    ctx.globalCompositeOperation = "source-over";
-    ctx.drawImage(canvas, 0, 0, natW, natH);
-
-    // Convert blue tint to pure white: iterate pixels and set rgb → 255
-    const id = ctx.getImageData(0, 0, natW, natH);
-    for (let i = 0; i < id.data.length; i += 4) {
-      const alpha = id.data[i + 3];
-      if (alpha > 10) {
-        id.data[i] = 255;
-        id.data[i + 1] = 255;
-        id.data[i + 2] = 255;
-        id.data[i + 3] = 255;
-      } else {
-        id.data[i] = 0;
-        id.data[i + 1] = 0;
-        id.data[i + 2] = 0;
-        id.data[i + 3] = 255;
-      }
-    }
-    ctx.putImageData(id, 0, 0);
-
-    return off.toDataURL("image/png");
-  }, []);
-
-  // ── pointer events (mouse + touch) ───────────────────────────────────────
-
-  const onStart = useCallback(
-    (e: React.MouseEvent | React.TouchEvent) => {
-      e.preventDefault();
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      isDrawing.current = true;
-      const pos = getPos(e, canvas);
-      lastPos.current = pos;
-      // Draw a dot on single click
-      const ctx = canvas.getContext("2d")!;
-      paint(ctx, pos, pos);
-    },
-    [paint]
-  );
-
-  const onMove = useCallback(
-    (e: React.MouseEvent | React.TouchEvent) => {
-      e.preventDefault();
-      if (!isDrawing.current) return;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d")!;
-      const pos = getPos(e, canvas);
-      paint(ctx, lastPos.current ?? pos, pos);
-      lastPos.current = pos;
-    },
-    [paint]
-  );
-
-  const onEnd = useCallback(() => {
-    if (!isDrawing.current) return;
-    isDrawing.current = false;
-    lastPos.current = null;
-    setHasMask(true);
-    const mask = exportMask();
-    onMaskChange?.(mask);
-  }, [exportMask, onMaskChange]);
-
-  // ── clear ─────────────────────────────────────────────────────────────────
-
-  const clearMask = useCallback(() => {
+  // ── Draw selection rect ───────────────────────────────────────────────────────
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setHasMask(false);
-    onMaskChange?.(null);
-  }, [onMaskChange]);
+    if (!rect) return;
 
-  // ─────────────────────────────────────────────────────────────────────────
+    const { x, y, w, h } = rect;
+
+    // Dimming overlay outside selection
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(x, y, w, h); // cut out selection
+
+    // Selection border
+    ctx.strokeStyle = "rgba(59,130,246,1)";
+    ctx.lineWidth   = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.setLineDash([]);
+
+    // Corner handles
+    const hs = 7;
+    const corners = [
+      [x, y], [x + w, y], [x, y + h], [x + w, y + h],
+    ];
+    ctx.fillStyle = "white";
+    corners.forEach(([cx, cy]) => {
+      ctx.fillRect(cx - hs / 2, cy - hs / 2, hs, hs);
+      ctx.strokeRect(cx - hs / 2, cy - hs / 2, hs, hs);
+    });
+
+    // Label
+    const label = `選取區域`;
+    ctx.font        = "12px system-ui, sans-serif";
+    ctx.fillStyle   = "rgba(59,130,246,1)";
+    ctx.fillText(label, x + 4, y - 6 > 14 ? y - 6 : y + 16);
+
+  }, [rect]);
+
+  // ── Mouse events ──────────────────────────────────────────────────────────────
+  const getXY = (e: React.MouseEvent) => {
+    const r = canvasRef.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const { x, y } = getXY(e);
+    drag.current = { startX: x, startY: y };
+  }, []);
+
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!drag.current) return;
+    e.preventDefault();
+    const { x, y } = getXY(e);
+    const { startX, startY } = drag.current;
+    setRect({
+      x: Math.min(x, startX),
+      y: Math.min(y, startY),
+      w: Math.abs(x - startX),
+      h: Math.abs(y - startY),
+    });
+  }, []);
+
+  const onMouseUp = useCallback((e: React.MouseEvent) => {
+    if (!drag.current) return;
+    e.preventDefault();
+    drag.current = null;
+
+    // Read current rect via functional updater, but fire callbacks
+    // AFTER render via microtask to avoid setState-during-render error
+    setRect(prev => {
+      if (!prev || prev.w < 10 || prev.h < 10) {
+        Promise.resolve().then(() => {
+          setHasSelection(false);
+          onSelectionChange?.(null);
+          onMaskChange?.(null);
+        });
+        return null;
+      }
+
+      const canvas = canvasRef.current;
+      if (!canvas) return prev;
+
+      const bounds: SelectionBounds = {
+        x:      prev.x / canvas.width,
+        y:      prev.y / canvas.height,
+        width:  prev.w / canvas.width,
+        height: prev.h / canvas.height,
+      };
+
+      Promise.resolve().then(() => {
+        setHasSelection(true);
+        onSelectionChange?.(bounds);
+        onMaskChange?.("selection");
+      });
+
+      return prev;
+    });
+  }, [onSelectionChange, onMaskChange]);
+
+  const clearSelection = useCallback(() => {
+    setRect(null);
+    setHasSelection(false);
+    onSelectionChange?.(null);
+    onMaskChange?.(null);
+    const canvas = canvasRef.current;
+    if (canvas) canvas.getContext("2d")!.clearRect(0, 0, canvas.width, canvas.height);
+  }, [onSelectionChange, onMaskChange]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-3">
-      {/* Image + Canvas stack */}
       <div
         ref={containerRef}
         className="relative rounded-xl overflow-hidden border select-none"
-        style={{ cursor: tool === "brush" ? "crosshair" : "cell" }}
+        style={{ cursor: "crosshair" }}
       >
-        {/* Base image */}
         <img
           ref={imgRef}
           src={imageUrl}
           alt="Layout preview"
-          className="w-full aspect-square object-cover block"
+          className="w-full h-auto object-contain block"
           draggable={false}
         />
 
-        {/* Mask canvas — perfectly overlaid */}
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full"
-          onMouseDown={onStart}
-          onMouseMove={onMove}
-          onMouseUp={onEnd}
-          onMouseLeave={onEnd}
-          onTouchStart={onStart}
-          onTouchMove={onMove}
-          onTouchEnd={onEnd}
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
         />
 
-        {/* Mask indicator badge */}
-        {hasMask && (
+        {!hasSelection && (
+          <div className="absolute bottom-3 left-0 right-0 flex justify-center pointer-events-none">
+            <span className="bg-black/55 text-white text-xs px-3 py-1 rounded-full">
+              拖拉選取要修改的區域
+            </span>
+          </div>
+        )}
+
+        {hasSelection && (
           <div className="absolute top-2 left-2 bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full pointer-events-none">
-            遮罩已繪製
+            ✓ 已選取區域
           </div>
         )}
       </div>
 
-      {/* Toolbar */}
       <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant={tool === "brush" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setTool("brush")}
-          className="gap-1.5"
-        >
-          <PaintbrushVertical className="h-3.5 w-3.5" />
-          畫筆
-        </Button>
-        <Button
-          type="button"
-          variant={tool === "eraser" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setTool("eraser")}
-          className="gap-1.5"
-        >
-          <Eraser className="h-3.5 w-3.5" />
-          橡皮擦
-        </Button>
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          onClick={clearMask}
-          disabled={!hasMask}
+          onClick={clearSelection}
+          disabled={!hasSelection}
           className="gap-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 disabled:opacity-30"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          清除全部
+          清除選區
         </Button>
-
         <span className="ml-auto text-xs text-gray-400">
-          在圖片上塗抹以標記修改區域
+          {hasSelection ? "選區已設定，輸入修改指令後點「開始修改」" : "拖拉圈選要修改的區域"}
         </span>
       </div>
     </div>

@@ -5,10 +5,10 @@
  * 色盤逐色開關；其他注意事項。生成走 POST /api/library/generate。
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import {
   X, Copy, Check, Sparkles, LayoutTemplate, Palette,
-  Image as ImageIcon, Target, StickyNote, Loader2, Upload, Plus, Trash2, Type, Lock, Wand2, RotateCcw,
+  Image as ImageIcon, StickyNote, Loader2, Upload, Plus, Trash2, Type, Lock, Wand2, RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PromptSlots, StyleComponent, ComponentCategory, PaletteColor, PaletteRole } from "@/types/library";
@@ -16,6 +16,10 @@ import { CATEGORY_META, getColors, PALETTE_ROLES, SHOW_SERIES_TEMPLATE } from "@
 import { ColorCards } from "./ColorCards";
 import { SlotPickerModal } from "./SlotPickerModal";
 import { INDUSTRY_PRESETS } from "@/types/presets";
+import { useRotatingHint } from "@/hooks/useRotatingHint";
+
+// 生成 loading 輪播提示（保留時間估計，額外報進度）
+const GEN_HINTS = ["正在生成 AI 圖片…", "分析構圖 / 配色…", "合成場景中…", "處理光影細節…", "快好喇，請稍候…"];
 
 type Prefill = { subject?: string; notes?: string; useFlags?: Record<string, boolean> };
 
@@ -27,7 +31,12 @@ type Props = {
   onGenerated?: () => void;
   prefill?: Prefill;
   prefillNonce?: number;
+  // 通知上層（modal header）：組裝台有冇內容（用嚟決定 header「清空重來」掣顯示與否）。
+  onDirtyChange?: (dirty: boolean) => void;
 };
+
+// 暴露俾上層（ProductComposeModal header）調用嘅 handle。
+export type PromptComposerHandle = { reset: () => void };
 
 // A palette row mirrors QuickAddModal: fixed 5 roles, checkbox toggles enabled.
 type PalRow = { role: PaletteRole; label: string; hex: string; enabled: boolean };
@@ -49,12 +58,13 @@ function buildPaletteRows(comp: StyleComponent | null): PalRow[] {
 /** Build the Traditional-Chinese design brief (this is what the user edits; server translates → English).
  *  NOTE: 背景 is an image asset used only in 合成 mode, so it is intentionally NOT part of the text brief. */
 function buildChineseBrief(args: {
-  subject: string; layoutDesc: string; toneLabels: string[]; usedColors: PaletteColor[]; notes: string;
+  subject: string; layoutDesc: string; toneLabels: string[]; usedColors: PaletteColor[]; notes: string; backgroundDesc?: string;
 }): string {
   const lines: string[] = [];
   if (args.subject.trim()) lines.push(`主體：${args.subject.trim()}`);
   if (args.layoutDesc.trim()) lines.push(`構圖：${args.layoutDesc.trim()}`);
   if (args.usedColors.length) lines.push(`配色：${args.usedColors.map((c) => `${c.label} ${c.hex}`).join("、")}`);
+  if (args.backgroundDesc?.trim()) lines.push(`背景：${args.backgroundDesc.trim()}`);
   if (args.toneLabels.length) lines.push(`風格語氣：${args.toneLabels.join("、")}`);
   if (args.notes.trim()) lines.push(`其他要求：${args.notes.trim()}`);
   return lines.join("\n");
@@ -119,6 +129,7 @@ function SlotCard({
 
   return (
     <div
+      onClick={!filled ? onPick : undefined}
       className={`rounded-xl border p-3 transition-all ${filled ? `${meta.bg} ${meta.border}` : "border-dashed border-gray-200 bg-gray-50 hover:border-gray-300 cursor-pointer hover:shadow-sm"}`}>
       {/* Header — click to (re)pick the source material */}
       <div className="flex items-center justify-between">
@@ -175,20 +186,41 @@ function SlotCard({
   );
 }
 
+// 編號分段標題（同活動圖頁 ActivityForm 一致）
+function SectionLabel({ step, title, hint }: { step: string; title: string; hint?: string }) {
+  return (
+    <div className="flex items-baseline gap-2 border-b pb-1.5">
+      <span className="text-[10px] font-bold text-gray-400 tracking-widest">{step}</span>
+      <span className="text-sm font-semibold text-gray-800">{title}</span>
+      {hint && <span className="text-xs text-gray-400 font-normal">{hint}</span>}
+    </div>
+  );
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
-export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGenerated, prefill, prefillNonce }: Props) {
+export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function PromptComposer(
+  { slots, onClearSlot, onPickSlot, clientId, onGenerated, prefill, prefillNonce, onDirtyChange }, ref) {
   const [subject, setSubject] = useState("");
   const [notes, setNotes] = useState("");
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [bgAsImage, setBgAsImage] = useState(false); // 背景：false=作文字參考(預設) / true=直接用背景圖合成
   const [genError, setGenError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ imageUrl: string; copyText: string } | null>(null);
   const [pickerCategory, setPickerCategory] = useState<ComponentCategory | null>(null);
   // #3 多輸出（合成）：一次生 N 張 draft（唔即刻入庫）→ 揀邊張保留。
   const [count, setCount] = useState(1);
   // draft 各自帶用咗嘅產品圖（系列圖時每張得一件）。
   const [drafts, setDrafts] = useState<{ imageUrl: string; copyText: string; mode: string; selected: boolean; productImageUrls: string[] }[] | null>(null);
   const [savingDrafts, setSavingDrafts] = useState(false);
+  // 生成完成（drafts 一出）自動 scroll 落揀圖區（同素材生成一致）。
+  // ref 擺喺真正嘅 drafts 容器（唔再用 0 高度空錨點）+ block:"start"；draft 圖 async load，
+  // 用 setTimeout 等 layout settle 先 scroll，否則塊區仲未有高度，scroll 唔到位。
+  const resultRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!drafts) return;
+    const t = setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+    return () => clearTimeout(t);
+  }, [drafts]);
   // #4 系列圖：固定模板貼圖（方案 A）—— 每件產品貼喺固定背景嘅固定位置/尺寸，100% 一致。
   const [seriesMode, setSeriesMode] = useState(false);
   // 擺位：scale=產品高度佔比，x/y=產品中心（0–1）。可拖預覽 + 滑桿調大小。
@@ -207,12 +239,28 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
   const [productUrls, setProductUrls] = useState<string[]>([]);
   const MAX_PRODUCTS = 3;
   const [productUploading, setProductUploading] = useState(false);
-  // Output size — 正方形 1200×1200 or 橫向 1800×1200.
-  const [size, setSize] = useState<"square" | "landscape">("square");
+  // Output size — 8 比例（同活動圖頁一致）+ 自訂；底層一律換算成確切 W×H 送 size:"custom"（後端 line 63 用 exact dims，毋須改後端）。
+  const RATIO_DIMS: Record<string, { w: number; h: number }> = {
+    "1:1": { w: 1200, h: 1200 }, "4:5": { w: 1200, h: 1500 }, "3:4": { w: 1200, h: 1600 },
+    "2:3": { w: 1200, h: 1800 }, "9:16": { w: 1080, h: 1920 }, "4:3": { w: 1600, h: 1200 },
+    "3:2": { w: 1800, h: 1200 }, "16:9": { w: 1920, h: 1080 },
+  };
+  const [ratio, setRatio] = useState<string>("1:1");
+  const [customW, setCustomW] = useState(1200);
+  const [customH, setCustomH] = useState(1200);
+  // 揀比例 → 自動填 W×H（可再改，改時鎖住比例）；自訂 → 自由 W×H。outDims 一律用 customW/H。
+  const outDims = { w: customW, h: customH };
+  const pickRatio = (r: string) => { setRatio(r); if (r !== "custom") { setCustomW(RATIO_DIMS[r].w); setCustomH(RATIO_DIMS[r].h); } };
+  const changeDim = (which: "w" | "h", v: number) => {
+    const rd = RATIO_DIMS[ratio];
+    if (which === "w") { setCustomW(v); if (ratio !== "custom" && rd) setCustomH(Math.round(v * rd.h / rd.w)); }
+    else { setCustomH(v); if (ratio !== "custom" && rd) setCustomW(Math.round(v * rd.w / rd.h)); }
+  };
   // 合成方式引擎（全部支援多產品）：flux2edit（主力）/ nano / seedream / qwen / paste（文字保真貼圖）。
   const [engine, setEngine] = useState<"flux2edit" | "nano" | "seedream" | "qwen" | "paste">("flux2edit");
   const [describing, setDescribing] = useState(false);
   const composite = inputMode === "image" && productUrls.length > 0;
+  const genHint = useRotatingHint(generating, GEN_HINTS);
   // 五個引擎全部支援多產品，毋須單圖限制。
   const effEngine = engine;
 
@@ -226,6 +274,9 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
   const enabledColors: PaletteColor[] = effRows.filter((r) => r.enabled).map((r) => ({ hex: r.hex, role: r.role, label: r.label }));
   const effLayoutDesc = layoutDescOv ?? ((slots.layout?.data?.description as string) ?? "");
   const effToneLabels = toneLabelsOv ?? ((slots.tone?.data?.toneLabels as string[]) ?? []);
+  // 有冇「臨時改咗」揀落嗰個 block（用嚟決定儲存嗰陣要唔要起一個新 block，唔好靜雞雞冒認舊 id）。
+  const colorEdited = paletteRows !== null && JSON.stringify(paletteRows) !== JSON.stringify(buildPaletteRows(slots.color));
+  const layoutEdited = layoutDescOv !== null && layoutDescOv !== ((slots.layout?.data?.description as string) ?? "");
 
   // Reset overrides when a slot's source material changes — using React's documented
   // "adjust state during render by comparing to previous state" pattern (no effects),
@@ -246,8 +297,10 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
   }, [prefillNonce]);
 
   const usedColors = enabledColors;
+  // 背景用法：預設「作文字參考」（把背景 AI Prompt 拉入設計描述、唔合成圖）；可切「直接用背景圖」合成。
+  const bgText = ((slots.background?.data?.description as string) || slots.background?.aiPromptText || slots.background?.name || "").trim();
   // The auto-built brief is Traditional Chinese; server translates it to English for FLUX.
-  const autoPrompt = buildChineseBrief({ subject, layoutDesc: effLayoutDesc, toneLabels: effToneLabels, usedColors, notes });
+  const autoPrompt = buildChineseBrief({ subject, layoutDesc: effLayoutDesc, toneLabels: effToneLabels, usedColors, notes, backgroundDesc: !bgAsImage ? bgText : "" });
   // Read-only preview: the brief is fully derived from the fields above (no manual edit here).
   const compiledPrompt = autoPrompt;
   // 潤色後用擴寫版（可編輯）做最終 brief；否則用自動產生嘅。呢個 brief 會存入結果嘅 AI Prompt。
@@ -285,7 +338,8 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
   function buildSceneBrief(): string {
     const lines: string[] = [];
     if (effLayoutDesc.trim()) lines.push(`構圖：${effLayoutDesc.trim()}`);
-    if (slots.background?.name) lines.push(`背景：${slots.background.name}`);
+    // 文字參考模式：用背景嘅完整 AI Prompt 描述場景；直接用圖模式：只放名做提示（圖會合成）。
+    if (bgText) lines.push(`背景：${bgAsImage ? (slots.background?.name ?? bgText) : bgText}`);
     if (usedColors.length) lines.push(`配色：${usedColors.map((c) => `${c.label} ${c.hex}`).join("、")}`);
     if (effToneLabels.length) lines.push(`風格語氣：${effToneLabels.join("、")}`);
     if (notes.trim()) lines.push(`其他要求：${notes.trim()}`);
@@ -294,7 +348,8 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
   // 潤色來源：合成→場景 brief；文字→完整 brief（補上背景名，令潤色會讀背景文字）。
   function buildPolishSource(): string {
     if (composite) return buildSceneBrief();
-    return slots.background?.name ? `${effectiveBrief}\n背景：${slots.background.name}` : effectiveBrief;
+    // 文字模式：背景文字已由 buildChineseBrief 併入 effectiveBrief（作文字參考時），毋須再補。
+    return effectiveBrief;
   }
 
   // #2 潤色寫手：擴寫目前 brief → 可編輯覆寫。
@@ -376,8 +431,8 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
   // Build effective slots reflecting the inline edits (so copy/tone uses the latest values).
   const buildEffectiveSlots = (): PromptSlots => ({
     layout: slots.layout ? { ...slots.layout, data: { ...slots.layout.data, description: effLayoutDesc } } : null,
-    background: slots.background, // image-only asset, used as-is in 合成 mode
-    color: slots.color ? { ...slots.color, data: { ...slots.color.data, colors: enabledColors } } : null,
+    background: bgAsImage ? slots.background : null, // 直接用背景圖→送圖合成；作文字參考→唔送圖（由 brief 文字生成場景）
+    color: slots.color ? { ...slots.color, data: { ...slots.color.data, colors: enabledColors, primaryColor: enabledColors.find((c) => c.role === "primary")?.hex, secondaryColor: enabledColors.find((c) => c.role === "secondary")?.hex } } : null,
     tone: slots.tone ? { ...slots.tone, data: { ...slots.tone.data, toneLabels: effToneLabels } } : null,
   });
 
@@ -385,13 +440,13 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
     if (!canGenerate) return;
     setGenerating(true);
     setGenError(null);
-    setResult(null);
     setDrafts(null);
     try {
       const palette = buildPalette();
       const effectiveSlots = buildEffectiveSlots();
       const baseBody = {
-        clientId, subject, slots: effectiveSlots, palette, notes, size,
+        clientId, subject, slots: effectiveSlots, palette, notes,
+        size: "custom", customW: outDims.w, customH: outDims.h,
         engine: composite ? effEngine : undefined,
         productImageUrls: composite ? productUrls : undefined,
         productImageUrl: composite ? productUrls[0] : undefined,
@@ -410,13 +465,13 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
         let sharedBg = (slots.background?.data?.imageUrl as string | undefined) || undefined;
         if (!sharedBg) {
           const bgPrompt = `${buildSceneBrief() || "簡潔專業棚拍背景、柔光"}，純背景場景，無產品、無人物、無文字`;
-          const bgRes = await postJson({ clientId, customPrompt: bgPrompt, size, draftOnly: true });
+          const bgRes = await postJson({ clientId, customPrompt: bgPrompt, size: "custom", customW: outDims.w, customH: outDims.h, draftOnly: true });
           sharedBg = bgRes.imageUrl;
           if (!sharedBg) throw new Error("共用背景生成失敗，請重試");
         }
         const results = await Promise.allSettled(productUrls.map((p) =>
           fetch("/api/library/template-paste", { method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ bgImageUrl: sharedBg, productImageUrl: p, placement, size, harmonize }) }).then((r) => r.json())));
+            body: JSON.stringify({ bgImageUrl: sharedBg, productImageUrl: p, placement, size: ratio, harmonize }) }).then((r) => r.json())));
         const ok = results
           .map((r, i) => r.status === "fulfilled" && r.value?.imageUrl
             ? { imageUrl: r.value.imageUrl as string, copyText: "", mode: "paste-template", selected: true, productImageUrls: [productUrls[i]] }
@@ -424,25 +479,68 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
           .filter((x): x is NonNullable<typeof x> => !!x);
         if (!ok.length) throw new Error("系列圖全部生成失敗，請重試");
         setDrafts(ok);
-      } else if (composite && count > 1) {
-        // #3 合成多輸出：平行生 N 張 draft（同一組產品）→ 揀。
+      } else {
+        // 一律 draftOnly（唔即刻入庫）→ 跳結果俾你揀/確認 → saveDrafts 先 save-image。
+        // 對齊 背景/人像/插畫：產品成圖（合成 or 文字）都唔再直接落 gallery。
         const results = await Promise.allSettled(Array.from({ length: count }, () => post({ draftOnly: true })));
         const ok = results
           .filter((r): r is PromiseFulfilledResult<{ imageUrl: string; copyText?: string; mode?: string }> => r.status === "fulfilled" && !!r.value?.imageUrl)
-          .map((r) => ({ imageUrl: r.value.imageUrl, copyText: r.value.copyText ?? "", mode: r.value.mode ?? "flux2-edit", selected: true, productImageUrls: productUrls }));
+          .map((r) => ({ imageUrl: r.value.imageUrl, copyText: r.value.copyText ?? "", mode: r.value.mode ?? (composite ? "flux2-edit" : "flux"), selected: true, productImageUrls: composite ? productUrls : [] }));
         if (!ok.length) throw new Error("全部生成失敗，請重試");
         setDrafts(ok);
-      } else {
-        const data = await post({});
-        if (data.error) throw new Error(data.error);
-        setResult({ imageUrl: data.imageUrl, copyText: data.copyText ?? "" });
-        onGenerated?.();
       }
     } catch (e: unknown) {
       setGenError(e instanceof Error ? e.message : "生成失敗，請重試");
     } finally {
       setGenerating(false);
     }
+  }
+
+  // 清空成個組裝台，返初始空白狀態（開新設計）。
+  // 兩處會 call：① saveDrafts 儲存成功後自動清；② header「清空重來」手動掣。
+  // 只清設計內容（主體/產品圖/積木/說明/潤色/範本），保留輸出設定（比例/引擎/數量）。
+  function resetComposer() {
+    setSubject("");
+    setNotes("");
+    setProductUrls([]);
+    setPolishedBrief(null);
+    setActivePreset(null);
+    setInputMode("image");
+    setSeriesMode(false);
+    setBgAsImage(false);
+    setLayoutDescOv(null);
+    setToneLabelsOv(null);
+    setPaletteRows(null);
+    (["layout", "color", "tone", "background"] as (keyof PromptSlots)[]).forEach((k) => onClearSlot(k));
+  }
+
+  // 暴露 reset 俾 modal header 調用；並通知上層「有冇內容」（決定 header「清空重來」掣顯示）。
+  useImperativeHandle(ref, () => ({ reset: resetComposer }));
+  const composerDirty = !!(subject || notes || productUrls.length > 0 || slots.layout || slots.color || slots.tone || slots.background || polishedBrief || activePreset);
+  useEffect(() => { onDirtyChange?.(composerDirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerDirty]);
+
+  // 臨時改咗先生成 → 儲存嗰陣：改咗就起一個新 StyleComponent（新 id），未改就照用原本嗰個 id，
+  // 唔好用返舊 id 夾帶新內容（否則個 id 會同 library 入面「真身」對唔上，見 docs 討論）。
+  // previewUrl = 生成出嚟嗰張圖 → picker card 顯示返該產品圖（唔止色塊）。
+  async function materializeEditedSlots(ownerImageUrl?: string): Promise<PromptSlots> {
+    const base = buildEffectiveSlots();
+    if (layoutEdited && base.layout) {
+      const res = await fetch("/api/components", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `${base.layout.name}（已調整）`, type: "COMPOSITION", clientId, data: base.layout.data, aiPromptText: base.layout.aiPromptText, previewUrl: ownerImageUrl }),
+      });
+      if (res.ok) { const saved = await res.json(); base.layout = { ...base.layout, id: saved.id, name: saved.name, previewUrl: saved.previewUrl ?? null }; }
+    }
+    if (colorEdited && base.color) {
+      const res = await fetch("/api/components", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `${base.color.name}（已調整）`, type: "COLOR_SCHEME", clientId, data: base.color.data, aiPromptText: base.color.aiPromptText, previewUrl: ownerImageUrl }),
+      });
+      if (res.ok) { const saved = await res.json(); base.color = { ...base.color, id: saved.id, name: saved.name, previewUrl: saved.previewUrl ?? null }; }
+    }
+    return base;
   }
 
   // #3 揀完 draft → 逐張存入圖庫（save-image，建 LibraryImage）。
@@ -453,17 +551,23 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
     setGenError(null);
     try {
       const palette = buildPalette();
-      const effectiveSlots = buildEffectiveSlots();
-      const promptStr = `[AI 合成] ${(polishedBrief || compiledPrompt || subject || "").trim()}`;
-      await Promise.all(sel.map((d) =>
-        fetch("/api/library/save-image", {
+      // 用第一張選定 draft 嘅圖做 owner（materialize 出嚟嘅 block 由呢批 draft 共用）。
+      const effectiveSlots = await materializeEditedSlots(sel[0]?.imageUrl);
+      await Promise.all(sel.map((d) => {
+        const isComposite = d.productImageUrls.length > 0;
+        const promptStr = isComposite
+          ? `[AI 合成] ${(polishedBrief || compiledPrompt || subject || "").trim()}`
+          : (effectiveBrief || compiledPrompt || subject || "").trim();
+        const params = isComposite
+          ? { slots: effectiveSlots, palette, notes, productImageUrl: d.productImageUrls[0], productImageUrls: d.productImageUrls, composite: true, mode: d.mode }
+          : { slots: effectiveSlots, palette, notes, customPrompt: effectiveBrief, mode: d.mode };
+        return fetch("/api/library/save-image", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clientId, imageUrl: d.imageUrl, subject, prompt: promptStr, copyText: d.copyText,
-            paramsJson: JSON.stringify({ slots: effectiveSlots, palette, notes, productImageUrl: d.productImageUrls[0], productImageUrls: d.productImageUrls, composite: true, mode: d.mode }),
-          }),
-        })));
+          body: JSON.stringify({ clientId, imageUrl: d.imageUrl, subject, prompt: promptStr, copyText: d.copyText, paramsJson: JSON.stringify(params) }),
+        });
+      }));
       setDrafts(null);
+      resetComposer(); // 儲存後自動清空成個組裝台（開新設計）；亦可撳 header「清空重來」手動清。
       onGenerated?.();
     } catch (e: unknown) {
       setGenError(e instanceof Error ? e.message : "儲存失敗，請重試");
@@ -473,15 +577,10 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
   }
 
   return (
-    <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b bg-gradient-to-r from-gray-50 to-white flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-violet-500" />
-        <h3 className="font-semibold text-sm">Prompt 積木組合台</h3>
-        <span className="ml-auto text-xs text-gray-400">點積木揀素材，或從「風格組件」帶入</span>
-      </div>
-
-      <div className="p-5 space-y-5">
-        {/* Industry preset quick-fill */}
+    <div>
+      <div className="space-y-5">
+        {/* 套用行業範本：暫隱藏（hide · no use now）— 內部 header 已移除（modal 標題已表示） */}
+        {false && (
         <div>
           <label className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-violet-400" />套用行業範本（一鍵填入所有積木）
@@ -504,12 +603,11 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
             )}
           </div>
         </div>
+        )}
 
-        {/* Subject — 二選一: 文字主體 (純 AI) 或 產品圖 (合成用原圖) */}
+        {/* ── 01 主體物件 ── */}
+        <SectionLabel step="01" title="主體物件" hint="產品圖 或 文字，二選一" />
         <div className="space-y-2">
-          <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
-            <Target className="h-3.5 w-3.5 text-emerald-500" />主體物件（產品圖 或 文字，二選一）
-          </label>
 
           {/* Mode toggle */}
           <div className="flex gap-1.5">
@@ -534,7 +632,7 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
 
           {/* 文字模式提示：人像 / 插畫 已移至「素材生成」 */}
           {inputMode === "text" && (
-            <p className="text-[10px] text-gray-400 leading-snug pt-0.5">
+            <p className="text-[11px] text-gray-400 leading-snug pt-0.5">
               產品文字 + 積木 → 生成場景圖（FLUX）。需要「真人 / 2D 插畫 / 純背景」請用右上「素材生成」。
             </p>
           )}
@@ -580,17 +678,15 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
                 </button>
               </div>
             )}
-            <p className="text-[10px] text-gray-400 leading-snug mt-1.5">
+            <p className="text-[11px] text-gray-400 leading-snug mt-1.5">
               可加最多 3 件產品，AI 會自動去背、打光並擺入所選背景（無需事先去背）。多件產品會一齊合成入同一場景。
             </p>
           </div>
         </div>
 
-        {/* Style blocks — full-width stacked, placed below 主體物件. Each optional: 點卡片選取 / ✕ 移除 */}
+        {/* ── 02 風格積木 ── */}
+        <SectionLabel step="02" title="風格積木" hint="可選 · 點卡片選取素材，右上 ✕ 移除" />
         <div className="space-y-2.5">
-          <label className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-violet-400" />風格積木（可選，按需增減：點卡片選取素材，右上 ✕ 移除）
-          </label>
 
           <SlotCard category="COMPOSITION" icon={<LayoutTemplate className="h-4 w-4" />} emptyLabel="點擊選取構圖"
             component={slots.layout} onClear={() => onClearSlot("layout")} onPick={() => setPickerCategory("COMPOSITION")}
@@ -621,7 +717,7 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
                           className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-rose-400 shrink-0" />
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-medium text-gray-700 leading-none">{r.label}</div>
-                          <div className="text-[10px] text-gray-400 leading-none mt-0.5 truncate">{hint}</div>
+                          <div className="text-[11px] text-gray-400 leading-none mt-0.5 truncate">{hint}</div>
                         </div>
                       </div>
                     );
@@ -636,9 +732,29 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
           <SlotCard category="BACKGROUND" icon={<ImageIcon className="h-4 w-4" />} labelOverride="背景"
             emptyLabel="點擊選擇背景"
             component={slots.background} onClear={() => onClearSlot("background")} onPick={() => setPickerCategory("BACKGROUND")} />
+          {/* 背景用法：作文字參考（預設，拉背景描述入設計描述、AI 生成場景）／ 直接用背景圖（合成落張圖）*/}
+          {slots.background && (
+            <div className="space-y-1">
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => setBgAsImage(false)}
+                  className={`flex-1 text-[11px] px-2 py-1.5 rounded-lg border transition-colors ${!bgAsImage ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                  作文字參考（預設）
+                </button>
+                <button type="button" onClick={() => setBgAsImage(true)}
+                  className={`flex-1 text-[11px] px-2 py-1.5 rounded-lg border transition-colors ${bgAsImage ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                  直接用背景圖
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-400 leading-snug">
+                {bgAsImage ? "合成時把產品擺入呢張背景圖。" : "把背景嘅描述拉入下面「設計描述」，AI 依文字生成場景（可再改／潤色）；唔會直接用張圖。"}
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Notes */}
+        {/* ── 03 設計描述 ── */}
+        <SectionLabel step="03" title="設計描述" hint="注意事項 · 自動組裝 · 可 AI 潤色" />
+        {/* 其他注意事項（選填）— 放喺 03、潤色之前 */}
         <div className="space-y-1.5">
           <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
             <StickyNote className="h-3.5 w-3.5 text-amber-500" />其他注意事項（選填）
@@ -647,7 +763,6 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
             placeholder="例：不要加入紅色、營造溫暖放鬆感、避免文字、產品要清晰…"
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm resize-none placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 transition" />
         </div>
-
         {/* Compiled prompt — 唯讀預覽，或潤色後可編輯 */}
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -708,32 +823,19 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
               )}
               {slots.background && (slots.background.data?.imageUrl || slots.background.previewUrl) && (
                 <div className="text-[11px] text-violet-700 flex items-center gap-1.5">
-                  <ImageIcon className="h-3 w-3 shrink-0" />{productUrls.length >= 3
-                    ? `背景：3 件產品時，背景「${slots.background!.name}」只作文字參考（不直接合成）`
-                    : `背景：合成時將產品擺入背景「${slots.background!.name}」`}
+                  <ImageIcon className="h-3 w-3 shrink-0" />{!bgAsImage
+                    ? `背景「${slots.background!.name}」作文字參考（AI 依描述生成場景，不直接用圖）`
+                    : productUrls.length >= 3
+                      ? `背景：3 件產品時，背景「${slots.background!.name}」只作文字參考（不直接合成）`
+                      : `背景：合成時將產品擺入背景「${slots.background!.name}」`}
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* Output size */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-gray-500">輸出尺寸</label>
-          <div className="flex gap-1.5">
-            <button type="button" onClick={() => setSize("square")}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                size === "square" ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"}`}>
-              <span className="inline-block w-3 h-3 border border-current rounded-[2px]" />正方形 1200×1200
-            </button>
-            <button type="button" onClick={() => setSize("landscape")}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                size === "landscape" ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"}`}>
-              <span className="inline-block w-4 h-3 border border-current rounded-[2px]" />橫向 1800×1200
-            </button>
-          </div>
-        </div>
-
+        {/* ── 04 輸出設定 ── */}
+        <SectionLabel step="04" title="輸出設定" hint="尺寸 · 引擎 · 數量" />
         {/* Composite engine — only in composite (產品圖) mode */}
         {inputMode === "image" && (
           <div className="space-y-2">
@@ -751,7 +853,7 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
                 </button>
               ))}
             </div>
-            <p className="text-[10px] text-gray-400 leading-snug">
+            <p className="text-[11px] text-gray-400 leading-snug">
               主力 FLUX.2 edit 中文字保真最好（已自動餵高清原圖）。三者皆支援多產品；不加背景圖、由 AI 生成場景會更自然。
             </p>
 
@@ -774,7 +876,7 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
                   <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-3 space-y-2">
                     <div className="text-[11px] font-semibold text-violet-700">擺位（拖產品定位置・滑桿調大小）—— 所有產品共用</div>
                     <div
-                      className={`relative w-full mx-auto rounded-lg overflow-hidden border bg-gray-100 select-none touch-none ${size === "landscape" ? "max-w-[360px] aspect-[3/2]" : "max-w-[280px] aspect-square"}`}
+                      className={`relative w-full mx-auto rounded-lg overflow-hidden border bg-gray-100 select-none touch-none ${outDims.w > outDims.h ? "max-w-[360px] aspect-[3/2]" : "max-w-[280px] aspect-square"}`}
                       style={slots.background?.data?.imageUrl ? { backgroundImage: `url(${slots.background.data.imageUrl as string})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
                       onPointerDown={(e) => {
                         const box = e.currentTarget.getBoundingClientRect();
@@ -785,7 +887,7 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
                         window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp);
                       }}>
                       {!slots.background?.data?.imageUrl && (
-                        <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400 text-center px-2">未揀背景<br/>生成時自動鎖共用 AI 背景</div>
+                        <div className="absolute inset-0 flex items-center justify-center text-[11px] text-gray-400 text-center px-2">未揀背景<br/>生成時自動鎖共用 AI 背景</div>
                       )}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={productUrls[0]} alt="placement" draggable={false}
@@ -810,21 +912,47 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
               </>
             )}
 
-            {/* #3 生成數量：一次出多張俾你揀（系列模式時隱藏，張數＝產品件數）*/}
-            {!(seriesMode && productUrls.length >= 2) && (
-              <div className="flex items-center gap-3 pt-1">
-                <label className="text-xs font-semibold text-gray-500 whitespace-nowrap">生成數量</label>
-                <div className="flex gap-1.5">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button key={n} type="button" onClick={() => setCount(n)}
-                      className={`w-8 h-8 rounded-lg border text-sm font-medium transition-colors ${count === n ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
-                      {n}
-                    </button>
-                  ))}
-                </div>
-                {count > 1 && <span className="text-[10px] text-gray-400">出 {count} 張揀（成本 ×{count}）</span>}
-              </div>
-            )}
+          </div>
+        )}
+
+        {/* 輸出尺寸（比例）— 揀比例自動填 W×H，可再改（非自訂會鎖比例）；text/image 模式都 show */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-gray-500">輸出尺寸（比例）</label>
+          <div className="relative w-full">
+            <select value={ratio} onChange={(e) => pickRatio(e.target.value)}
+              className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer">
+              {["1:1", "4:5", "3:4", "2:3", "9:16", "4:3", "3:2", "16:9"].map((r) => (
+                <option key={r} value={r}>{r}（{RATIO_DIMS[r].w}×{RATIO_DIMS[r].h}）</option>
+              ))}
+              <option value="custom">自訂…</option>
+            </select>
+            <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+          <div className="flex items-center gap-2 pt-1.5">
+            <input type="number" min={256} max={2400} value={customW} onChange={(e) => changeDim("w", Number(e.target.value))}
+              className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400" />
+            <span className="text-xs text-gray-400">×</span>
+            <input type="number" min={256} max={2400} value={customH} onChange={(e) => changeDim("h", Number(e.target.value))}
+              className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400" />
+            <span className="text-[11px] text-gray-400">px · {ratio === "custom" ? "自由尺寸（256–2400）" : `改任一邊自動鎖 ${ratio} 比例`}</span>
+          </div>
+        </div>
+
+        {/* 生成數量（合成模式；系列模式時隱藏）— 04 最後 */}
+        {inputMode === "image" && !(seriesMode && productUrls.length >= 2) && (
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-semibold text-gray-500 whitespace-nowrap">生成數量</label>
+            <div className="flex gap-1.5">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} type="button" onClick={() => setCount(n)}
+                  className={`w-8 h-8 rounded-lg border text-sm font-medium transition-colors ${count === n ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            {count > 1 && <span className="text-[11px] text-gray-400">出 {count} 張揀（成本 ×{count}）</span>}
           </div>
         )}
 
@@ -833,7 +961,7 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
           className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-40">
           {(() => {
             const series = composite && seriesMode && productUrls.length >= 2;
-            if (generating) return <><Loader2 className="h-4 w-4 animate-spin" />{series ? `生成系列中…（${productUrls.length} 張）` : composite ? `合成中…${count > 1 ? `（${count} 張）` : ""}` : "生成中…（約 10–40 秒）"}</>;
+            if (generating) { const suffix = series ? `（${productUrls.length} 張）` : composite && count > 1 ? `（${count} 張）` : "（約 10–40 秒）"; return <><Loader2 className="h-4 w-4 animate-spin" />{genHint}{suffix}</>; }
             return <><Sparkles className="h-4 w-4" />{series ? `生成系列 ${productUrls.length} 張` : composite ? (count > 1 ? `合成 ${count} 張俾你揀` : "合成產品圖到背景") : "用此 Prompt 生成新圖"}</>;
           })()}
         </Button>
@@ -842,22 +970,9 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
           <div className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">⚠️ {genError}</div>
         )}
 
-        {/* Result（單張）*/}
-        {result && (
-          <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 flex gap-3 items-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={result.imageUrl} alt="generated" className="w-32 h-32 object-contain rounded-lg border shrink-0 bg-white" />
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold text-violet-700 flex items-center gap-1">
-                <Check className="h-3.5 w-3.5" />完成，已加入圖片紀錄
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* #3 多張 draft：揀邊張保留 */}
+        {/* 多張 draft：揀邊張保留（單張亦行此 path → 確認後先入庫，唔自動落 gallery）*/}
         {drafts && (
-          <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-3 space-y-3">
+          <div ref={resultRef} className="scroll-mt-2 rounded-xl border border-violet-200 bg-violet-50/40 p-3 space-y-3">
             <div className="text-xs font-semibold text-violet-700">
               點擊選取要保留的圖（已選 {drafts.filter((d) => d.selected).length}/{drafts.length}）
             </div>
@@ -900,4 +1015,4 @@ export function PromptComposer({ slots, onClearSlot, onPickSlot, clientId, onGen
       )}
     </div>
   );
-}
+});

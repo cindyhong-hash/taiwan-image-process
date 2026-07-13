@@ -38,17 +38,36 @@ async function loadImageBuffer(url: string, host: string): Promise<Buffer> {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { clientId, subject, slots, palette, notes, seed, productImageUrl, productImageUrls, composite, customPrompt, draftOnly, size, engine, upscaleSource, overlay, genType, sceneOverride, refImageUrl } = body ?? {};
+    const { clientId, subject, slots, palette, notes, seed, productImageUrl, productImageUrls, composite, customPrompt, draftOnly, size, customW, customH, engine, upscaleSource, overlay, genType, sceneOverride, refImageUrl } = body ?? {};
     // Support 1–3 product photos. New clients send productImageUrls[]; keep productImageUrl for back-compat.
     const productUrls: string[] = (Array.isArray(productImageUrls) && productImageUrls.length
       ? productImageUrls
       : (productImageUrl ? [productImageUrl] : [])).slice(0, 3);
     const host = new URL(request.url).origin;
 
-    // Output size: 正方形 1200×1200 or 橫向 1800×1200.
-    const outW = size === "landscape" ? 1800 : 1200;
-    const outH = 1200;
-    const aspectRatio = size === "landscape" ? "3:2" : "1:1";
+    // Output size 對照表（wireframe ⑧）：正方形 / 橫向 / 直向 / 限時動態。
+    const SIZE_MAP: Record<string, { w: number; h: number; ar: string }> = {
+      square:    { w: 1200, h: 1200, ar: "1:1" },
+      landscape: { w: 1800, h: 1200, ar: "3:2" },
+      portrait:  { w: 1200, h: 1800, ar: "2:3" },
+      story:     { w: 1080, h: 1920, ar: "9:16" },
+    };
+    // 自訂尺寸：用戶輸入 闊×高（clamp 256–2400）；aspectRatio 取最接近嘅支援比例（引擎用），
+    // 最終 sharp 會裁到實際 outW×outH，所以比例近似唔影響成品尺寸。
+    function nearestAR(w: number, h: number): string {
+      const r = w / h;
+      const cands: [string, number][] = [["1:1", 1], ["3:2", 1.5], ["2:3", 0.667], ["16:9", 1.778], ["9:16", 0.5625]];
+      return cands.reduce((best, c) => Math.abs(c[1] - r) < Math.abs(best[1] - r) ? c : best)[0];
+    }
+    let outW: number, outH: number, aspectRatio: string;
+    if (size === "custom" && Number(customW) > 0 && Number(customH) > 0) {
+      outW = Math.min(2400, Math.max(256, Math.round(Number(customW))));
+      outH = Math.min(2400, Math.max(256, Math.round(Number(customH))));
+      aspectRatio = nearestAR(outW, outH);
+    } else {
+      const dim = SIZE_MAP[size as string] ?? SIZE_MAP.square;
+      outW = dim.w; outH = dim.h; aspectRatio = dim.ar;
+    }
     // Force the final image to the exact target dimensions (cover) — guarantees the 2 sizes
     // regardless of what each provider returns.
     const fitToSize = async (buf: Buffer) =>

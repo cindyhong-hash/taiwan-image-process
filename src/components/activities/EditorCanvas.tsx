@@ -1,55 +1,116 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, Sparkles, Wand2 } from "lucide-react";
-import { MaskCanvas } from "@/components/activities/MaskCanvas";
+import { Download, Loader2, Sparkles, Wand2, RotateCcw, CheckCircle2, ImagePlus, X } from "lucide-react";
+import { MaskCanvas, type SelectionBounds } from "@/components/activities/MaskCanvas";
 
 type Props = {
   layout: { id: string; imageUrl: string; copyText: string; layoutType: string };
+  brandLogoUrl?: string;
 };
 
 const COPY_TRANSFORMS = [
   { label: "再簡短一點", instruction: "請把這段文案縮短一半，保留核心意思" },
-  { label: "更有衝勁", instruction: "請讓這段文案更有能量、更有購買衝動感" },
-  { label: "更正式", instruction: "請讓這段文案更專業正式" },
-  { label: "換諧音梗", instruction: "請在這段文案中加入一個有趣的諧音梗或雙關語" },
+  { label: "更有衝勁",   instruction: "請讓這段文案更有能量、更有購買衝動感" },
+  { label: "更正式",     instruction: "請讓這段文案更專業正式" },
+  { label: "換諧音梗",   instruction: "請在這段文案中加入一個有趣的諧音梗或雙關語" },
 ];
 
-export function EditorCanvas({ layout }: Props) {
-  const [copyText, setCopyText] = useState(layout.copyText);
-  const [bgColor, setBgColor] = useState("#ffffff");
+export function EditorCanvas({ layout, brandLogoUrl }: Props) {
+  const [copyText,    setCopyText]    = useState(layout.copyText);
   const [transforming, setTransforming] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [maskDataUrl, setMaskDataUrl] = useState<string | null>(null);
+  const [exporting,   setExporting]   = useState(false);
+  const [maskDataUrl,      setMaskDataUrl]      = useState<string | null>(null);
+  const [selectionBounds,  setSelectionBounds]  = useState<SelectionBounds | null>(null);
   const [imagePrompt, setImagePrompt] = useState("");
-  const [inpainting, setInpainting] = useState(false);
-  const [inpaintResult, setInpaintResult] = useState<string | null>(null);
+  const [inpainting,  setInpainting]  = useState(false);
+  const [saving,      setSaving]      = useState(false);
+  const [refImageDataUrl, setRefImageDataUrl] = useState<string | null>(null);
+  const [refImageName,    setRefImageName]    = useState<string | null>(null);
+  const refInputRef = useRef<HTMLInputElement>(null);
 
-  /** 送出局部修改請求（目前 console.log，待後端 API 接好後替換） */
+  const handleRefImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRefImageName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setRefImageDataUrl(ev.target?.result as string);
+      // 如果指令欄是空的，自動填入文字風格參考提示
+      setImagePrompt(prev => prev.trim() ? prev : "參考參考圖的文字風格，套用到現有廣告的中文文字上");
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const clearRefImage = () => {
+    setRefImageDataUrl(null);
+    setRefImageName(null);
+  };
+  const [saved,       setSaved]       = useState(false);
+
+  // 歷史 stack — 初始值直接用 layout.imageUrl（已是 DB 最新版）
+  const [imageHistory, setImageHistory] = useState<string[]>([layout.imageUrl]);
+  const currentImage = imageHistory[imageHistory.length - 1];
+  const canUndo      = imageHistory.length > 1;
+  const isModified   = currentImage !== layout.imageUrl;
+
+  const undo = () => setImageHistory((h) => h.slice(0, -1));
+
+  /** 局部重繪 */
   const handleInpaint = async () => {
-    if (!imagePrompt.trim()) return;
+    if (!imagePrompt.trim() && !refImageDataUrl) return;
     setInpainting(true);
     try {
-      // TODO: 替換為真實 inpainting API
-      // const res = await fetch("/api/inpaint", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     imageUrl: layout.imageUrl,   // 原圖
-      //     maskDataUrl,                 // 塗鴉遮罩 (白=修改區, 黑=保留區)
-      //     prompt: imagePrompt,         // 修改指令
-      //   }),
-      // });
-      // const data = await res.json();
-      // setInpaintResult(data.imageUrl);
-      console.log("[Inpaint payload]", {
-        imageUrl: layout.imageUrl,
-        hasMask: !!maskDataUrl,
-        prompt: imagePrompt,
+      const res = await fetch("/api/inpaint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl:        currentImage,
+          maskDataUrl,
+          selectionBounds,
+          prompt:          imagePrompt,
+          referenceImageDataUrl: refImageDataUrl ?? undefined,
+          brandLogoUrl:    brandLogoUrl ?? undefined,
+        }),
       });
-      await new Promise((r) => setTimeout(r, 1500)); // mock delay
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? await res.text());
+
+      // 推入歷史，同時重置 mask（key 改變 → MaskCanvas 重新 mount，遮罩清除）
+      setImageHistory((h) => [...h, data.imageUrl]);
+      setMaskDataUrl(null);
+      setSelectionBounds(null);
+      setImagePrompt("");
+      setRefImageDataUrl(null);
+      setRefImageName(null);
+      setSaved(false);
+    } catch (err) {
+      console.error("[inpaint]", err);
+      alert(err instanceof Error ? err.message : "局部重繪失敗，請查看 console");
     } finally {
       setInpainting(false);
+    }
+  };
+
+  /** 完成此版本 — 把 currentImage 寫回 DB */
+  const handleSave = async () => {
+    if (!isModified) return;
+    setSaving(true);
+    try {
+      await fetch(`/api/layouts/${layout.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: currentImage }),
+      });
+      setSaved(true);
+      // 將歷史壓縮成只剩儲存後的版本（讓下次回來仍顯示最新結果）
+      setImageHistory([currentImage]);
+    } catch (err) {
+      console.error("[save]", err);
+      alert("儲存失敗");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -74,7 +135,7 @@ export function EditorCanvas({ layout }: Props) {
       const res = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: layout.imageUrl, size }),
+        body: JSON.stringify({ imageUrl: currentImage, size }),
       });
       const data = await res.json();
       const link = document.createElement("a");
@@ -90,72 +151,125 @@ export function EditorCanvas({ layout }: Props) {
   return (
     <div className="grid grid-cols-[1fr_1fr] xl:grid-cols-[1fr_340px_340px] gap-8 items-start">
 
-      {/* ── Col 1: Image preview + mask canvas ── */}
-      <div className="space-y-4">
+      {/* ── Col 1: Image ── */}
+      <div className="space-y-3">
+
+        {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="font-medium">圖片預覽</h2>
-          {maskDataUrl && (
-            <span className="text-xs text-blue-500 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-              遮罩已就緒
-            </span>
+          <div className="flex items-center gap-2">
+            {maskDataUrl && !inpainting && (
+              <span className="text-xs text-blue-500 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                遮罩已就緒
+              </span>
+            )}
+            {canUndo && !inpainting && (
+              <button
+                onClick={undo}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-400 rounded-lg px-2 py-1 transition-all"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                上一步
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Canvas — key={currentImage} 讓 inpaint 完成後遮罩自動清除 */}
+        <div className="relative rounded-xl overflow-hidden">
+          <MaskCanvas
+            key={currentImage}
+            imageUrl={currentImage}
+            onMaskChange={setMaskDataUrl}
+            onSelectionChange={setSelectionBounds}
+          />
+
+          {/* Loading overlay */}
+          {inpainting && (
+            <div className="absolute inset-0 bg-black/65 backdrop-blur-[2px] flex flex-col items-center justify-center gap-4 z-20 rounded-xl">
+              <div className="relative">
+                {/* Outer ring */}
+                <div className="w-16 h-16 rounded-full border-4 border-white/20" />
+                {/* Spinning arc */}
+                <div className="absolute inset-0 w-16 h-16 rounded-full border-4 border-transparent border-t-white animate-spin" />
+                {/* Center icon */}
+                <Sparkles className="absolute inset-0 m-auto h-6 w-6 text-white/80" />
+              </div>
+              <div className="text-center">
+                <p className="text-white font-semibold text-sm">AI 正在修改圖片</p>
+                <p className="text-white/60 text-xs mt-1">通常需要 15–30 秒</p>
+              </div>
+            </div>
           )}
         </div>
 
-        <div style={{ backgroundColor: bgColor }} className="rounded-xl overflow-hidden">
-          <MaskCanvas
-            imageUrl={inpaintResult ?? layout.imageUrl}
-            brushSize={20}
-            onMaskChange={setMaskDataUrl}
-          />
-        </div>
+        {/* 完成此版本 banner — 有修改且尚未儲存時顯示 */}
+        {isModified && !inpainting && (
+          <div className={`rounded-xl border p-3 flex items-center justify-between gap-3 transition-all ${
+            saved
+              ? "bg-emerald-50 border-emerald-200"
+              : "bg-amber-50 border-amber-200"
+          }`}>
+            <div>
+              <p className={`text-sm font-medium ${saved ? "text-emerald-700" : "text-amber-700"}`}>
+                {saved ? "✅ 已儲存為最終版本" : "圖片已修改，尚未儲存"}
+              </p>
+              <p className={`text-xs mt-0.5 ${saved ? "text-emerald-600" : "text-amber-600"}`}>
+                {saved
+                  ? "下次回到這個頁面會顯示此版本"
+                  : "點擊「完成此版本」將修改後的圖片存回系統"}
+              </p>
+            </div>
+            {!saved && (
+              <Button
+                onClick={handleSave}
+                disabled={saving}
+                size="sm"
+                className="shrink-0 gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {saving
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <CheckCircle2 className="h-3.5 w-3.5" />}
+                <span>{saving ? "儲存中…" : "完成此版本"}</span>
+              </Button>
+            )}
+          </div>
+        )}
 
-        {/* bg color + export */}
-        <div className="flex items-center gap-3">
-          <label className="text-sm text-gray-600">背景色</label>
-          <input
-            type="color"
-            value={bgColor}
-            onChange={(e) => setBgColor(e.target.value)}
-            className="h-8 w-10 rounded border cursor-pointer"
-          />
-          <span className="text-xs text-gray-400">{bgColor}</span>
-        </div>
+        {/* Export */}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => exportImage("fb")} disabled={exporting}>
             {exporting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
-            FB 尺寸
+            <span>FB 尺寸</span>
           </Button>
           <Button variant="outline" size="sm" onClick={() => exportImage("ig")} disabled={exporting}>
             {exporting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
-            IG 尺寸
+            <span>IG 尺寸</span>
           </Button>
         </div>
       </div>
 
-      {/* ── Col 2: Image prompt (inpainting) ── */}
+      {/* ── Col 2: Inpainting ── */}
       <div className="space-y-4">
         <h2 className="font-medium flex items-center gap-1.5">
           <Wand2 className="h-4 w-4 text-violet-500" />
           圖片微調
         </h2>
 
-        {/* Instruction card */}
         <div className="rounded-xl border bg-violet-50/60 p-4 space-y-3">
           <p className="text-xs text-violet-700 leading-relaxed">
-            <span className="font-semibold">使用方式：</span>先在左側圖片上塗抹想修改的區域，再輸入修改指令，點擊「開始修改」。
+            <span className="font-semibold">使用方式：</span>在左側圖片塗抹想修改的區域，輸入指令後點「開始修改」。
           </p>
 
-          {/* Mask status indicator */}
           <div className={`flex items-center gap-2 text-xs rounded-lg px-3 py-2 border ${
             maskDataUrl
               ? "bg-blue-50 border-blue-200 text-blue-700"
               : "bg-gray-50 border-gray-200 text-gray-400"
           }`}>
-            <span className={`inline-block w-2 h-2 rounded-full ${maskDataUrl ? "bg-blue-500" : "bg-gray-300"}`} />
-            {maskDataUrl ? "已選取修改範圍（塗鴉遮罩）" : "尚未圈選範圍（可選）"}
+            <span className={`w-2 h-2 rounded-full inline-block ${maskDataUrl ? "bg-blue-500" : "bg-gray-300"}`} />
+            {maskDataUrl ? "已選取修改範圍" : "尚未圈選範圍（可選）"}
           </div>
 
-          {/* Prompt textarea */}
           <textarea
             value={imagePrompt}
             onChange={(e) => setImagePrompt(e.target.value)}
@@ -164,47 +278,41 @@ export function EditorCanvas({ layout }: Props) {
             className="w-full rounded-lg border border-violet-200 bg-white p-3 text-sm resize-none placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 transition"
           />
 
-          {/* Submit */}
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500 font-medium">參考圖（選填）</p>
+            {refImageDataUrl ? (
+              <div className="flex items-center gap-3 rounded-lg border border-violet-200 bg-white p-2">
+                <img src={refImageDataUrl} alt="參考圖" className="h-14 w-14 rounded-md object-cover shrink-0 border" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-700 truncate">{refImageName}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">例如：「幫我換成這個女生的臉」</p>
+                </div>
+                <button onClick={clearRefImage} className="shrink-0 text-gray-400 hover:text-red-500 transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => refInputRef.current?.click()} className="w-full flex items-center gap-2 rounded-lg border border-dashed border-violet-200 bg-white hover:border-violet-400 hover:bg-violet-50 px-3 py-3 text-sm text-gray-400 hover:text-violet-600 transition-all">
+                <ImagePlus className="h-4 w-4 shrink-0" />
+                <span>上傳參考圖（臉部替換、風格參考…）</span>
+              </button>
+            )}
+            <input ref={refInputRef} type="file" accept="image/*" className="hidden" onChange={handleRefImageChange} />
+          </div>
+
           <Button
             onClick={handleInpaint}
-            disabled={inpainting || !imagePrompt.trim()}
+            disabled={inpainting || (!imagePrompt.trim() && !refImageDataUrl)}
             className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50"
           >
-            {inpainting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                生成中…
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-4 w-4" />
-                開始修改
-              </>
-            )}
+            {inpainting
+              ? <><Loader2 className="h-4 w-4 animate-spin" /><span>生成中…</span></>
+              : <><Sparkles className="h-4 w-4" /><span>開始修改</span></>}
           </Button>
-
-          {/* Payload preview (dev helper, remove in prod) */}
-          {(maskDataUrl || imagePrompt) && (
-            <details className="text-xs text-gray-400">
-              <summary className="cursor-pointer select-none">送出資料預覽</summary>
-              <pre className="mt-1 overflow-auto whitespace-pre-wrap break-all rounded bg-gray-100 p-2 text-[10px]">
-                {JSON.stringify(
-                  {
-                    imageUrl: inpaintResult ?? layout.imageUrl,
-                    hasMask: !!maskDataUrl,
-                    maskDataUrl: maskDataUrl ? maskDataUrl.slice(0, 60) + "…" : null,
-                    prompt: imagePrompt,
-                  },
-                  null,
-                  2
-                )}
-              </pre>
-            </details>
-          )}
         </div>
       </div>
 
-      {/* ── Col 3: Copy editor ── */}
+      {/* ── Col 3: Copy ── */}
       <div className="space-y-4">
         <h2 className="font-medium">文案微調</h2>
         <textarea
@@ -217,13 +325,8 @@ export function EditorCanvas({ layout }: Props) {
           <div className="text-sm text-gray-500">一鍵轉換語氣：</div>
           <div className="flex flex-wrap gap-2">
             {COPY_TRANSFORMS.map((t) => (
-              <Button
-                key={t.label}
-                variant="outline"
-                size="sm"
-                onClick={() => transformCopy(t.instruction)}
-                disabled={transforming}
-              >
+              <Button key={t.label} variant="outline" size="sm"
+                onClick={() => transformCopy(t.instruction)} disabled={transforming}>
                 {transforming ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
                 {t.label}
               </Button>

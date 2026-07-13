@@ -9,8 +9,11 @@
  * 生成用 draftOnly（存檔不入庫），未選的不會出現在圖庫。可先「✨潤色」擴寫描述再生成。
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { X, Wand2, Loader2, Check, Save, ImageIcon, UserRound, Palette, Link2, Sparkles, Upload, RefreshCw } from "lucide-react";
+import { useRotatingHint } from "@/hooks/useRotatingHint";
+
+const GEN_HINTS = ["正在生成 AI 素材…", "分析色調 / 光影…", "描繪細節中…", "快好喇，請稍候…"];
 
 type GeneratedItem = { imageUrl: string; selected: boolean };
 type AssetType = "background" | "person" | "illustration";
@@ -21,6 +24,8 @@ type Props = {
   onSaved: () => void;
   /** Pre-fill values when opening from a popup's「重新生成/調整」action. */
   init?: { description?: string; refImageUrl?: string; type?: AssetType; engine?: "flux" | "nano" };
+  /** 由「新增產品／素材圖片」融合入口揀完類型進入 → 鎖死該類型、隱藏類型選擇器（wireframe ⑧）。 */
+  lockedType?: AssetType;
 };
 
 const TYPE_META: Record<AssetType, { label: string; sub: string; icon: React.ReactNode; placeholder: string }> = {
@@ -29,11 +34,38 @@ const TYPE_META: Record<AssetType, { label: string; sub: string; icon: React.Rea
   illustration: { label: "插畫", sub: "Recraft V3 · 2D 插畫", icon: <Palette className="h-3.5 w-3.5" />, placeholder: "例：可愛貓咪吉祥物，扁平插畫風，手持產品\n例：清新夏日海灘，2D 插畫，柔和色塊" },
 };
 
-export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) {
-  const [type, setType] = useState<AssetType>(init?.type ?? "background");
+// 編號分段標題（同產品圖生成台一致）
+function SectionLabel({ step, title, hint }: { step: string; title: string; hint?: string }) {
+  return (
+    <div className="flex items-baseline gap-2 border-b pb-1.5">
+      <span className="text-[10px] font-bold text-gray-400 tracking-widest">{step}</span>
+      <span className="text-sm font-semibold text-gray-800">{title}</span>
+      {hint && <span className="text-xs text-gray-400 font-normal">{hint}</span>}
+    </div>
+  );
+}
+
+export function GenerateAssetModal({ clientId, onClose, onSaved, init, lockedType }: Props) {
+  const [type, setType] = useState<AssetType>(lockedType ?? init?.type ?? "background");
   const [description, setDescription] = useState(init?.description ?? "");
   const [count, setCount] = useState(3);
-  const [size, setSize] = useState<"square" | "landscape">("square");
+  // 尺寸 — 8 比例（同活動圖/產品圖頁一致）+ 自訂；一律換算成確切 W×H 送 size:"custom"。
+  const RATIO_DIMS: Record<string, { w: number; h: number }> = {
+    "1:1": { w: 1200, h: 1200 }, "4:5": { w: 1200, h: 1500 }, "3:4": { w: 1200, h: 1600 },
+    "2:3": { w: 1200, h: 1800 }, "9:16": { w: 1080, h: 1920 }, "4:3": { w: 1600, h: 1200 },
+    "3:2": { w: 1800, h: 1200 }, "16:9": { w: 1920, h: 1080 },
+  };
+  const [ratio, setRatio] = useState<string>("1:1");
+  const [customW, setCustomW] = useState(1200);
+  const [customH, setCustomH] = useState(1200);
+  // 揀比例 → 自動填 W×H（可再改，改時鎖住比例）；自訂 → 自由 W×H。outDims 一律用 customW/H。
+  const outDims = { w: customW, h: customH };
+  const pickRatio = (r: string) => { setRatio(r); if (r !== "custom") { setCustomW(RATIO_DIMS[r].w); setCustomH(RATIO_DIMS[r].h); } };
+  const changeDim = (which: "w" | "h", v: number) => {
+    const rd = RATIO_DIMS[ratio];
+    if (which === "w") { setCustomW(v); if (ratio !== "custom" && rd) setCustomH(Math.round(v * rd.h / rd.w)); }
+    else { setCustomH(v); if (ratio !== "custom" && rd) setCustomW(Math.round(v * rd.w / rd.h)); }
+  };
   const [asianFirst, setAsianFirst] = useState(true); // 人像：預設亞裔（台/港受眾）
   const [refImageUrl, setRefImageUrl] = useState<string>(init?.refImageUrl ?? "");
   const [refUploading, setRefUploading] = useState(false);
@@ -41,10 +73,19 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) 
   const [engine, setEngine] = useState<"flux" | "nano">(init?.engine ?? "flux");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [generating, setGenerating] = useState(false);
+  const genHint = useRotatingHint(generating, GEN_HINTS);
   const [polishing, setPolishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<GeneratedItem[]>([]);
   const [saving, setSaving] = useState(false);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+
+  // 生成完（items 由空變有）自動 scroll 落結果區，俾用戶即刻見到成品。
+  useEffect(() => {
+    if (items.length > 0) {
+      requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+  }, [items.length]);
 
   const genType = type === "background" ? undefined : type; // 背景走預設(場景)模型；人像/插畫走對應模型
 
@@ -168,7 +209,7 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) 
               clientId,
               subject: description.trim(),
               customPrompt: prompt,
-              size,
+              size: "custom", customW: outDims.w, customH: outDims.h,
               genType,
               draftOnly: true,
               ...(refImageUrl.trim() ? { refImageUrl: refImageUrl.trim() } : {}),
@@ -244,17 +285,18 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) 
     : { name: "FLUX.1", sub: "schnell · 純文字生圖" };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-
-      <div className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col overflow-hidden">
+    // 置中 pop up（同 ProductComposeModal 一致；原右側 drawer 已改）
+    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 overflow-y-auto p-4" onClick={onClose}>
+      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl my-6 flex flex-col max-h-[calc(100vh-3rem)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h2 className="text-base font-semibold flex items-center gap-2">
-              <Wand2 className="h-4 w-4 text-violet-500" />素材生成
+              <Wand2 className="h-4 w-4 text-violet-500" />{lockedType ? `${TYPE_META[type].label}生成` : "素材生成"}
             </h2>
-            <p className="text-xs text-gray-400 mt-0.5">分類生成 背景 / 人像 / 插畫，選取後存入素材庫或圖庫</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {lockedType ? `${meta.sub}，選取後存入素材庫或圖庫` : "分類生成 背景 / 人像 / 插畫，選取後存入素材庫或圖庫"}
+            </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <X className="h-4 w-4" />
@@ -262,7 +304,8 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) 
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* 素材類型 */}
+          {/* 素材類型 — 由融合入口鎖死時隱藏（已喺上一步揀咗） */}
+          {!lockedType && (
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1.5 block">素材類型</label>
             <div className="flex gap-1.5">
@@ -278,8 +321,56 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) 
               })}
             </div>
           </div>
+          )}
 
-          {/* 參考風格圖（所有類型均可用，位於描述上方） */}
+          {/* ── 01 主體描述 ── */}
+          <SectionLabel step="01" title="主體描述" hint="主要輸入 · 可 AI 潤色" />
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-gray-600">{meta.label}描述</label>
+                {refDescribing && (
+                  <span className="flex items-center gap-1 text-[10px] text-violet-500">
+                    <Loader2 className="h-2.5 w-2.5 animate-spin" />讀圖中…
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                {refImageUrl.trim() && (
+                  <button onClick={() => handleDescribeRef(refImageUrl, true)} disabled={refDescribing || polishing}
+                    title="AI 重新讀取參考圖，生成描述初稿（會覆蓋現有內容）"
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                      !refDescribing && !polishing ? "bg-sky-50 border-sky-300 text-sky-700 hover:bg-sky-100" : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}>
+                    <RefreshCw className="h-3 w-3" />重新讀圖
+                  </button>
+                )}
+                <button onClick={polish} disabled={(!description.trim() && !refImageUrl.trim()) || polishing || refDescribing}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                    (description.trim() || refImageUrl.trim()) && !polishing && !refDescribing ? "bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100" : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                  title="把描述擴寫成簡潔有創意的生成 brief（可再編輯）">
+                  {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                  {polishing ? "潤色中…" : "潤色"}
+                </button>
+              </div>
+            </div>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
+              placeholder={meta.placeholder}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 transition" />
+          </div>
+
+          {/* 人像：亞裔優先（緊貼主體描述） */}
+          {type === "person" && (
+            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+              <button type="button" onClick={() => setAsianFirst((v) => !v)}
+                className={`w-4 h-4 rounded border flex items-center justify-center ${asianFirst ? "bg-violet-600 border-violet-600" : "border-gray-300 bg-white"}`}>
+                {asianFirst && <Check className="h-3 w-3 text-white" />}
+              </button>
+              優先生成亞裔（台灣／香港）面孔
+            </label>
+          )}
+
+          {/* ── 02 參考風格圖 ── */}
+          <SectionLabel step="02" title="參考風格圖" hint="選填 · AI 讀色調/光影/質感" />
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
               <Link2 className="h-3 w-3" />參考風格圖
@@ -319,7 +410,10 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) 
             )}
           </div>
 
-          {/* 生成引擎（Nano Banana 需要參考圖；FLUX 標籤依素材類型顯示正確引擎名稱） */}
+          {/* ── 03 輸出設定 ── */}
+          <SectionLabel step="03" title="輸出設定" hint="引擎 · 尺寸 · 數量" />
+
+          {/* 生成引擎（Nano Banana 需要參考圖；FLUX 標籤依素材類型）*/}
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
               <Sparkles className="h-3 w-3" />生成引擎
@@ -339,55 +433,32 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) 
             </div>
           </div>
 
-          {/* Description input + 潤色 */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              {/* Left: label + standalone loading indicator */}
-              <div className="flex items-center gap-1.5">
-                <label className="text-xs font-semibold text-gray-600">{meta.label}描述</label>
-                {refDescribing && (
-                  <span className="flex items-center gap-1 text-[10px] text-violet-500">
-                    <Loader2 className="h-2.5 w-2.5 animate-spin" />讀圖中…
-                  </span>
-                )}
-              </div>
-              {/* Right: AI 讀圖（有參考圖時）+ 潤色 */}
-              <div className="flex items-center gap-1">
-                {refImageUrl.trim() && (
-                  <button onClick={() => handleDescribeRef(refImageUrl, true)} disabled={refDescribing || polishing}
-                    title="AI 重新讀取參考圖，生成描述初稿（會覆蓋現有內容）"
-                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                      !refDescribing && !polishing ? "bg-sky-50 border-sky-300 text-sky-700 hover:bg-sky-100" : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}>
-                    <RefreshCw className="h-3 w-3" />重新讀圖
-                  </button>
-                )}
-                {/* 潤色：有描述 OR（無描述 + 有參考圖）時均可觸發 */}
-                <button onClick={polish} disabled={(!description.trim() && !refImageUrl.trim()) || polishing || refDescribing}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                    (description.trim() || refImageUrl.trim()) && !polishing && !refDescribing ? "bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100" : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
-                  title="把描述擴寫成簡潔有創意的生成 brief（可再編輯）">
-                  {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                  {polishing ? "潤色中…" : "潤色"}
-                </button>
-              </div>
+          {/* 輸出尺寸（比例）— 揀比例自動填 W×H，可再改（非自訂會鎖比例）*/}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-600">輸出尺寸（比例）</label>
+            <div className="relative w-full">
+              <select value={ratio} onChange={(e) => pickRatio(e.target.value)}
+                className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer">
+                {["1:1", "4:5", "3:4", "2:3", "9:16", "4:3", "3:2", "16:9"].map((r) => (
+                  <option key={r} value={r}>{r}（{RATIO_DIMS[r].w}×{RATIO_DIMS[r].h}）</option>
+                ))}
+                <option value="custom">自訂…</option>
+              </select>
+              <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </div>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
-              placeholder={meta.placeholder}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 transition" />
+            <div className="flex items-center gap-2 pt-1.5">
+              <input type="number" min={256} max={2400} value={customW} onChange={(e) => changeDim("w", Number(e.target.value))}
+                className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400" />
+              <span className="text-xs text-gray-400">×</span>
+              <input type="number" min={256} max={2400} value={customH} onChange={(e) => changeDim("h", Number(e.target.value))}
+                className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400" />
+              <span className="text-[11px] text-gray-400">px · {ratio === "custom" ? "自由尺寸（256–2400）" : `改任一邊自動鎖 ${ratio} 比例`}</span>
+            </div>
           </div>
 
-          {/* 人像：亞裔優先 */}
-          {type === "person" && (
-            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-              <button type="button" onClick={() => setAsianFirst((v) => !v)}
-                className={`w-4 h-4 rounded border flex items-center justify-center ${asianFirst ? "bg-violet-600 border-violet-600" : "border-gray-300 bg-white"}`}>
-                {asianFirst && <Check className="h-3 w-3 text-white" />}
-              </button>
-              優先生成亞裔（台灣／香港）面孔
-            </label>
-          )}
-
-          {/* Count 1–5 */}
+          {/* 生成數量 — 04 最後 */}
           <div className="flex items-center gap-3">
             <label className="text-xs font-semibold text-gray-600 whitespace-nowrap">生成數量</label>
             <div className="flex gap-1.5">
@@ -400,27 +471,12 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) 
             </div>
           </div>
 
-          {/* Size */}
-          <div className="flex items-center gap-3">
-            <label className="text-xs font-semibold text-gray-600 whitespace-nowrap">尺寸</label>
-            <div className="flex gap-1.5">
-              <button onClick={() => setSize("square")}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${size === "square" ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
-                <span className="inline-block w-3 h-3 border border-current rounded-[2px]" />正方形 1200×1200
-              </button>
-              <button onClick={() => setSize("landscape")}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${size === "landscape" ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
-                <span className="inline-block w-4 h-3 border border-current rounded-[2px]" />橫向 1800×1200
-              </button>
-            </div>
-          </div>
-
           <button
             onClick={handleGenerate}
             disabled={!description.trim() || generating}
             className="w-full flex items-center justify-center gap-2 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-xl hover:bg-violet-700 disabled:opacity-40 transition-colors">
             {generating
-              ? <><Loader2 className="h-4 w-4 animate-spin" />生成中…（每張約 10–40 秒）</>
+              ? <><Loader2 className="h-4 w-4 animate-spin" />{genHint}（每張約 10–40 秒）</>
               : <><Wand2 className="h-4 w-4" />生成 {count} 張{meta.label}</>}
           </button>
 
@@ -430,7 +486,7 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init }: Props) 
 
           {/* Results */}
           {items.length > 0 && (
-            <div>
+            <div ref={resultsRef} className="scroll-mt-2">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-gray-600">
                   點擊選取要保留的圖片（已選 {selectedCount}/{items.length}）

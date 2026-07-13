@@ -1,0 +1,42 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { Plus, Sparkles } from "lucide-react";
+import { BrandWorkspaceHeader } from "@/components/layout/BrandWorkspaceHeader";
+import { LibraryWorkspace, type LibraryWorkspaceHandle } from "@/components/library/LibraryWorkspace";
+
+export default function BrandComponentsPage({ params }: { params: Promise<{ clientId: string }> }) {
+  const [clientId, setClientId] = useState<string>("");
+  const libRef = useRef<LibraryWorkspaceHandle>(null);
+
+  useEffect(() => {
+    params.then(({ clientId }) => setClientId(clientId));
+  }, [params]);
+
+  if (!clientId) return <div className="text-gray-400">載入中...</div>;
+
+  return (
+    <div>
+      <BrandWorkspaceHeader
+        clientId={clientId}
+        activeTab="components"
+        actions={
+          <>
+            <button
+              onClick={() => libRef.current?.openQuickAdd()}
+              className="flex items-center gap-1.5 text-xs font-medium bg-gray-900 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />上傳參考圖
+            </button>
+            <button
+              onClick={() => libRef.current?.openAddPicker()}
+              className="flex items-center gap-1.5 text-xs font-medium bg-violet-600 text-white px-3 py-2 rounded-lg hover:bg-violet-700 transition-colors"
+            >
+              <Sparkles className="h-3.5 w-3.5" />新增產品／素材圖片
+            </button>
+          </>
+        }
+      />
+      <LibraryWorkspace ref={libRef} clientId={clientId} />
+    </div>
+  );
+}

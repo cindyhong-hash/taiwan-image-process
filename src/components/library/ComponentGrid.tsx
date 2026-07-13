@@ -9,11 +9,12 @@
  *   • Card actions: 複製 Prompt / 帶入生成 / 刪除 (stopPropagation).
  */
 
-import { useEffect, useState, useCallback, useImperativeHandle, forwardRef } from "react";
+import { useEffect, useState, useCallback, useImperativeHandle, forwardRef, useRef } from "react";
 import {
   ArrowRightCircle, LayoutTemplate, Palette, MessageSquare,
-  Image as ImageIcon, LayoutGrid, Plus, Trash2, Wand2,
-  Paperclip, UserRound, Package, Sparkles,
+  Image as ImageIcon, LayoutGrid, Plus, Trash2,
+  Paperclip, UserRound, Package, Sparkles, Search, ArrowUpDown,
+  CheckCircle2, Circle, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { StyleComponent, ComponentCategory, PromptSlots, GalleryItem, ImageDetail } from "@/types/library";
@@ -30,6 +31,17 @@ const FILTER_TABS: { key: FilterTab; label: string; icon?: React.ReactNode }[] =
   { key: "COPY_TONE", label: "語氣", icon: <MessageSquare className="h-3.5 w-3.5" /> },
   { key: "BACKGROUND", label: "背景", icon: <ImageIcon className="h-3.5 w-3.5" /> },
 ];
+
+// ─── Gallery search / engine helpers (wireframe ⑥⑦) ─────────────────────────
+function galleryItemEngine(item: GalleryItem): string | null {
+  if (item.kind === "generated") return engineLabel(item.paramsJson);
+  if (item.kind === "material" && item.mode) return engineLabel(JSON.stringify({ mode: item.mode }));
+  return null;
+}
+function galleryItemText(item: GalleryItem): string {
+  if (item.kind === "generated") return [item.subject, item.prompt, item.copyText].filter(Boolean).join(" ").toLowerCase();
+  return [item.name, item.aiPromptText].filter(Boolean).join(" ").toLowerCase();
+}
 
 // ─── Component card (image-led, like SlotPicker) ─────────────────────────────
 function ComponentCard({
@@ -115,21 +127,61 @@ function ComponentCard({
   );
 }
 
+// 尺寸 tag：對齊新尺寸設定（8 標準比例）。夠近標準比例就顯示比例（1:1 / 9:16…），否則 fallback 顯示像素。
+const STD_RATIOS: [string, number][] = [
+  ["1:1", 1], ["4:5", 0.8], ["3:4", 0.75], ["2:3", 2 / 3],
+  ["9:16", 9 / 16], ["4:3", 4 / 3], ["3:2", 1.5], ["16:9", 16 / 9],
+];
+function sizeTag(w: number, h: number): string {
+  if (!w || !h) return "";
+  const r = w / h;
+  let bestLabel = "", bestVal = 1, diff = Infinity;
+  for (const [lbl, val] of STD_RATIOS) {
+    const d = Math.abs(val - r);
+    if (d < diff) { diff = d; bestLabel = lbl; bestVal = val; }
+  }
+  return diff / bestVal < 0.03 ? bestLabel : `${w}×${h}`;
+}
+
 // ─── Gallery tile ────────────────────────────────────────────────────────────
-function GalleryTile({ item, onOpen, onDelete }: {
+function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSelect, onLongPress }: {
   item: GalleryItem;
   onOpen: (item: GalleryItem) => void;
   onDelete: (item: GalleryItem) => void;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onLongPress: () => void;
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [dims, setDims] = useState("");
+  // 長按（~0.5s）入多選：手機相簿式操作。pointer 事件兼容滑鼠 + 觸控。
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longFired = useRef(false);
+  const startPress = () => {
+    longFired.current = false;
+    pressTimer.current = setTimeout(() => { longFired.current = true; onLongPress(); }, 500);
+  };
+  const cancelPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
   return (
-    <div className="group relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50 hover:shadow-md hover:border-gray-300 transition-all">
-      <button onClick={() => onOpen(item)} className="w-full text-left">
+    <div className={`group relative rounded-xl overflow-hidden border bg-gray-50 transition-all select-none ${selected ? "border-violet-500 ring-2 ring-violet-400" : "border-gray-200 hover:shadow-md hover:border-gray-300"}`}>
+      <button
+        onPointerDown={startPress}
+        onPointerUp={cancelPress}
+        onPointerLeave={cancelPress}
+        onPointerCancel={cancelPress}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={() => {
+          // 長按啱啱觸發過 → 食咗呢下 click，唔好開大圖
+          if (longFired.current) { longFired.current = false; return; }
+          if (selectMode) onToggleSelect(); else onOpen(item);
+        }}
+        className="w-full text-left"
+        style={{ touchAction: "manipulation" }}>
         {/* Show the FULL image (no crop) — object-contain, letterboxed in a square box. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={item.imageUrl} alt="brand" loading="lazy" decoding="async"
-          onLoad={(e) => { const t = e.currentTarget; setDims((d) => d || `${t.naturalWidth}×${t.naturalHeight}`); }}
+          onLoad={(e) => { const t = e.currentTarget; setDims((d) => d || sizeTag(t.naturalWidth, t.naturalHeight)); }}
           className="w-full aspect-square object-contain" />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
       </button>
@@ -158,18 +210,29 @@ function GalleryTile({ item, onOpen, onDelete }: {
           </div>
         );
       })()}
-      {/* Delete button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          if (confirmDel) { onDelete(item); }
-          else { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 3000); }
-        }}
-        className={`absolute top-2 right-2 p-1 rounded-lg text-[10px] shadow transition-all opacity-0 group-hover:opacity-100
-          ${confirmDel ? "bg-red-500 text-white" : "bg-white/90 text-gray-500 hover:bg-red-50 hover:text-red-500"}`}
-        title={confirmDel ? "再按確認刪除" : "刪除"}>
-        <Trash2 className="h-3 w-3" />
-      </button>
+      {/* 選取模式：右上角勾選圈（取代逐張刪除掣） */}
+      {selectMode ? (
+        <button onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+          className="absolute top-2 right-2 rounded-full bg-white/90 shadow"
+          title={selected ? "取消選取" : "選取"}>
+          {selected
+            ? <CheckCircle2 className="h-5 w-5 text-violet-600" />
+            : <Circle className="h-5 w-5 text-gray-400" />}
+        </button>
+      ) : (
+        /* Delete button */
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirmDel) { onDelete(item); }
+            else { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 3000); }
+          }}
+          className={`absolute top-2 right-2 p-1 rounded-lg text-[10px] shadow transition-all opacity-0 group-hover:opacity-100
+            ${confirmDel ? "bg-red-500 text-white" : "bg-white/90 text-gray-500 hover:bg-red-50 hover:text-red-500"}`}
+          title={confirmDel ? "再按確認刪除" : "刪除"}>
+          <Trash2 className="h-3 w-3" />
+        </button>
+      )}
     </div>
   );
 }
@@ -195,12 +258,15 @@ function isSeriesTemplate(item: GalleryItem): boolean {
   try { return JSON.parse(item.paramsJson ?? "{}").mode === "paste-template"; } catch { return false; }
 }
 
-/** Generated tiles split by genType (stored in paramsJson): person / illustration / 其餘=product。 */
-function generatedKind(item: GalleryItem): "person" | "illustration" | "product" | null {
+/** Generated tiles split by genType: person / illustration / reference(=參考圖,活動成品) / 其餘=product。 */
+function generatedKind(item: GalleryItem): "person" | "illustration" | "product" | "uploaded" | null {
   if (item.kind !== "generated") return null;
   try {
     const g = JSON.parse(item.paramsJson ?? "{}").genType;
-    return g === "person" ? "person" : g === "illustration" ? "illustration" : "product";
+    if (g === "person") return "person";
+    if (g === "illustration") return "illustration";
+    if (g === "reference") return "uploaded"; // 活動圖儲存 = 參考圖（wireframe ⑦）
+    return "product";
   } catch { return "product"; }
 }
 
@@ -214,42 +280,47 @@ function tileFilterKey(item: GalleryItem): GalleryFilter {
 /** Does a gallery item match the active filter pill? */
 function matchesGalleryFilter(item: GalleryItem, f: GalleryFilter): boolean {
   if (f === "ALL") return true;
-  if (f === "uploaded") return item.kind === "uploaded";
+  if (f === "uploaded") return item.kind === "uploaded" || generatedKind(item) === "uploaded";
   if (f === "material") return item.kind === "material";
   return generatedKind(item) === f; // person | illustration | product
 }
 
 type Props = {
   clientId: string | null;
+  unassigned?: boolean;   // 未分組視圖：clientId 為 null 嘅素材
   injectedSlots: PromptSlots;
   onInject: (comp: StyleComponent) => void;
   onOpenQuickAdd?: () => void;
   onOpenGenerateAsset?: () => void;
   onOpenImage: (detail: ImageDetail) => void;
   reloadKey?: number;
+  clients?: { id: string; name: string }[];  // 批次「移到客戶 / 設公用」用
 };
 
 export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function ComponentGrid(
-  { clientId, injectedSlots, onInject, onOpenQuickAdd, onOpenGenerateAsset, onOpenImage, reloadKey = 0 }, ref,
+  { clientId, unassigned = false, injectedSlots, onInject, onOpenQuickAdd, onOpenGenerateAsset, onOpenImage, reloadKey = 0, clients = [] }, ref,
 ) {
   const [components, setComponents] = useState<StyleComponent[]>([]);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<FilterTab>("GALLERY");
   const [galleryFilter, setGalleryFilter] = useState<GalleryFilter>("ALL");
+  // wireframe ⑥⑦：圖庫搜尋 / 引擎 filter / 排序（日期 range 拎走，改輕量排序）
+  const [gallerySearch, setGallerySearch] = useState("");
+  const [galleryEngine, setGalleryEngine] = useState<string>("ALL");
+  const [gallerySort, setGallerySort] = useState<"newest" | "oldest">("newest");
 
   // Internal tick for imperative refresh (via ref.refresh())
   const [localTick, setLocalTick] = useState(0);
 
   // Fetch helper stored in ref so delete handlers always call the latest version
   const doFetch = useCallback(() => {
-    const cq = clientId ? `?clientId=${clientId}` : "";
+    const cq = clientId ? `?clientId=${clientId}` : unassigned ? `?unassigned=1` : "";
     const bust = `${cq ? "&" : "?"}_t=${Date.now()}`;
     return Promise.all([
       fetch(`/api/components${cq}${bust}`, { cache: "no-store" }).then((r) => r.json()),
       fetch(`/api/library/gallery${cq}${bust}`, { cache: "no-store" }).then((r) => r.json()),
     ]);
-  }, [clientId]);
+  }, [clientId, unassigned]);
 
   // Primary data effect — runs whenever clientId, reloadKey (from parent), or localTick changes
   useEffect(() => {
@@ -286,6 +357,35 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
     setLocalTick((t) => t + 1);
   }, []);
 
+  // ── 多選 / 批次操作（移到客戶 · 設公用 · 批次刪除）─────────────────────────
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
+
+  const itemKey = (item: GalleryItem) => `${item.kind}-${item.imageUrl}`;
+  const toggleSelect = useCallback((key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+  const exitSelect = useCallback(() => {
+    setSelectMode(false); setSelectedKeys(new Set()); setConfirmBatchDelete(false);
+  }, []);
+
+  // 將一個 gallery item 對應到底層 API：generated → images/[id]；uploaded/material → 逐個 component。
+  const applyToItem = useCallback((item: GalleryItem, body: { clientId: string | null } | "delete") => {
+    const opts = body === "delete"
+      ? { method: "DELETE" as const }
+      : { method: "PATCH" as const, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+    if (item.kind === "generated") {
+      return fetch(`/api/library/images/${item.libraryImageId}`, opts);
+    }
+    return Promise.all(item.componentIds.map((id) => fetch(`/api/components/${id}`, opts)));
+  }, []);
+
   const injectedIds = new Set(Object.values(injectedSlots).filter(Boolean).map((c) => c!.id));
 
   const openFromCard = (comp: StyleComponent) => {
@@ -302,7 +402,11 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
       let slotComps: StyleComponent[] = [];
       try {
         const p = JSON.parse(item.paramsJson ?? "{}");
-        slotComps = Object.values(p.slots ?? {}).filter(Boolean) as StyleComponent[];
+        // 引用模型：圖只係「指住」一個真實 block（靠 id）。顯示時即場查返 live `components` 嗰行，
+        // 令圖 detail 同「選擇積木 picker」永遠一致、永遠現行版本。
+        // 安全網：真實行俾人刪咗（查唔返）先 fallback 用 paramsJson 凝低嗰份快照，唔會白版。
+        slotComps = (Object.values(p.slots ?? {}).filter(Boolean) as StyleComponent[])
+          .map((snap) => components.find((c) => c.id === snap.id) ?? snap);
       } catch { /* ignore */ }
       onOpenImage({ imageUrl: item.imageUrl, presetComponents: slotComps, copyText: item.copyText, subject: item.subject, regenerateParams: item.paramsJson, prompt: item.prompt, libraryImageId: item.libraryImageId });
     } else if (item.kind === "material") {
@@ -312,60 +416,107 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
     }
   };
 
-  // 背景 is now an image-only asset — hide legacy text-only backgrounds (no image) everywhere.
-  const visibleComponents = components.filter((c) => c.type !== "BACKGROUND" || c.previewUrl || c.data?.imageUrl);
-  const filtered = activeTab === "ALL" || activeTab === "GALLERY"
-    ? visibleComponents
-    : visibleComponents.filter((c) => c.type === activeTab);
+  // wireframe ⑥⑦：圖庫經 分類pill → 搜尋 → 引擎 → 排序 過濾
+  const galleryEngines = Array.from(new Set(gallery.map(galleryItemEngine).filter((e): e is string => !!e))).sort();
+  const visibleGallery = gallery
+    .filter((item) => matchesGalleryFilter(item, galleryFilter))
+    .filter((item) => !gallerySearch.trim() || galleryItemText(item).includes(gallerySearch.trim().toLowerCase()))
+    .filter((item) => galleryEngine === "ALL" || galleryItemEngine(item) === galleryEngine)
+    .sort((a, b) => gallerySort === "newest"
+      ? b.createdAt.localeCompare(a.createdAt)
+      : a.createdAt.localeCompare(b.createdAt));
 
-  const grouped = filtered.reduce<Record<string, StyleComponent[]>>((acc, c) => {
-    acc[c.type] = [...(acc[c.type] ?? []), c];
-    return acc;
-  }, {});
+  // 選取項（用 key 對返 gallery）+ 全選狀態 + 批次執行
+  const selectedItems = gallery.filter((it) => selectedKeys.has(itemKey(it)));
+  const allVisibleSelected = visibleGallery.length > 0 && visibleGallery.every((it) => selectedKeys.has(itemKey(it)));
+  const toggleSelectAll = () =>
+    setSelectedKeys(allVisibleSelected ? new Set() : new Set(visibleGallery.map(itemKey)));
 
-  const counts = (key: FilterTab) =>
-    key === "GALLERY" ? gallery.length
-    : key === "ALL" ? visibleComponents.length
-    : visibleComponents.filter((c) => c.type === key).length;
+  async function runBatch(body: { clientId: string | null } | "delete") {
+    if (selectedItems.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      await Promise.all(selectedItems.map((it) => applyToItem(it, body)));
+      setLocalTick((t) => t + 1);
+      exitSelect();
+    } finally { setBusy(false); }
+  }
 
   return (
     <div className="space-y-5">
 
-      {/* Top bar */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
-          {FILTER_TABS.map((t) => (
-            <button key={t.key} onClick={() => setActiveTab(t.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                activeTab === t.key ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
-              {t.icon}
-              {t.label}
-              <span className={`text-[10px] ${activeTab === t.key ? "text-gray-400" : "text-gray-300"}`}>{counts(t.key)}</span>
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {/* 背景生成 only shows in 圖庫 / 全部 / 背景 sub-tabs */}
-          {onOpenGenerateAsset && (activeTab === "GALLERY" || activeTab === "ALL" || activeTab === "BACKGROUND") && (
-            <button onClick={onOpenGenerateAsset}
-              className="flex items-center gap-1.5 text-xs font-medium bg-violet-600 text-white px-3 py-2 rounded-lg hover:bg-violet-700 transition-colors">
-              <Wand2 className="h-3.5 w-3.5" />素材生成
-            </button>
-          )}
-          {onOpenQuickAdd && (
-            <button onClick={onOpenQuickAdd}
-              className="flex items-center gap-1.5 text-xs font-medium bg-gray-900 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors">
-              <Plus className="h-3.5 w-3.5" />上傳參考圖
-            </button>
-          )}
-        </div>
-      </div>
-
+      {/* 動作掣（上傳參考圖 / 新增產品素材圖片）已搬上 BrandWorkspaceHeader 右上角 */}
       {loading ? (
         <div className="text-gray-400 text-sm py-8 text-center">載入中…</div>
-      ) : activeTab === "GALLERY" ? (
-        // ── Gallery view ──
+      ) : (
+        // ── Gallery view（唯一視圖：頂部分段控制已移除，積木 via 圖片詳情帶入） ──
         <>
+          {/* 搜尋 / 引擎 / 排序（wireframe ⑦：日期 range 拎走，改輕量排序） */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex-1 min-w-[180px] flex items-center gap-1.5 bg-white border border-gray-300 rounded-full px-3.5 py-1.5">
+              <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+              <input
+                value={gallerySearch}
+                onChange={(e) => setGallerySearch(e.target.value)}
+                placeholder="搜尋標題 / 內文 / Prompt…"
+                className="flex-1 text-xs bg-transparent outline-none placeholder:text-gray-400"
+              />
+            </div>
+            {galleryEngines.length > 0 && (
+              <div className="relative shrink-0">
+                <select
+                  value={galleryEngine}
+                  onChange={(e) => setGalleryEngine(e.target.value)}
+                  className="appearance-none text-xs bg-white border border-gray-300 rounded-full pl-3.5 pr-8 py-1.5 outline-none cursor-pointer"
+                >
+                  <option value="ALL">引擎：全部</option>
+                  {galleryEngines.map((e) => <option key={e} value={e}>{e}</option>)}
+                </select>
+                <svg className="absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            )}
+            <button
+              onClick={() => setGallerySort((s) => (s === "newest" ? "oldest" : "newest"))}
+              className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1.5 hover:bg-blue-100 transition-colors"
+            >
+              <ArrowUpDown className="h-3 w-3" />排序：{gallerySort === "newest" ? "最新先" : "最舊先"}
+            </button>
+          </div>
+
+          {/* 批次操作工具列（長按入多選後出現）：全選 / 移到客戶 / 未分類 / 刪除 / 完成 */}
+          {selectMode && (
+            <div className="sticky top-2 z-20 flex items-center gap-2 flex-wrap bg-violet-50 border border-violet-200 rounded-xl px-3 py-2 shadow-sm">
+              <button onClick={toggleSelectAll}
+                className="text-xs font-medium text-violet-700 border border-violet-300 bg-white rounded-full px-3 py-1.5 hover:bg-violet-100 transition-colors">
+                {allVisibleSelected ? "取消全選" : "全選"}
+              </button>
+              <span className="text-xs text-violet-700 font-medium">已選 {selectedItems.length} 項</span>
+              <div className="flex-1" />
+              {clients.length > 0 && (
+                <select disabled={busy || selectedItems.length === 0} defaultValue=""
+                  onChange={(e) => { const v = e.target.value; if (!v) return; runBatch({ clientId: v === "__unassigned__" ? null : v }); e.currentTarget.value = ""; }}
+                  title="把選取嘅素材移到客戶 / 移入未分類素材（從畫面隱藏）"
+                  className="flex items-center gap-1 text-xs bg-white border border-violet-300 text-violet-700 rounded-full px-3 py-1.5 outline-none cursor-pointer disabled:opacity-50">
+                  <option value="">移到…</option>
+                  <option value="__unassigned__">未分類素材（從畫面隱藏）</option>
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
+              <button disabled={busy || selectedItems.length === 0}
+                onClick={() => { if (confirmBatchDelete) runBatch("delete"); else { setConfirmBatchDelete(true); setTimeout(() => setConfirmBatchDelete(false), 3000); } }}
+                className={`flex items-center gap-1 text-xs font-medium rounded-full px-3 py-1.5 border transition-colors disabled:opacity-50
+                  ${confirmBatchDelete ? "bg-red-500 text-white border-red-500" : "bg-white text-red-600 border-red-300 hover:bg-red-50"}`}>
+                <Trash2 className="h-3 w-3" />{confirmBatchDelete ? `確認刪除 ${selectedItems.length} 項？` : "刪除選取"}
+              </button>
+              <button onClick={exitSelect}
+                className="flex items-center gap-1 text-xs font-medium text-gray-600 border border-gray-300 bg-white rounded-full px-3 py-1.5 hover:bg-gray-100 transition-colors">
+                <X className="h-3 w-3" />完成
+              </button>
+            </div>
+          )}
+
           {/* Gallery filter pills */}
           <div className="flex gap-1.5 flex-wrap">
             {(["ALL", "uploaded", "material", "person", "illustration", "product"] as GalleryFilter[]).map((f) => {
@@ -381,45 +532,26 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
               );
             })}
           </div>
+          {!selectMode && gallery.length > 0 && (
+            <p className="text-[11px] text-gray-400">提示：長按任何圖片即可進入多選，批次移到客戶 / 移入未分類 / 刪除。</p>
+          )}
           {gallery.length === 0 ? (
             <EmptyState onOpenQuickAdd={onOpenQuickAdd}
               text={clientId ? "此客戶還沒有圖片" : "還沒有任何圖片"} hint="上傳圖片分析，或在「生成圖片」分頁產生新圖" />
+          ) : visibleGallery.length === 0 ? (
+            <div className="text-center py-16 text-gray-400 text-sm">搵唔到符合條件嘅圖片</div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-              {gallery
-                .filter((item) => matchesGalleryFilter(item, galleryFilter))
-                .map((item) => (
-                  <GalleryTile key={`${item.kind}-${item.imageUrl}`} item={item}
-                    onOpen={openFromGallery} onDelete={handleDeleteGalleryItem} />
-                ))}
+              {visibleGallery.map((item) => (
+                <GalleryTile key={`${item.kind}-${item.imageUrl}`} item={item}
+                  onOpen={openFromGallery} onDelete={handleDeleteGalleryItem}
+                  selectMode={selectMode} selected={selectedKeys.has(itemKey(item))}
+                  onToggleSelect={() => toggleSelect(itemKey(item))}
+                  onLongPress={() => { setSelectMode(true); setSelectedKeys((prev) => new Set(prev).add(itemKey(item))); }} />
+              ))}
             </div>
           )}
         </>
-      ) : components.length === 0 ? (
-        <EmptyState onOpenQuickAdd={onOpenQuickAdd}
-          text={clientId ? "此客戶還沒有風格組件" : "還沒有任何風格組件"} hint="生成活動或上傳圖片後，會自動提取風格組件" />
-      ) : (
-        // ── Component cards by group ──
-        <div className="space-y-6">
-          {Object.entries(grouped).map(([type, items]) => {
-            const meta = CATEGORY_META[type as ComponentCategory];
-            return (
-              <div key={type}>
-                <h3 className={`text-xs font-semibold mb-3 flex items-center gap-1.5 ${meta.color}`}>
-                  <span className={`inline-block w-2 h-2 rounded-full ${meta.bg} border ${meta.border}`} />
-                  {meta.label}
-                  <span className="text-gray-400 font-normal">({items.length})</span>
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {items.map((comp) => (
-                    <ComponentCard key={comp.id} comp={comp} isInjected={injectedIds.has(comp.id)}
-                      onInject={onInject} onDelete={handleDelete} onOpen={openFromCard} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
       )}
     </div>
   );

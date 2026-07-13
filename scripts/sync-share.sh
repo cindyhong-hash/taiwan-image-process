@@ -5,7 +5,7 @@
 # 機制：每次由最新 main 重建 `boss-testing` 分支 → 剝走內部 doc/筆記 → force-push
 #       去 `share` remote 嘅 main。main 本身完全唔受影響。
 #
-# 內部 doc/筆記（唔分享）：docs/ 全部（只留 GUIDE-新手使用.md）、CLAUDE.md、AGENTS.md、.claude/
+# 內部 doc/筆記（唔分享）：docs/ 全部（只留 GUIDE-新手使用.md + HANDOVER-HK.md）、CLAUDE.md、AGENTS.md、.claude/
 #
 # 一次性設定（只做一次）：
 #   1. 喺 github.com 開一個新 empty repo（建議 Private，再 invite 老闆）。
@@ -33,7 +33,7 @@ git checkout -B boss-testing main >/dev/null 2>&1
 
 # 2) 剝走內部 doc/筆記（只留 user guide）
 git rm -q -r --ignore-unmatch CLAUDE.md AGENTS.md .claude >/dev/null 2>&1 || true
-find docs -type f ! -name 'GUIDE-新手使用.md' -print0 2>/dev/null | xargs -0 --no-run-if-empty git rm -q --ignore-unmatch >/dev/null 2>&1 || true
+find docs -type f ! -name 'GUIDE-新手使用.md' ! -name 'HANDOVER-HK.md' -print0 2>/dev/null | xargs -0 git rm -q --ignore-unmatch >/dev/null 2>&1 || true
 git commit -q -m "share: app code + 用戶指南 only（exclude 內部文檔/筆記）· main@${MAIN_SHA}" >/dev/null 2>&1 || true
 
 # 3) force-push 去 share repo 嘅 main（testing 鏡像，唔保留 history）
