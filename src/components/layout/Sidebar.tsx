@@ -66,7 +66,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-60 min-h-screen border-r bg-gray-50 flex flex-col p-3 gap-1 shrink-0">
+    <aside className="w-60 h-screen sticky top-0 overflow-y-auto border-r bg-gray-50 flex flex-col p-3 gap-1 shrink-0">
       <div className="flex items-center justify-between px-2 py-1 mb-2">
         <span className="font-semibold text-sm text-gray-700">品牌</span>
         <Link href="/clients/new">
@@ -115,7 +115,7 @@ export function Sidebar() {
 
       {/* 未分類素材（clientId=null）入口已隱藏 —— 見上方 SHOW_UNASSIGNED_LINK 註解。 */}
       {SHOW_UNASSIGNED_LINK && (
-        <div className="mt-auto pt-2 border-t">
+        <div className="pt-2 border-t">
           <Link href="/unassigned">
             <div
               className={`flex items-center gap-2 px-2 py-2 rounded-md text-sm cursor-pointer hover:bg-gray-100 ${
@@ -128,6 +128,11 @@ export function Sidebar() {
           </Link>
         </div>
       )}
+
+      {/* 版本號：常駐左下角（來源 package.json，見 next.config.ts）。 */}
+      <div className="mt-auto pt-2 px-2">
+        <span className="text-[11px] text-gray-400 font-mono">v{process.env.NEXT_PUBLIC_APP_VERSION}</span>
+      </div>
     </aside>
   );
 }

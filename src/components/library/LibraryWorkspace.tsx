@@ -16,6 +16,7 @@ import { QuickAddModal } from "@/components/library/QuickAddModal";
 import { GenerateAssetModal } from "@/components/library/GenerateAssetModal";
 import { AddAssetModal, type AddAssetType } from "@/components/library/AddAssetModal";
 import { ImageDetailModal } from "@/components/library/ImageDetailModal";
+import { RolePickerModal, ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, type ActivityImageRole } from "@/components/activities/RolePickerModal";
 import type { StyleComponent, PromptSlots, ImageDetail } from "@/types/library";
 import { CATEGORY_META } from "@/types/library";
 
@@ -80,12 +81,22 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
     setSlots((prev) => ({ ...prev, [key]: null }));
   }, []);
 
-  // 素材 popup →「帶入作活動圖參考」：URL 經 sessionStorage 傳（唔喺網址外露）→ 跳新增活動。
+  // 素材 popup →「帶入活動圖生成」：先開 RolePicker 揀角色（參考圖 / 底圖，同 Mode A 共用）。
+  const [rolePickImage, setRolePickImage] = useState<string | null>(null);
   const handleUseAsActivityRef = useCallback((imageUrl: string) => {
-    try { sessionStorage.setItem("activityRefImage", imageUrl); } catch { /* ignore */ }
     setDetail(null);
+    setRolePickImage(imageUrl); // → RolePickerModal
+  }, []);
+  // 揀完角色：URL 經 sessionStorage 傳（唔喺網址外露）→ 跳新增活動頁。
+  const handlePickActivityRole = useCallback((role: ActivityImageRole) => {
+    if (!rolePickImage) return;
+    try {
+      sessionStorage.removeItem(ACTIVITY_REF_KEY);
+      sessionStorage.removeItem(ACTIVITY_BASE_KEY);
+      sessionStorage.setItem(role === "base" ? ACTIVITY_BASE_KEY : ACTIVITY_REF_KEY, rolePickImage);
+    } catch { /* ignore */ }
     router.push(`/clients/${clientId}/activities/new`);
-  }, [clientId, router]);
+  }, [rolePickImage, clientId, router]);
 
   const handleOpenGenerateAsset = useCallback((init: GenerateAssetInit) => {
     setDetail(null);
@@ -242,6 +253,15 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
           onDeleteComponents={handleDeleteComponents}
           onRefresh={() => { setComponentReloadKey((k) => k + 1); componentGridRef.current?.refresh(); }}
           onClose={() => setDetail(null)}
+        />
+      )}
+
+      {/* Mode B：素材圖 popup「帶入活動圖生成」→ 揀角色（參考圖 / 底圖）*/}
+      {rolePickImage && (
+        <RolePickerModal
+          imageUrl={rolePickImage}
+          onPick={handlePickActivityRole}
+          onClose={() => setRolePickImage(null)}
         />
       )}
 

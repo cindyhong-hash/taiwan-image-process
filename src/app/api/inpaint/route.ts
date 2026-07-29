@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { editImageFal, eraseImageFal } from "@/lib/fal";
-import { generateImageOpenRouter } from "@/lib/openrouter";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateImageOpenRouter, chatTextOpenRouter, describeImageOpenRouter } from "@/lib/openrouter";
 import sharp from "sharp";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
@@ -233,29 +232,20 @@ function extractFontChange(prompt: string): { fontName: string; cssDescription: 
 
 async function extractTextFromImage(imageUrl: string): Promise<string | null> {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return null;
-
     const imgBuf = imageUrl.startsWith("/")
       ? await readFile(join(process.cwd(), "public", imageUrl))
       : Buffer.from(await (await fetch(imageUrl)).arrayBuffer());
     const ext  = imageUrl.split(".").pop()?.toLowerCase() ?? "jpg";
     const mime = ext === "png" ? "image/png" : "image/jpeg";
 
-    const client = new Anthropic({ apiKey });
-    const res = await client.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 300,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mime as "image/jpeg" | "image/png", data: imgBuf.toString("base64") } },
-          { type: "text", text: "List ALL text visible in this image exactly as written, one line per text block. Output ONLY the raw text content." },
-        ],
-      }],
-    });
-    const text = (res.content[0] as { text: string }).text.trim();
-    return text || null;
+    // 讀圖改用 OpenRouter vision（prompt 不變）。
+    const dataUrl = `data:${mime};base64,${imgBuf.toString("base64")}`;
+    const text = await describeImageOpenRouter(
+      dataUrl,
+      "List ALL text visible in this image exactly as written, one line per text block. Output ONLY the raw text content.",
+      300,
+    );
+    return text?.trim() || null;
   } catch (e) {
     console.warn("[fontChange] extractTextFromImage failed:", e);
     return null;
@@ -561,18 +551,12 @@ async function editWithReferenceImage(opts: {
 // ── 中文 → 英文 ───────────────────────────────────────────────────────────────
 async function translateToEnglish(chinesePrompt: string): Promise<string | null> {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return null;
-    const client = new Anthropic({ apiKey });
-    const res = await client.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 80,
-      messages: [{
-        role: "user",
-        content: `Translate this image editing instruction to concise English (max 20 words). Return only the translation:\n"${chinesePrompt}"`,
-      }],
-    });
-    const translated = (res.content[0] as { text: string }).text.trim();
+    // 翻譯改用 OpenRouter（prompt 不變）。
+    const translated = await chatTextOpenRouter(
+      `Translate this image editing instruction to concise English (max 20 words). Return only the translation:\n"${chinesePrompt}"`,
+      80,
+    );
+    if (!translated) return null;
     console.log(`[inpaint] Translated: "${chinesePrompt}" → "${translated}"`);
     return translated;
   } catch { return null; }

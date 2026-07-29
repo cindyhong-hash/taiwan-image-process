@@ -3,7 +3,7 @@
  */
 
 import { fal } from "@fal-ai/client";
-import Anthropic from "@anthropic-ai/sdk";
+import { describeImageOpenRouter } from "@/lib/openrouter";
 
 function initFal() {
   const key = process.env.FAL_KEY;
@@ -24,28 +24,11 @@ const RATIO_TO_SIZE: Record<string, { width: number; height: number }> = {
 
 // ── Claude Vision helpers ─────────────────────────────────────────────────────
 
+// 讀圖描述：改用 OpenRouter vision（OPENROUTER_VISION_MODEL），唔再靠獨立 ANTHROPIC_API_KEY。
 async function describeWithClaude(imageUrl: string, prompt: string): Promise<string | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const dataUrl = await resolveToDataUrl(imageUrl);
-    if (!dataUrl) return null;
-    const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)/);
-    if (!match) return null;
-    const client = new Anthropic({ apiKey });
-    const res = await client.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 200,
-      messages: [{ role: "user", content: [
-        { type: "image", source: { type: "base64", media_type: match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: match[2] } },
-        { type: "text", text: prompt },
-      ]}],
-    });
-    return (res.content[0] as { text: string }).text.trim();
-  } catch (e) {
-    console.warn("[fal] Claude Vision failed:", e);
-    return null;
-  }
+  const dataUrl = await resolveToDataUrl(imageUrl);
+  if (!dataUrl) return null;
+  return describeImageOpenRouter(dataUrl, prompt);
 }
 
 export async function describeProduct(productImageUrl: string): Promise<string | null> {

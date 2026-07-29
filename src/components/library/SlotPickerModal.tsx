@@ -68,20 +68,20 @@ export function SlotPickerModal({ clientId, category, onPick, onClose }: Props) 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0">
           <h2 className={`text-sm font-semibold ${meta.color}`}>選擇{meta.label}積木</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
         </div>
 
         {/* Brand pills filter */}
         <div className="px-4 pt-3 pb-2 shrink-0 border-b bg-gray-50/60 space-y-2">
           <div className="flex flex-wrap gap-1.5">
-            <button
+            <button type="button"
               onClick={() => setFilterClientId("")}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 filterClientId === "" ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-600 hover:border-gray-400"}`}>
               全部品牌
             </button>
             {clients.map((c) => (
-              <button key={c.id}
+              <button type="button" key={c.id}
                 onClick={() => setFilterClientId(c.id)}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                   filterClientId === c.id ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-600 hover:border-gray-400"}`}>

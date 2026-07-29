@@ -270,7 +270,7 @@ export function ImageDetailModal({
               {onUseAsActivityRef && (
                 <button onClick={() => onUseAsActivityRef(imageUrl)}
                   className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-                  <Target className="h-3.5 w-3.5" />帶入活動圖生成（作參考圖）
+                  <Target className="h-3.5 w-3.5" />帶入活動圖生成
                 </button>
               )}
             </div>
@@ -353,7 +353,7 @@ export function ImageDetailModal({
             <div className="px-5 py-3 border-t shrink-0">
               <button onClick={() => onUseAsActivityRef(imageUrl)}
                 className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-                <Target className="h-3.5 w-3.5" />帶入活動圖生成（作參考圖）
+                <Target className="h-3.5 w-3.5" />帶入活動圖生成
               </button>
             </div>
           )}
@@ -515,7 +515,7 @@ export function ImageDetailModal({
           <div className="px-5 py-3 border-t shrink-0">
             <button onClick={() => onUseAsActivityRef(imageUrl)}
               className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-              <Target className="h-3.5 w-3.5" />帶入活動圖生成（作參考圖）
+              <Target className="h-3.5 w-3.5" />帶入活動圖生成
             </button>
           </div>
         )}

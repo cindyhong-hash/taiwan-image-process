@@ -18,6 +18,7 @@ type GalleryItem = {
 };
 
 type TypeKey = "product" | "background" | "person" | "illustration" | "reference";
+type Client = { id: string; name: string };
 
 // 同 ComponentGrid FILTER_META 一致：lucide icon + 每類 solid 底色（tag 用 cls，filter 選中用 activeCls）。
 const META: Record<TypeKey, { label: string; Icon: LucideIcon; cls: string; activeCls: string }> = {
@@ -45,22 +46,34 @@ export function LibraryImagePickerModal({
   clientId,
   onPick,
   onClose,
+  title = "從素材庫揀圖",
 }: {
   clientId: string;
   onPick: (url: string, promptText?: string) => void; // 連帶回傳該圖已有嘅 AI Prompt（免再分析）
   onClose: () => void;
+  title?: string;
 }) {
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeKey | "ALL">("ALL");
+  const [clients, setClients] = useState<Client[]>([]);
+  const [filterClientId, setFilterClientId] = useState<string>(clientId ?? ""); // 預設鎖當前品牌
 
   useEffect(() => {
-    fetch(`/api/library/gallery?clientId=${clientId}`)
+    fetch("/api/clients").then((r) => r.json()).then((d: Client[]) => setClients(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    // [WIP / 待 auth] 「全部品牌」= 唔傳 clientId → gallery API 攞晒所有 client 素材。
+    // 將來接 login 後，呢度應 scope 做「登入用戶自己 account 內品牌」，唔可見其他用戶 client 素材。
+    const url = filterClientId ? `/api/library/gallery?clientId=${filterClientId}` : "/api/library/gallery";
+    fetch(url)
       .then((r) => r.json())
       .then((d: GalleryItem[]) => setItems(Array.isArray(d) ? d.filter((i) => i.imageUrl) : []))
       .finally(() => setLoading(false));
-  }, [clientId]);
+  }, [filterClientId]);
 
   const withType = useMemo(() => items.map((it) => ({ it, t: itemType(it) })), [items]);
   const counts = useMemo(() => {
@@ -83,10 +96,25 @@ export function LibraryImagePickerModal({
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-3xl h-[80vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0">
-          <h2 className="text-sm font-semibold">從素材庫揀參考圖</h2>
+          <h2 className="text-sm font-semibold">{title}</h2>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
         </div>
         <div className="px-4 pt-2.5 pb-2 border-b bg-gray-50/60 shrink-0 space-y-2">
+          {/* 品牌切換：預設鎖當前品牌；撳「全部品牌」可跨品牌揀（同積木 picker 一致）*/}
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => setFilterClientId("")}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                filterClientId === "" ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-600 hover:border-gray-400"}`}>
+              全部品牌
+            </button>
+            {clients.map((c) => (
+              <button type="button" key={c.id} onClick={() => setFilterClientId(c.id)}
+                className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                  filterClientId === c.id ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-600 hover:border-gray-400"}`}>
+                {c.name}
+              </button>
+            ))}
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋標題 / AI Prompt…"

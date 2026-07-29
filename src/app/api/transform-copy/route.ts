@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { anthropic } from "@/lib/anthropic";
+import { chatTextOpenRouter } from "@/lib/openrouter";
 
 export async function POST(request: Request) {
   const { copyText, instruction } = await request.json();
@@ -7,16 +7,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "copyText and instruction required" }, { status: 400 });
   }
 
-  const response = await anthropic.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 300,
-    messages: [
-      {
-        role: "user",
-        content: `原始文案：\n${copyText}\n\n指令：${instruction}\n\n只回傳修改後的文案，不要加說明。`,
-      },
-    ],
-  });
+  // 文案轉換改用 OpenRouter（prompt 內容不變，行為一致）。
+  const result = await chatTextOpenRouter(
+    `原始文案：\n${copyText}\n\n指令：${instruction}\n\n只回傳修改後的文案，不要加說明。`,
+    300,
+  );
+  if (result == null) {
+    return NextResponse.json({ error: "文案轉換失敗，請稍後再試" }, { status: 502 });
+  }
 
-  return NextResponse.json({ result: (response.content[0] as { text: string }).text });
+  return NextResponse.json({ result });
 }

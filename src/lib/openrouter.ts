@@ -411,3 +411,49 @@ Think of yourself as a commercial photographer: you choose the angle and light, 
     return fallback;
   }
 }
+
+// ── Text / Vision chat completions ─────────────────────────────────────────────
+// 活動圖生成（文案 / 風格分析 / 讀圖）改用 OpenRouter，唔再靠獨立 ANTHROPIC_API_KEY。
+const TEXT_MODEL = process.env.OPENROUTER_TEXT_MODEL ?? "openai/gpt-4o-mini";
+const VISION_MODEL = process.env.OPENROUTER_VISION_MODEL ?? "openai/gpt-4o-mini";
+
+interface ChatResponse { choices?: { message?: { content: string | null } }[]; error?: { message: string } }
+
+async function orChat(model: string, content: unknown, maxTokens: number): Promise<string | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://marketing-tool.local",
+        "X-Title": "Marketing Tool",
+      },
+      body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: maxTokens }),
+    });
+    const data = (await res.json()) as ChatResponse;
+    if (!res.ok || data.error) {
+      console.warn(`[openrouter:chat] ${model} failed:`, data.error?.message ?? res.status);
+      return null;
+    }
+    return data.choices?.[0]?.message?.content?.trim() ?? null;
+  } catch (e) {
+    console.warn("[openrouter:chat] error:", e);
+    return null;
+  }
+}
+
+/** 純文字 completion（文案 / 合併風格描述）。*/
+export async function chatTextOpenRouter(prompt: string, maxTokens = 500): Promise<string | null> {
+  return orChat(TEXT_MODEL, prompt, maxTokens);
+}
+
+/** 讀圖描述（vision）。imageUrl 可為 data: 或 http URL。*/
+export async function describeImageOpenRouter(imageUrl: string, prompt: string, maxTokens = 200): Promise<string | null> {
+  return orChat(VISION_MODEL, [
+    { type: "image_url", image_url: { url: imageUrl } },
+    { type: "text", text: prompt },
+  ], maxTokens);
+}

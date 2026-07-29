@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Target, Layers, Settings, Plus, FolderOpen } from "lucide-react";
+import { NewActivityModal } from "@/components/activities/NewActivityModal";
 
 type Tab = "activities" | "components";
 
@@ -25,6 +26,7 @@ export function BrandWorkspaceHeader({
 }) {
   const [fetched, setFetched] = useState<string>("");
   const name = nameProp ?? fetched;
+  const [showNewActivity, setShowNewActivity] = useState(false); // Mode A：新增活動入口 pop-up（WF3 v3 方案 B）
 
   useEffect(() => {
     if (nameProp !== undefined || !clientId) return; // 有 prop 就唔再 fetch
@@ -68,17 +70,22 @@ export function BrandWorkspaceHeader({
             <Settings className="h-3.5 w-3.5" />品牌設定
           </Link>
           {activeTab === "activities" && (
-            <Link
-              href={`/clients/${clientId}/activities/new`}
+            <button
+              type="button"
+              onClick={() => setShowNewActivity(true)}
               className="flex items-center gap-1.5 text-xs font-medium bg-violet-600 text-white px-3 py-2 rounded-lg hover:bg-violet-700 transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />新增活動
-            </Link>
+            </button>
           )}
           {/* tab 專屬動作掣（素材庫：上傳參考圖 / 新增產品素材圖片）由 page 傳入 */}
           {actions}
         </div>
       </div>
+
+      {showNewActivity && (
+        <NewActivityModal clientId={clientId} onClose={() => setShowNewActivity(false)} />
+      )}
 
       {/* brand title — folder icon 同側欄一致用灰色 */}
       {name && (

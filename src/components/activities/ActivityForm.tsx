@@ -3,9 +3,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images } from "lucide-react";
-import { ComponentSelector } from "@/components/activities/ComponentSelector";
+import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, Palette, Image as ImageIcon } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
+import { SlotPickerModal } from "@/components/library/SlotPickerModal";
+import { getColors } from "@/types/library";
+import type { StyleComponent, ComponentCategory } from "@/types/library";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,6 +21,8 @@ export type ActivityFormValues = {
   productImageUrls: string[];
   referenceImageUrls: string[];
   selectedComponentIds: string[];
+  /** [2b] 底圖模式：成張相 100% 做背景，唔重新生圖。空 = 一般 AI 生成流程。 */
+  baseImageUrl?: string;
 };
 
 // ── 可選生圖模型 ───────────────────────────────────────────────────────────────
@@ -172,7 +176,11 @@ export function ActivityForm({
     productImageUrls:     initialValues?.productImageUrls     ?? [],
     referenceImageUrls:   initialValues?.referenceImageUrls   ?? [],
     selectedComponentIds: initialValues?.selectedComponentIds ?? [],
+    baseImageUrl:         initialValues?.baseImageUrl,
   });
+
+  // 底圖模式：成張相做背景、唔重新生圖 → 收起生圖模型/積木/參考圖等生成相關 UI。
+  const isBaseMode = !!values.baseImageUrl;
 
   const [uploadingProduct, setUploadingProduct] = useState(false);
   const [uploadingRef,     setUploadingRef]     = useState(false);
@@ -180,6 +188,39 @@ export function ActivityForm({
   const [showLibPicker,    setShowLibPicker]    = useState(false); // 從素材庫揀參考圖
   // 由素材庫揀嗰張參考圖已有嘅 AI Prompt（有就直接用，免再 call analyze API）；上傳新圖時清空。
   const [refStylePrompt,   setRefStylePrompt]   = useState<string>("");
+  // 03 風格積木（構圖 / 顏色 / 背景）— 揀完會把標籤直接寫入「畫面描述 Prompt」，可再喺嗰度改字。
+  const [styleBlocks, setStyleBlocks] = useState<{ layout: StyleComponent | null; color: StyleComponent | null; background: StyleComponent | null }>({ layout: null, color: null, background: null });
+  const [pickerCat, setPickerCat] = useState<ComponentCategory | null>(null);
+  const CAT_META = {
+    COMPOSITION:  { slot: "layout"     as const, label: "構圖" },
+    COLOR_SCHEME: { slot: "color"      as const, label: "配色" },
+    BACKGROUND:   { slot: "background" as const, label: "背景" },
+  };
+  // 由 block 砌出該類標籤內容，如 [構圖:…]
+  const tagFor = (cat: keyof typeof CAT_META, comp: StyleComponent): string => {
+    const { label } = CAT_META[cat];
+    let body = "";
+    if (cat === "COLOR_SCHEME") {
+      const hexes = getColors(comp.data).map((c) => c.hex);
+      body = hexes.length ? hexes.join("、") : (comp.aiPromptText || comp.name);
+    } else {
+      body = (comp.data?.description as string) || comp.aiPromptText || comp.name;
+    }
+    return body ? `[${label}:${body}]` : "";
+  };
+  // 揀 / 清除積木：更新 card 狀態 + 直接寫入畫面描述 Prompt（先移除舊同類標籤，再加返新）。
+  const applyBlock = (cat: keyof typeof CAT_META, comp: StyleComponent | null) => {
+    const { slot, label } = CAT_META[cat];
+    setStyleBlocks((p) => ({ ...p, [slot]: comp }));
+    setValues((prev) => {
+      let txt = prev.imagePrompt.replace(new RegExp(`\\[${label}:[^\\]]*\\]`, "g"), "").replace(/\n{2,}/g, "\n").trim();
+      if (comp) {
+        const tag = tagFor(cat, comp);
+        if (tag) txt = txt ? `${txt}\n${tag}` : tag;
+      }
+      return { ...prev, imagePrompt: txt };
+    });
+  };
 
   // AI 輔助狀態
   const [optimizingPrompt,  setOptimizingPrompt]  = useState(false);
@@ -304,11 +345,32 @@ export function ActivityForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    // 積木標籤已經即時寫入 values.imagePrompt（見 applyBlock），直接送。
     try { await onSubmit(values); } finally { setLoading(false); }
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8 max-w-2xl">
+
+      {/* ── 底圖模式 banner（成張相做背景，唔重新生圖）─────────── */}
+      {isBaseMode && (
+        <div className="flex items-start gap-3 rounded-xl border border-violet-200 bg-violet-50 p-3.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={values.baseImageUrl} alt="活動圖底圖" className="w-16 h-16 rounded-lg border object-cover bg-white shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-sm font-semibold text-violet-700">
+              <ImageIcon className="h-4 w-4" />活動圖底圖模式
+            </div>
+            <p className="text-[11px] text-violet-600/90 mt-1 leading-relaxed">
+              呢張相會 <b>100% 做背景</b>，唔會重新生圖。填下面嘅文字內容，系統會幫你生成文案，再交排版加落圖上。
+            </p>
+          </div>
+          <button type="button" onClick={() => set("baseImageUrl", undefined)}
+            className="text-violet-400 hover:text-red-500 shrink-0" title="取消底圖模式">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* ── 01 基本資訊 ─────────────────────────────────────── */}
       <div className="space-y-4">
@@ -426,6 +488,8 @@ export function ActivityForm({
         </Field>
       </div>
 
+      {/* 底圖模式唔重新生圖 → 唔需要素材上傳(02) / 風格積木(03) */}
+      {!isBaseMode && (<>
       {/* ── 02 素材上傳 ─────────────────────────────────────── */}
       <div className="space-y-4">
         <SectionLabel step="02" title="素材上傳" />
@@ -491,21 +555,62 @@ export function ActivityForm({
         </div>
       </div>
 
-      {/* ── 03 風格組件（暫時隱藏；要叫回來把下面整段 {false && (...)} 改回 true 或移除外層即可）─── */}
-      {false && (
+      {/* ── 03 套用風格積木（構圖 / 顏色 / 背景）→ 內容注入 AI Prompt ─────────── */}
       <div className="space-y-3">
-        <SectionLabel step="03" title="套用風格組件" hint="選填，AI 會沿用已有的視覺設定" />
-        <ComponentSelector
-          clientId={clientId}
-          selectedIds={values.selectedComponentIds}
-          onChange={(ids) => set("selectedComponentIds", ids)}
-        />
+        <SectionLabel step="03" title="套用風格積木" hint="選填 · 揀咗會加入 AI Prompt 做生成參考" />
+        <div className="grid grid-cols-3 gap-3">
+          {([
+            { cat: "COMPOSITION",  slot: "layout",     label: "構圖", icon: <LayoutTemplate className="h-4 w-4" /> },
+            { cat: "COLOR_SCHEME", slot: "color",      label: "顏色", icon: <Palette className="h-4 w-4" /> },
+            { cat: "BACKGROUND",   slot: "background", label: "背景", icon: <ImageIcon className="h-4 w-4" /> },
+          ] as const).map(({ cat, slot, label, icon }) => {
+            const comp = styleBlocks[slot];
+            const colors = comp && slot === "color" ? getColors(comp.data) : [];
+            return (
+              <div key={cat}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="flex items-center gap-1 text-xs font-medium text-gray-600">{icon}{label}</span>
+                  {comp && (
+                    <button type="button" onClick={() => applyBlock(cat, null)}
+                      className="text-gray-400 hover:text-red-500" title="清除"><X className="h-3.5 w-3.5" /></button>
+                  )}
+                </div>
+                <button type="button" onClick={() => setPickerCat(cat)}
+                  className={`w-full rounded-xl border overflow-hidden text-left transition-all ${comp ? "border-violet-200" : "border-dashed border-gray-200 hover:border-violet-300"}`}>
+                  {comp ? (
+                    <>
+                      {/* 顏色：優先顯示色板（睇色 pattern）；其餘：優先顯示圖 */}
+                      {slot === "color" && colors.length ? (
+                        <div className="flex h-20">{colors.map((c, i) => <div key={i} style={{ background: c.hex }} className="flex-1" />)}</div>
+                      ) : comp.previewUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={comp.previewUrl} alt={comp.name} className="w-full h-20 object-cover" />
+                      ) : colors.length ? (
+                        <div className="flex h-20">{colors.map((c, i) => <div key={i} style={{ background: c.hex }} className="flex-1" />)}</div>
+                      ) : (
+                        <div className="h-20 bg-violet-50" />
+                      )}
+                      {/* 三類卡統一：色板/圖 + 單行名稱（高度對齊；hex 已由色板呈現，唔另出灰字）*/}
+                      <div className="px-2 py-1.5 text-[11px] text-gray-700 truncate">{comp.name}</div>
+                    </>
+                  ) : (
+                    <div className="h-[109px] flex flex-col items-center justify-center gap-1 text-gray-400">
+                      <span className="text-lg">＋</span>
+                      <span className="text-[11px]">點擊選取{label}</span>
+                    </div>
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-gray-400">揀咗會即時加入上方「畫面描述 Prompt」，可再喺嗰度改字。</p>
       </div>
-      )}
+      </>)}
 
-      {/* ── 03 圖片比例與生圖模型（原 04；因 03 風格組件已隱藏，順序補上）─────────── */}
+      {/* ── 04 圖片尺寸比例（底圖模式冇 02/03 → 順延做 02）─────────── */}
       <div className="space-y-4">
-        <SectionLabel step="03" title="圖片尺寸比例" />
+        <SectionLabel step={isBaseMode ? "02" : "04"} title="圖片尺寸比例" />
         <div className="relative w-full max-w-md">
           <select
             value={values.imageRatio}
@@ -530,7 +635,8 @@ export function ActivityForm({
           <span className="text-[11px] text-gray-400">px · 改任一邊自動鎖 {values.imageRatio} 比例</span>
         </div>
 
-        {/* 生圖模型 */}
+        {/* 生圖模型（底圖模式唔重新生圖 → 唔顯示）*/}
+        {!isBaseMode && (
         <div className="space-y-1">
           <Label className="text-sm font-medium">生圖模型</Label>
           <div className="relative w-full max-w-md">
@@ -551,20 +657,32 @@ export function ActivityForm({
             {IMAGE_MODELS.find((m) => m.value === values.imageModel)?.hint ?? ""}
           </p>
         </div>
+        )}
       </div>
 
       {/* ── Submit ──────────────────────────────────────────── */}
       <Button type="submit" disabled={loading} className="w-full">
         {loading
           ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />處理中…</>
-          : submitLabel}
+          : (isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel)}
       </Button>
 
       {showLibPicker && (
         <LibraryImagePickerModal
           clientId={clientId}
+          title="從素材庫揀參考圖"
           onPick={(url, promptText) => { set("referenceImageUrls", [url]); setRefStylePrompt(promptText ?? ""); setShowLibPicker(false); }}
           onClose={() => setShowLibPicker(false)}
+        />
+      )}
+
+      {/* 03 積木選取 picker（同素材庫一致）*/}
+      {pickerCat && (
+        <SlotPickerModal
+          category={pickerCat}
+          clientId={clientId}
+          onPick={(comp) => { applyBlock(pickerCat as keyof typeof CAT_META, comp); setPickerCat(null); }}
+          onClose={() => setPickerCat(null)}
         />
       )}
     </form>

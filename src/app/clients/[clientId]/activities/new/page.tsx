@@ -2,18 +2,22 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActivityForm, type ActivityFormValues } from "@/components/activities/ActivityForm";
+import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY } from "@/components/activities/RolePickerModal";
 
 export default function NewActivityPage({ params }: { params: Promise<{ clientId: string }> }) {
   const [clientId, setClientId] = useState("");
   const router = useRouter();
 
-  // 由素材 popup「帶入作活動圖參考」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
-  // 同步喺首次 render 讀取並清走，令 ActivityForm mount 時已有預填參考圖。
-  const [initialRef] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    const v = sessionStorage.getItem("activityRefImage");
-    if (v) sessionStorage.removeItem("activityRefImage");
-    return v;
+  // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
+  // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
+  // 同步喺首次 render 讀取並清走，令 ActivityForm mount 時已有預填。
+  const [initial] = useState<{ ref: string | null; base: string | null }>(() => {
+    if (typeof window === "undefined") return { ref: null, base: null };
+    const ref = sessionStorage.getItem(ACTIVITY_REF_KEY);
+    const base = sessionStorage.getItem(ACTIVITY_BASE_KEY);
+    if (ref) sessionStorage.removeItem(ACTIVITY_REF_KEY);
+    if (base) sessionStorage.removeItem(ACTIVITY_BASE_KEY);
+    return { ref, base };
   });
 
   useEffect(() => {
@@ -36,7 +40,10 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
     <div className="max-w-xl">
       <h1 className="text-xl font-semibold mb-8">新增活動</h1>
       <ActivityForm clientId={clientId} onSubmit={handleSubmit}
-        initialValues={initialRef ? { referenceImageUrls: [initialRef] } : undefined} />
+        initialValues={{
+          ...(initial.ref ? { referenceImageUrls: [initial.ref] } : {}),
+          ...(initial.base ? { baseImageUrl: initial.base } : {}),
+        }} />
     </div>
   );
 }

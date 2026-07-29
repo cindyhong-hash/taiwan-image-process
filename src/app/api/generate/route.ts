@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { anthropic } from "@/lib/anthropic";
 import { generateImageFal, generateImageFluxSchnell, describeStyle, describeProduct, editImageFal } from "@/lib/fal";
-import { generateImageOpenRouter } from "@/lib/openrouter";
+import { generateImageOpenRouter, chatTextOpenRouter } from "@/lib/openrouter";
 
 /** 背景生成：優先 OpenRouter Gemini（更寫實），備援 Fal FLUX */
 async function generateBackground(opts: {
@@ -59,6 +58,25 @@ function parseImageText(raw: string): { title: string; imageSubtitle: string } {
   };
 }
 
+/** 讀圖片實際像素尺寸（底圖模式供後續文字排版用）；失敗回 0×0，唔阻斷流程。 */
+async function readImageSize(url: string): Promise<{ w: number; h: number }> {
+  try {
+    const sharp = (await import("sharp")).default;
+    let buf: Buffer;
+    if (url.startsWith("/")) {
+      const { readFile } = await import("fs/promises");
+      const { join } = await import("path");
+      buf = await readFile(join(process.cwd(), "public", url.split("?")[0]));
+    } else {
+      buf = Buffer.from(await (await fetch(url)).arrayBuffer());
+    }
+    const m = await sharp(buf).metadata();
+    return { w: m.width ?? 0, h: m.height ?? 0 };
+  } catch {
+    return { w: 0, h: 0 };
+  }
+}
+
 /** 取出完整發文文案 */
 function parsePostCopy(raw: string): string {
   const match = raw.match(/發文文案[：:]\s*([\s\S]+)/);
@@ -77,15 +95,11 @@ async function analyzeBrandStyle(pastPostUrls: string[]): Promise<string | null>
   // 如果有多張，用 Claude 合併成一段風格指南
   if (valid.length === 1) return valid[0];
 
-  const res = await anthropic.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 200,
-    messages: [{
-      role: "user",
-      content: `Below are visual style descriptions of a brand's past posts. Synthesize them into ONE concise brand visual style guide (2-3 sentences) for an image generation AI. English only.\n\n${valid.map((d, i) => `Post ${i + 1}: ${d}`).join("\n")}`,
-    }],
-  });
-  return (res.content[0] as { text: string }).text.trim();
+  const synthesized = await chatTextOpenRouter(
+    `Below are visual style descriptions of a brand's past posts. Synthesize them into ONE concise brand visual style guide (2-3 sentences) for an image generation AI. English only.\n\n${valid.map((d, i) => `Post ${i + 1}: ${d}`).join("\n")}`,
+    200,
+  );
+  return synthesized ?? valid[0];
 }
 
 export async function POST(request: Request) {
@@ -105,6 +119,125 @@ export async function POST(request: Request) {
   await db.activity.update({ where: { id: activityId }, data: { status: "GENERATING" } });
 
   const { client } = activity;
+
+  // ── [2b] 底圖模式：成張相 100% 做背景，唔重新生圖 ──────────────────────────
+  //     只生成文案 + 打包一份「文字層 schema」交俾後續文字排版階段。
+  if (activity.baseImageUrl) {
+    try {
+      const tones: string[] = client.toneLabels ? JSON.parse(client.toneLabels) : [];
+      const baseUrl = activity.baseImageUrl;
+
+      // 讀底圖尺寸 + 品牌資料（3 款共用）
+      const dims = await readImageSize(baseUrl);
+      const size = (activity.customW > 0 && activity.customH > 0)
+        ? { w: activity.customW, h: activity.customH }
+        : { w: dims.w || 1024, h: dims.h || 1024 };
+      const brand = {
+        name:           client.name,
+        primaryColor:   client.primaryColor,
+        secondaryColor: client.secondaryColor ?? null,
+        logoUrl:        client.logoUrl ?? null,
+        fontHint:       client.commonText || "",
+      };
+      type TextEl = { role: string; content: string; zone: string; emphasis: string };
+
+      // 3 款：每款各自 AI 生「唔同文案」（頂款鎖用戶必放文字；中/底款 AI 自由發揮）
+      //       + 位置拉開（頂/左上/底）+ 唔同字效。底圖 100% 保留、唔重新生圖。
+      const VARIANTS: {
+        type: string; zone: "top-full" | "top-left" | "bottom-full";
+        style: "brandGrad" | "shadow" | "outline"; copyLayout: "A" | "B" | "C";
+      }[] = [
+        { type: "BASE-TOP", zone: "top-full",    style: "brandGrad", copyLayout: "A" },  // 頂 · 品牌漸層 · 鎖用戶文字
+        { type: "BASE-MID", zone: "top-left",    style: "shadow",    copyLayout: "B" },  // 左上 · 陰影 · AI 發揮
+        { type: "BASE-BOT", zone: "bottom-full", style: "outline",   copyLayout: "C" },  // 底 · 描邊 · AI 發揮
+      ];
+      const saved: Awaited<ReturnType<typeof db.generatedLayout.create>>[] = [];
+      for (const v of VARIANTS) {
+        // ── 每款各自生文案（A 鎖定使用者文字；B/C 自由發揮 → 3 款文字唔同）──
+        const copyPrompt = buildCopyPrompt({
+          theme:      activity.theme,
+          focusPoint: activity.focusPoint ?? "",
+          titleText:  activity.titleText  ?? "",
+          toneLabels: tones,
+          layoutType: v.copyLayout,
+          taboos:     [],
+          forceTitle: v.copyLayout === "A",
+        });
+        const rawCopy = (await chatTextOpenRouter(copyPrompt, 500)) ?? "";
+        const { title: aiTitle, imageSubtitle: aiSub } = parseImageText(rawCopy);
+        const headline = aiTitle || (v.copyLayout === "A" ? (activity.titleText?.trim() ?? "") : "");
+        const ctaText = rawCopy.match(/CTA[：:]\s*(.+)/)?.[1]?.trim() || "";
+        const postCopy = parsePostCopy(rawCopy) || rawCopy;
+
+        // ── Sharp 疊字（唔重新生圖）──
+        let finalUrl = baseUrl;
+        let burnedIn = false;
+        try {
+          if (headline || aiSub) {
+            finalUrl = await compositeImage({
+              backgroundUrl: baseUrl,
+              layoutType:    "A",
+              textZone:      v.zone,
+              textStyle:     v.style,
+              primaryColor:  client.primaryColor,
+              canvasWidth:   size.w,
+              canvasHeight:  size.h,
+              titleText:     headline || undefined,
+              subtitleText:  aiSub    || undefined,
+              seed:          `${activityId}-${v.type}`,
+            });
+            burnedIn = true;
+          }
+          if (client.logoUrl && finalUrl !== baseUrl) {
+            finalUrl = await overlayLogo({
+              imageUrl: finalUrl, logoUrl: client.logoUrl,
+              textZone: v.zone, seed: `${activityId}-${v.type}-logo`,
+            });
+          }
+        } catch (e) {
+          console.warn(`[generate] 底圖疊字失敗(${v.type})，保留原底圖:`, e);
+          finalUrl = baseUrl; burnedIn = false;
+        }
+
+        // ── 每款各自打包 schema（文字層契約，文案/位置跟該款）──
+        const zoneTag = v.zone === "bottom-full" ? "bottom" : "top";
+        const textElements: TextEl[] = [
+          headline ? { role: "headline", content: headline, zone: zoneTag, emphasis: "high"   } : null,
+          aiSub    ? { role: "subtitle", content: aiSub,    zone: zoneTag, emphasis: "medium" } : null,
+          ctaText  ? { role: "cta",      content: ctaText,  zone: "bottom", emphasis: "high"  } : null,
+        ].filter((x): x is TextEl => x !== null);
+        const variantLayer = {
+          version: "0.1",
+          jobId: activityId,
+          mode: "BASE_IMAGE",
+          baseImage: { url: baseUrl, width: dims.w, height: dims.h, ratio: activity.imageRatio ?? "1:1" },
+          brand,
+          textElements,
+          postCopy,
+          templateHint: v.zone,
+          styleHint: v.style,
+        };
+        const layout = await db.generatedLayout.create({
+          data: {
+            activityId,
+            layoutType: v.type,
+            imageUrl: finalUrl,
+            copyText: postCopy,
+            textLayerJson: JSON.stringify(variantLayer),
+            textBurnedIn: burnedIn,
+          },
+        });
+        saved.push(layout);
+      }
+
+      await db.activity.update({ where: { id: activityId }, data: { status: "DONE" } });
+      return NextResponse.json({ layouts: saved, mode: "BASE_IMAGE" });
+    } catch (err) {
+      console.error("[generate] ❌ 底圖模式失敗:", err);
+      await db.activity.update({ where: { id: activityId }, data: { status: "FAILED" } });
+      return NextResponse.json({ error: String(err) }, { status: 500 });
+    }
+  }
 
   // ── JSON 防呆解析 ──────────────────────────────────────────────────────────
   const toneLabels: string[]      = client.toneLabels        ? JSON.parse(client.toneLabels)        : [];
@@ -159,12 +292,7 @@ export async function POST(request: Request) {
         taboos,
         forceTitle: isLockedLayout,
       });
-      const copyResponse = await anthropic.messages.create({
-        model: "claude-opus-4-5",
-        max_tokens: 500,
-        messages: [{ role: "user", content: copyPrompt }],
-      });
-      const rawCopy = (copyResponse.content[0] as { text: string }).text;
+      const rawCopy = (await chatTextOpenRouter(copyPrompt, 500)) ?? "";
 
       // 圖上文字（短版）：主標題 + 圖上副標
       const { title: aiTitle, imageSubtitle: aiImageSubtitle } = parseImageText(rawCopy);

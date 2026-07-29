@@ -39,6 +39,7 @@ model Activity {
   customW              Int               @default(0)     // 輸出寬（px）；0=用比例預設。同產品圖一致嘅尺寸設定
   customH              Int               @default(0)     // 輸出高（px）；0=用比例預設
   imageModel           String            @default("google/gemini-3-pro-image-preview") // [COLLEAGUE] 生圖模型
+  baseImageUrl         String?           // [2b] 底圖模式：成張相 100% 做背景，唔重新生圖；null=行現有生圖流程
   status               String            @default("PENDING")
   createdAt            DateTime          @default(now())
   generatedLayouts     GeneratedLayout[]
@@ -55,6 +56,7 @@ model GeneratedLayout {
   isSelected      Boolean  @default(false)
   textBurnedIn    Boolean  @default(false)  // [COLLEAGUE] 文字是否已由 AI 燒入圖片
   savedToLibrary  Boolean  @default(false)  // [COLLEAGUE] 是否已加入素材庫（策展）
+  textLayerJson   String   @default("{}")   // [2b] 底圖模式：交俾後續文字排版階段嘅文字層 JSON
   createdAt       DateTime @default(now())
 }
 

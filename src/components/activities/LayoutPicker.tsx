@@ -17,6 +17,10 @@ const LAYOUT_META: Record<string, { label: string; description: string }> = {
   A: { label: "產品置中", description: "清晰展示" },
   B: { label: "視覺強烈", description: "設計感強" },
   C: { label: "氣氛感", description: "品牌形象" },
+  // 底圖模式 3 款：位置拉開 + 唔同字效
+  "BASE-TOP": { label: "品牌漸層", description: "品牌色漸層 · 頂部" },
+  "BASE-MID": { label: "柔和陰影", description: "白字陰影 · 左上" },
+  "BASE-BOT": { label: "描邊白字", description: "白字描邊 · 底部" },
 };
 
 // 解析 Claude 原始文案，移除「主標題：」等標籤
@@ -98,7 +102,11 @@ export function LayoutPicker({ layouts, selectedId, activityId, clientId, onSele
                 )}
                 {/* 左上角標籤群：文字鎖定/AI 發揮 + 文字已燒入 */}
                 <div className="absolute top-2 left-2 flex flex-col items-start gap-1">
-                  {layout.layoutType === "A" ? (
+                  {layout.layoutType.startsWith("BASE") ? (
+                    <span className="flex items-center gap-1 rounded-full bg-violet-500 px-2 py-0.5 text-[10px] font-medium text-white shadow">
+                      🖼️ 底圖
+                    </span>
+                  ) : layout.layoutType === "A" ? (
                     <span className="flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-medium text-white shadow">
                       🔒 文字鎖定
                     </span>
