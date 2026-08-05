@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sparkles, Images, X } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
-import { RolePickerModal, ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, type ActivityImageRole } from "@/components/activities/RolePickerModal";
+import { RolePickerModal, ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, type ActivityImageRole } from "@/components/activities/RolePickerModal";
 
 type Step = "choose" | "pick" | "role";
 
@@ -19,6 +19,7 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
   const router = useRouter();
   const [step, setStep] = useState<Step>("choose");
   const [picked, setPicked] = useState<string | null>(null);
+  const [pickedPrompt, setPickedPrompt] = useState<string>(""); // 揀嗰張圖已有嘅 AI prompt
 
   const gotoNew = () => router.push(`/clients/${clientId}/activities/new`);
 
@@ -27,7 +28,9 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
     try {
       sessionStorage.removeItem(ACTIVITY_REF_KEY);
       sessionStorage.removeItem(ACTIVITY_BASE_KEY);
+      sessionStorage.removeItem(ACTIVITY_IMAGE_PROMPT_KEY);
       sessionStorage.setItem(role === "base" ? ACTIVITY_BASE_KEY : ACTIVITY_REF_KEY, picked);
+      if (pickedPrompt.trim()) sessionStorage.setItem(ACTIVITY_IMAGE_PROMPT_KEY, pickedPrompt.trim());
     } catch { /* ignore */ }
     gotoNew();
   };
@@ -37,7 +40,7 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
     return (
       <LibraryImagePickerModal
         clientId={clientId}
-        onPick={(url) => { setPicked(url); setStep("role"); }}
+        onPick={(url, promptText) => { setPicked(url); setPickedPrompt(promptText ?? ""); setStep("role"); }}
         onClose={onClose}
       />
     );

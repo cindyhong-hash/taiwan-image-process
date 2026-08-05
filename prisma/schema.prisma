@@ -40,6 +40,7 @@ model Activity {
   customH              Int               @default(0)     // 輸出高（px）；0=用比例預設
   imageModel           String            @default("google/gemini-3-pro-image-preview") // [COLLEAGUE] 生圖模型
   baseImageUrl         String?           // [2b] 底圖模式：成張相 100% 做背景，唔重新生圖；null=行現有生圖流程
+  typographyMood       String?           // [2b] 特效字風格 override（auto/luxury/cozy/noble/fresh）；null/auto=Gemini 綜合底圖+品牌+主題自選
   status               String            @default("PENDING")
   createdAt            DateTime          @default(now())
   generatedLayouts     GeneratedLayout[]

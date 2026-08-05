@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, Palette, Image as ImageIcon } from "lucide-react";
+import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, Palette, Image as ImageIcon, Check } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
 import { getColors } from "@/types/library";
@@ -225,6 +225,7 @@ export function ActivityForm({
   // AI 輔助狀態
   const [optimizingPrompt,  setOptimizingPrompt]  = useState(false);
   const [analyzingImage,    setAnalyzingImage]    = useState(false);
+  const [analyzedDone,      setAnalyzedDone]      = useState(false);
   const [editingPrompt,     setEditingPrompt]     = useState(false);
   const [editInstruction,   setEditInstruction]   = useState("");
   const [applyingEdit,      setApplyingEdit]      = useState(false);
@@ -248,14 +249,17 @@ export function ActivityForm({
     kind === "product" ? setUploadingProduct(true) : setUploadingRef(true);
     const urls = await Promise.all(toUpload.map(uploadFile));
     set(kind === "product" ? "productImageUrls" : "referenceImageUrls", [...current, ...urls].slice(0, max));
-    if (kind === "ref") setRefStylePrompt(""); // 上傳新參考圖 → 無現成 prompt，改用 analyze API
     kind === "product" ? setUploadingProduct(false) : setUploadingRef(false);
+    if (kind === "ref") {
+      setRefStylePrompt(""); setAnalyzedDone(false);
+      if (urls[0]) handleAnalyzeStyle({ url: urls[0] }); // 上傳完自動反推（冇現成 prompt → call vision API）
+    }
   };
 
   const removeImage = (kind: "product" | "ref", i: number) => {
     const key = kind === "product" ? "productImageUrls" : "referenceImageUrls";
     set(key, values[key].filter((_, idx) => idx !== i));
-    if (kind === "ref") setRefStylePrompt("");
+    if (kind === "ref") { setRefStylePrompt(""); setAnalyzedDone(false); }
   };
 
   // ── AI 功能一：優化 Prompt ───────────────────────────────────────────────────
@@ -266,7 +270,8 @@ export function ActivityForm({
       const res = await fetch("/api/ai/optimize-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: values.imagePrompt }),
+        // restrained：只喺底圖模式（gallery 圖做底圖）先克制，從 0 開始嘅活動維持原本冗長版
+        body: JSON.stringify({ prompt: values.imagePrompt, restrained: isBaseMode }),
       });
       const data = await res.json();
       if (data.optimizedPrompt) {
@@ -292,6 +297,7 @@ export function ActivityForm({
         body: JSON.stringify({
           prompt: values.imagePrompt,
           instruction: editInstruction,
+          restrained: isBaseMode,
         }),
       });
       const data = await res.json();
@@ -310,31 +316,37 @@ export function ActivityForm({
   };
 
   // ── AI 功能二：解析參考圖風格並附加到 Prompt ─────────────────────────────────
-  const handleAnalyzeStyle = async () => {
-    const refUrl = values.referenceImageUrls[0];
+  //  opts.url / opts.prompt：由「揀完參考圖自動觸發」傳（state 未更新，直接用），手撳就讀 state。
+  const handleAnalyzeStyle = async (opts?: { url?: string; prompt?: string }) => {
+    const refUrl = opts?.url ?? values.referenceImageUrls[0];
     if (!refUrl) return;
+    const preset = (opts?.prompt ?? refStylePrompt).trim();
     const appendStyle = (desc: string) => {
-      const separator = values.imagePrompt.trim() ? "\n\n風格參考：" : "風格參考：";
-      set("imagePrompt", values.imagePrompt + separator + desc);
+      setValues((prev) => {
+        const separator = prev.imagePrompt.trim() ? "\n\n風格參考：" : "風格參考：";
+        return { ...prev, imagePrompt: prev.imagePrompt + separator + desc };
+      });
     };
-    // 由素材庫揀嘅圖已有 AI Prompt → 直接用，唔使再 call analyze API（即時、慳一次呼叫）。
-    if (refStylePrompt.trim()) {
-      appendStyle(refStylePrompt.trim());
-      return;
-    }
+    setAnalyzedDone(false);
     setAnalyzingImage(true);
     try {
-      const res = await fetch("/api/ai/analyze-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: refUrl }),
-      });
-      const data = await res.json();
-      if (data.styleDescription) {
-        appendStyle(data.styleDescription);
+      let desc = preset;
+      if (!desc) {
+        // 冇現成 prompt（上傳圖）→ call analyze API
+        const res = await fetch("/api/ai/analyze-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: refUrl }),
+        });
+        const data = await res.json();
+        desc = data.styleDescription ?? "";
+        if (!desc) { alert(data.error ?? "解析失敗，請稍後再試"); return; }
       } else {
-        alert(data.error ?? "解析失敗，請稍後再試");
+        // 由素材庫揀嘅圖已有 AI Prompt → 短暫延遲俾用戶睇到 loading → done
+        await new Promise((r) => setTimeout(r, 450));
       }
+      appendStyle(desc);
+      setAnalyzedDone(true);
     } catch {
       alert("網路錯誤，請稍後再試");
     } finally {
@@ -537,15 +549,19 @@ export function ActivityForm({
             </div>
             <button
               type="button"
-              onClick={handleAnalyzeStyle}
+              onClick={() => handleAnalyzeStyle()}
               disabled={!hasRefImages || analyzingImage}
               className={`w-full flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed transition-all h-32
-                ${hasRefImages && !analyzingImage
+                ${analyzedDone && !analyzingImage
+                  ? "border-emerald-300 text-emerald-600 bg-emerald-50/40 cursor-pointer"
+                  : hasRefImages && !analyzingImage
                   ? "border-violet-300 text-violet-600 hover:bg-violet-50 cursor-pointer"
                   : "border-gray-100 text-gray-300 cursor-not-allowed bg-gray-50"}`}
             >
               {analyzingImage ? (
                 <><Loader2 className="h-5 w-5 animate-spin text-violet-500" /><span className="text-xs text-violet-500">分析中…</span></>
+              ) : analyzedDone ? (
+                <><Check className="h-5 w-5 text-emerald-500" /><span className="text-xs text-emerald-600 font-medium">已帶入提示詞</span><span className="text-[10px] text-emerald-500/70">可再撳重新帶入</span></>
               ) : (
                 <><Sparkles className={`h-5 w-5 ${hasRefImages ? "text-violet-400" : "text-gray-200"}`} />
                 <span className="text-xs font-medium">{!hasRefImages ? "需先加風格參考圖" : refStylePrompt.trim() ? "帶入參考圖提示詞" : "分析風格，帶入提示詞"}</span></>
@@ -671,7 +687,12 @@ export function ActivityForm({
         <LibraryImagePickerModal
           clientId={clientId}
           title="從素材庫揀參考圖"
-          onPick={(url, promptText) => { set("referenceImageUrls", [url]); setRefStylePrompt(promptText ?? ""); setShowLibPicker(false); }}
+          onPick={(url, promptText) => {
+            set("referenceImageUrls", [url]);
+            setRefStylePrompt(promptText ?? "");
+            setShowLibPicker(false);
+            handleAnalyzeStyle({ url, prompt: promptText ?? "" }); // 揀完自動反推提示詞
+          }}
           onClose={() => setShowLibPicker(false)}
         />
       )}

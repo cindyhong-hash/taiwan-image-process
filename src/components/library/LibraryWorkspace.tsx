@@ -16,7 +16,7 @@ import { QuickAddModal } from "@/components/library/QuickAddModal";
 import { GenerateAssetModal } from "@/components/library/GenerateAssetModal";
 import { AddAssetModal, type AddAssetType } from "@/components/library/AddAssetModal";
 import { ImageDetailModal } from "@/components/library/ImageDetailModal";
-import { RolePickerModal, ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, type ActivityImageRole } from "@/components/activities/RolePickerModal";
+import { RolePickerModal, ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, type ActivityImageRole } from "@/components/activities/RolePickerModal";
 import type { StyleComponent, PromptSlots, ImageDetail } from "@/types/library";
 import { CATEGORY_META } from "@/types/library";
 
@@ -83,20 +83,24 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
 
   // 素材 popup →「帶入活動圖生成」：先開 RolePicker 揀角色（參考圖 / 底圖，同 Mode A 共用）。
   const [rolePickImage, setRolePickImage] = useState<string | null>(null);
-  const handleUseAsActivityRef = useCallback((imageUrl: string) => {
+  const [rolePickPrompt, setRolePickPrompt] = useState<string>(""); // 帶入圖已有嘅 AI prompt
+  const handleUseAsActivityRef = useCallback((imageUrl: string, prompt?: string) => {
     setDetail(null);
     setRolePickImage(imageUrl); // → RolePickerModal
+    setRolePickPrompt(prompt ?? "");
   }, []);
-  // 揀完角色：URL 經 sessionStorage 傳（唔喺網址外露）→ 跳新增活動頁。
+  // 揀完角色：URL + AI prompt 經 sessionStorage 傳（唔喺網址外露）→ 跳新增活動頁。
   const handlePickActivityRole = useCallback((role: ActivityImageRole) => {
     if (!rolePickImage) return;
     try {
       sessionStorage.removeItem(ACTIVITY_REF_KEY);
       sessionStorage.removeItem(ACTIVITY_BASE_KEY);
+      sessionStorage.removeItem(ACTIVITY_IMAGE_PROMPT_KEY);
       sessionStorage.setItem(role === "base" ? ACTIVITY_BASE_KEY : ACTIVITY_REF_KEY, rolePickImage);
+      if (rolePickPrompt.trim()) sessionStorage.setItem(ACTIVITY_IMAGE_PROMPT_KEY, rolePickPrompt.trim());
     } catch { /* ignore */ }
     router.push(`/clients/${clientId}/activities/new`);
-  }, [rolePickImage, clientId, router]);
+  }, [rolePickImage, rolePickPrompt, clientId, router]);
 
   const handleOpenGenerateAsset = useCallback((init: GenerateAssetInit) => {
     setDetail(null);

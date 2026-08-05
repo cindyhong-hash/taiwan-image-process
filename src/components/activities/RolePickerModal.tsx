@@ -12,6 +12,7 @@ export type ActivityImageRole = "reference" | "base";
 // 帶入活動圖生成時，圖經 sessionStorage 傳去新增活動頁（唔喺網址外露）。三邊共用。
 export const ACTIVITY_REF_KEY = "activityRefImage";
 export const ACTIVITY_BASE_KEY = "activityBaseImage";
+export const ACTIVITY_IMAGE_PROMPT_KEY = "activityImagePrompt"; // 帶入圖嘅 AI prompt → 預填畫面描述
 
 export function RolePickerModal({
   imageUrl,

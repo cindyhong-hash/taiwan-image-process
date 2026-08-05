@@ -8,7 +8,7 @@ export async function POST(request: Request) {
       clientId,
       requiredText, imagePrompt, imageRatio, imageModel, customW, customH,
       productImageUrls, referenceImageUrls, selectedComponentIds,
-      baseImageUrl,
+      baseImageUrl, typographyMood,
     } = body;
 
     if (!clientId) {
@@ -37,6 +37,7 @@ export async function POST(request: Request) {
         customH:              Number(customH) > 0 ? Math.round(Number(customH)) : 0,
         imageModel:           imageModel ?? "google/gemini-3-pro-image-preview",
         baseImageUrl:         baseImageUrl || null,  // [2b] 底圖模式
+        typographyMood:       typographyMood || null, // [2b] 特效字風格 override
         status: "PENDING",
       },
     });

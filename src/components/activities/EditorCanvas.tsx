@@ -149,7 +149,7 @@ export function EditorCanvas({ layout, brandLogoUrl }: Props) {
   };
 
   return (
-    <div className="grid grid-cols-[1fr_1fr] xl:grid-cols-[1fr_340px_340px] gap-8 items-start">
+    <div className="grid grid-cols-[1fr_1fr] xl:grid-cols-[auto_340px_340px] gap-8 items-start xl:justify-center">
 
       {/* ── Col 1: Image ── */}
       <div className="space-y-3">
@@ -236,8 +236,9 @@ export function EditorCanvas({ layout, brandLogoUrl }: Props) {
           </div>
         )}
 
-        {/* Export */}
-        <div className="flex gap-2">
+        {/* Export（FB/IG 尺寸）—— 暫隱藏（下載改喺版型卡直接下載；code 保留備用）。
+            原 /api/export 下載未 work；日後修好可拆返 hidden。 */}
+        <div className="hidden gap-2">
           <Button variant="outline" size="sm" onClick={() => exportImage("fb")} disabled={exporting}>
             {exporting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
             <span>FB 尺寸</span>

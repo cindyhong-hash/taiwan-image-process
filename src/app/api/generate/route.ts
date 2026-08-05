@@ -33,6 +33,7 @@ async function generateBackground(opts: {
   });
 }
 import { compositeImage, overlayLogo } from "@/lib/composite";
+import { generateTypographyImage } from "@/lib/typography";
 import { buildCopyPrompt, buildImagePrompt } from "@/lib/prompts";
 import { extractStyleComponents, buildAiPromptText } from "@/lib/extract-components";
 import { LAYOUT_CONFIGS } from "@/types";
@@ -81,6 +82,33 @@ async function readImageSize(url: string): Promise<{ w: number; h: number }> {
 function parsePostCopy(raw: string): string {
   const match = raw.match(/發文文案[：:]\s*([\s\S]+)/);
   return match?.[1]?.trim() ?? "";
+}
+
+/** parse 用戶輸入嘅必放文字「主標題：X 副標題：Y」→ {title, sub}；冇格式就整句做主標。 */
+function parseUserTitle(raw: string): { title: string; sub: string } {
+  const t = (raw ?? "").trim();
+  if (!t) return { title: "", sub: "" };
+  // 支援多種寫法：主標題 / 主標 / 標題 / 主 ＋ 副標題 / 副標 / 副（全形或半形冒號）。
+  // 否則成串「主：… 副：…」會原封塞入 headline，令 Gemini 畫重複／亂排。
+  const both = t.match(/(?:主標題|主標|標題|主)[：:]\s*([\s\S]+?)\s*(?:副標題|副標|副)[：:]\s*([\s\S]+)/);
+  if (both) return { title: both[1].trim(), sub: both[2].trim() };
+  const only = t.match(/(?:主標題|主標|標題|主)[：:]\s*([\s\S]+)/);
+  if (only) return { title: only[1].trim(), sub: "" };
+  return { title: t, sub: "" };
+}
+
+// [底圖模式 ②] 清走「構圖/配色/技術」雜訊，免文案 AI 被「[AI 合成]」等字帶去離題（tech/AI）。
+// 例：「[AI 合成] 構圖：商品居中，字放上方，花草點景下方 配色」→ 清空 → 交由產品+品牌發揮。
+function cleanCampaignTheme(raw: string): string {
+  return (raw ?? "")
+    .replace(/[\[【][^\]】]*[\]】]/g, " ")       // [AI 合成]、【…】
+    .replace(/構圖\s*[:：][^。\n]*/g, " ")       // 構圖：…
+    .replace(/配色\s*[:：]?[^。\n]*/g, " ")      // 配色…
+    .replace(/版面\s*[:：]?[^。\n]*/g, " ")      // 版面…
+    .replace(/#[0-9A-Fa-f]{3,8}\b/g, " ")        // hex 色碼
+    .replace(/[\[\]【】]/g, " ")                  // 散落嘅括號（unclosed）
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // ── 品牌過往貼文風格分析（多張取最具代表性描述）────────────────────────────
@@ -141,70 +169,95 @@ export async function POST(request: Request) {
       };
       type TextEl = { role: string; content: string; zone: string; emphasis: string };
 
-      // 3 款：每款各自 AI 生「唔同文案」（頂款鎖用戶必放文字；中/底款 AI 自由發揮）
-      //       + 位置拉開（頂/左上/底）+ 唔同字效。底圖 100% 保留、唔重新生圖。
-      const VARIANTS: {
-        type: string; zone: "top-full" | "top-left" | "bottom-full";
-        style: "brandGrad" | "shadow" | "outline"; copyLayout: "A" | "B" | "C";
-      }[] = [
-        { type: "BASE-TOP", zone: "top-full",    style: "brandGrad", copyLayout: "A" },  // 頂 · 品牌漸層 · 鎖用戶文字
-        { type: "BASE-MID", zone: "top-left",    style: "shadow",    copyLayout: "B" },  // 左上 · 陰影 · AI 發揮
-        { type: "BASE-BOT", zone: "bottom-full", style: "outline",   copyLayout: "C" },  // 底 · 描邊 · AI 發揮
+      // 3 款（1+3）：每款各自 AI 生唔同文案（款1 鎖用戶必放文字；款2/3 AI 自由發揮）。
+      // 每款用「AI 特效字」（Gemini 喺底圖上加特效字 + 擴展背景，見 lib/typography.ts）；
+      // 失敗就 fallback Sharp 疊字（唔會出空白）。
+      // mood（顏色/氛圍）由 Gemini 綜合「底圖 vibe + 品牌語氣 + 主題」自選（唔再有 UI 揀）。
+      // effect 程度：3 款隨機分配「純文字 / 特效 / 風格字（有 style 冇 effect）」，唔鎖款號。
+      const levels = (["plain", "effect", "styled"] as const).slice().sort(() => Math.random() - 0.5);
+      const VARIANTS: { type: string; copyLayout: "A" | "B" | "C"; effectLevel: "plain" | "effect" | "styled" }[] = [
+        { type: "BASE-1", copyLayout: "A", effectLevel: levels[0] },  // 鎖用戶必放文字
+        { type: "BASE-2", copyLayout: "B", effectLevel: levels[1] },  // AI 自由發揮
+        { type: "BASE-3", copyLayout: "C", effectLevel: levels[2] },  // AI 自由發揮
       ];
+      // ③ 冇 title 時文案 AI 睇唔到產品 → 先用 vision 認底圖產品做 context（1 次，3 款共用）
+      const productDesc = await describeProduct(baseUrl);
+      // ② 主題來源判斷：
+      //    有必放文字 → activity.theme 係用戶訊息 → 清雜訊後用。
+      //    冇必放文字 → activity.theme 係由「畫面描述(imagePrompt)」嚟 = 純圖像指示
+      //      （構圖/配色/lighting/lens…，甚至 AI 優化後成段英文 photography prompt）→ 唔做文案題材，
+      //      索性清空，靠 ③ 產品 + 品牌調性寫文案（唔追住中/英 keyword 去 strip）。
+      const copyTheme = activity.titleText?.trim() ? cleanCampaignTheme(activity.theme) : "";
+
       const saved: Awaited<ReturnType<typeof db.generatedLayout.create>>[] = [];
       for (const v of VARIANTS) {
         // ── 每款各自生文案（A 鎖定使用者文字；B/C 自由發揮 → 3 款文字唔同）──
         const copyPrompt = buildCopyPrompt({
-          theme:      activity.theme,
+          theme:      copyTheme,
           focusPoint: activity.focusPoint ?? "",
           titleText:  activity.titleText  ?? "",
           toneLabels: tones,
           layoutType: v.copyLayout,
           taboos:     [],
           forceTitle: v.copyLayout === "A",
+          productContext: productDesc ?? undefined,
         });
         const rawCopy = (await chatTextOpenRouter(copyPrompt, 500)) ?? "";
         const { title: aiTitle, imageSubtitle: aiSub } = parseImageText(rawCopy);
-        const headline = aiTitle || (v.copyLayout === "A" ? (activity.titleText?.trim() ?? "") : "");
+        // 款1（copyLayout A）鎖用戶必放文字：直接 parse 用戶輸入（主標題/副標題），唔俾 AI 改；款2/3 用 AI
+        let headline: string, subtitle: string;
+        if (v.copyLayout === "A") {
+          const u = parseUserTitle(activity.titleText ?? "");
+          headline = u.title || aiTitle;
+          subtitle = u.sub || aiSub;
+        } else {
+          headline = aiTitle;
+          subtitle = aiSub;
+        }
         const ctaText = rawCopy.match(/CTA[：:]\s*(.+)/)?.[1]?.trim() || "";
         const postCopy = parsePostCopy(rawCopy) || rawCopy;
 
-        // ── Sharp 疊字（唔重新生圖）──
+        // ── AI 特效字（主字特效 + 副字樸素 + 擴展背景保留完整產品）──
         let finalUrl = baseUrl;
         let burnedIn = false;
-        try {
-          if (headline || aiSub) {
-            finalUrl = await compositeImage({
-              backgroundUrl: baseUrl,
-              layoutType:    "A",
-              textZone:      v.zone,
-              textStyle:     v.style,
-              primaryColor:  client.primaryColor,
-              canvasWidth:   size.w,
-              canvasHeight:  size.h,
-              titleText:     headline || undefined,
-              subtitleText:  aiSub    || undefined,
-              seed:          `${activityId}-${v.type}`,
-            });
-            burnedIn = true;
+        if (headline || subtitle) {
+          const typoUrl = await generateTypographyImage({
+            baseImageUrl: baseUrl, title: headline, subtitle: subtitle || undefined,
+            brandTones: tones.join("、"),
+            theme: activity.theme,
+            userPrompt: activity.imagePrompt ?? undefined,
+            effectLevel: v.effectLevel,
+            width: size.w, height: size.h, ratio: activity.imageRatio ?? undefined, // 跟活動尺寸設定
+            seed: `${activityId}-${v.type}`,
+          });
+          if (typoUrl) {
+            finalUrl = typoUrl; burnedIn = true;
+          } else {
+            // fallback：Sharp 像素疊字（唔會出空白）
+            try {
+              finalUrl = await compositeImage({
+                backgroundUrl: baseUrl, layoutType: "A",
+                textZone: v.copyLayout === "C" ? "bottom-full" : "top-left",
+                primaryColor: client.primaryColor, canvasWidth: size.w, canvasHeight: size.h,
+                titleText: headline || undefined, subtitleText: subtitle || undefined,
+                seed: `${activityId}-${v.type}`,
+              });
+              burnedIn = true;
+              if (client.logoUrl && finalUrl !== baseUrl) {
+                finalUrl = await overlayLogo({ imageUrl: finalUrl, logoUrl: client.logoUrl, textZone: "top-left", seed: `${activityId}-${v.type}-logo` });
+              }
+            } catch (e) {
+              console.warn(`[generate] 底圖 fallback 疊字失敗(${v.type}):`, e);
+              finalUrl = baseUrl; burnedIn = false;
+            }
           }
-          if (client.logoUrl && finalUrl !== baseUrl) {
-            finalUrl = await overlayLogo({
-              imageUrl: finalUrl, logoUrl: client.logoUrl,
-              textZone: v.zone, seed: `${activityId}-${v.type}-logo`,
-            });
-          }
-        } catch (e) {
-          console.warn(`[generate] 底圖疊字失敗(${v.type})，保留原底圖:`, e);
-          finalUrl = baseUrl; burnedIn = false;
         }
 
-        // ── 每款各自打包 schema（文字層契約，文案/位置跟該款）──
-        const zoneTag = v.zone === "bottom-full" ? "bottom" : "top";
+        // ── 每款各自打包 schema（文字層契約，俾後續文字排版階段）──
         const textElements: TextEl[] = [
-          headline ? { role: "headline", content: headline, zone: zoneTag, emphasis: "high"   } : null,
-          aiSub    ? { role: "subtitle", content: aiSub,    zone: zoneTag, emphasis: "medium" } : null,
-          ctaText  ? { role: "cta",      content: ctaText,  zone: "bottom", emphasis: "high"  } : null,
+          headline ? { role: "headline", content: headline, zone: "top",    emphasis: "high"   } : null,
+          subtitle ? { role: "subtitle", content: subtitle, zone: "top",    emphasis: "medium" } : null,
+          ctaText  ? { role: "cta",      content: ctaText,  zone: "bottom", emphasis: "high"   } : null,
         ].filter((x): x is TextEl => x !== null);
         const variantLayer = {
           version: "0.1",
@@ -214,8 +267,8 @@ export async function POST(request: Request) {
           brand,
           textElements,
           postCopy,
-          templateHint: v.zone,
-          styleHint: v.style,
+          templateHint: "ai-typography",
+          styleHint: v.effectLevel,   // 純文字 / 特效 / 風格字
         };
         const layout = await db.generatedLayout.create({
           data: {

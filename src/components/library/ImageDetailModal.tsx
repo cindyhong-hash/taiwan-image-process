@@ -45,8 +45,8 @@ type Props = {
   onDeleteComponents?: (ids: string[]) => void;
   /** Called after the photo title is edited — lets the parent refresh its grids. */
   onRefresh?: () => void;
-  /** 帶入此圖去「新增活動」做參考圖（經 sessionStorage 傳 URL，唔會喺網址外露）。 */
-  onUseAsActivityRef?: (imageUrl: string) => void;
+  /** 帶入此圖去「新增活動」（經 sessionStorage 傳 URL + AI prompt，唔會喺網址外露）。 */
+  onUseAsActivityRef?: (imageUrl: string, prompt?: string) => void;
   onClose: () => void;
 };
 
@@ -268,7 +268,7 @@ export function ImageDetailModal({
                 </button>
               )}
               {onUseAsActivityRef && (
-                <button onClick={() => onUseAsActivityRef(imageUrl)}
+                <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
                   className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
                   <Target className="h-3.5 w-3.5" />帶入活動圖生成
                 </button>
@@ -351,7 +351,7 @@ export function ImageDetailModal({
           </div>
           {onUseAsActivityRef && imageUrl && (
             <div className="px-5 py-3 border-t shrink-0">
-              <button onClick={() => onUseAsActivityRef(imageUrl)}
+              <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
                 className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
                 <Target className="h-3.5 w-3.5" />帶入活動圖生成
               </button>
@@ -513,7 +513,7 @@ export function ImageDetailModal({
         </div>
         {onUseAsActivityRef && imageUrl && (
           <div className="px-5 py-3 border-t shrink-0">
-            <button onClick={() => onUseAsActivityRef(imageUrl)}
+            <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
               className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
               <Target className="h-3.5 w-3.5" />帶入活動圖生成
             </button>

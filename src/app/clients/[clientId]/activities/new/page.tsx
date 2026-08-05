@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActivityForm, type ActivityFormValues } from "@/components/activities/ActivityForm";
-import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY } from "@/components/activities/RolePickerModal";
+import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
 
 export default function NewActivityPage({ params }: { params: Promise<{ clientId: string }> }) {
   const [clientId, setClientId] = useState("");
@@ -11,13 +11,15 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
   // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
   // 同步喺首次 render 讀取並清走，令 ActivityForm mount 時已有預填。
-  const [initial] = useState<{ ref: string | null; base: string | null }>(() => {
-    if (typeof window === "undefined") return { ref: null, base: null };
+  const [initial] = useState<{ ref: string | null; base: string | null; prompt: string | null }>(() => {
+    if (typeof window === "undefined") return { ref: null, base: null, prompt: null };
     const ref = sessionStorage.getItem(ACTIVITY_REF_KEY);
     const base = sessionStorage.getItem(ACTIVITY_BASE_KEY);
+    const prompt = sessionStorage.getItem(ACTIVITY_IMAGE_PROMPT_KEY);
     if (ref) sessionStorage.removeItem(ACTIVITY_REF_KEY);
     if (base) sessionStorage.removeItem(ACTIVITY_BASE_KEY);
-    return { ref, base };
+    if (prompt) sessionStorage.removeItem(ACTIVITY_IMAGE_PROMPT_KEY);
+    return { ref, base, prompt };
   });
 
   useEffect(() => {
@@ -43,6 +45,7 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
         initialValues={{
           ...(initial.ref ? { referenceImageUrls: [initial.ref] } : {}),
           ...(initial.base ? { baseImageUrl: initial.base } : {}),
+          ...(initial.prompt ? { imagePrompt: initial.prompt } : {}),
         }} />
     </div>
   );

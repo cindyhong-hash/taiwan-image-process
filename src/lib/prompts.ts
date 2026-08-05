@@ -256,6 +256,7 @@ type CopyPromptParams = {
   layoutType: string;
   taboos: string[];
   forceTitle?: boolean;  // 主標題強制使用 titleText（鎖定版）
+  productContext?: string;  // [底圖模式] vision 認出嘅產品/畫面描述，令冇 title 時文案唔會離題
 };
 
 const LAYOUT_COPY_PERSONA: Record<string, { direction: string; examples: string }> = {
@@ -277,9 +278,17 @@ const LAYOUT_COPY_PERSONA: Record<string, { direction: string; examples: string 
 };
 
 export function buildCopyPrompt(params: CopyPromptParams): string {
-  const { theme, focusPoint, titleText, toneLabels, layoutType, taboos, forceTitle } = params;
+  const { theme, focusPoint, titleText, toneLabels, layoutType, taboos, forceTitle, productContext } = params;
 
   const persona = LAYOUT_COPY_PERSONA[layoutType] ?? LAYOUT_COPY_PERSONA["A"];
+
+  // 主題清走構圖雜訊後可能係空 → 叫 AI 依產品+品牌發揮，唔好虛構無關題材（如「AI/科技」）
+  const themeLine = theme.trim()
+    ? `- 主題：${theme.trim()}`
+    : `- 主題：（未指定 — 請依下方「產品／畫面」同品牌調性發揮，切勿虛構無關題材）`;
+  const productLine = productContext?.trim()
+    ? `- 產品／畫面內容（AI 睇圖認出，文案要扣住呢個產品）：${productContext.trim()}`
+    : "";
 
   // requiredText 是「訊息方向參考」，不是要原封不動放上去的文字
   const messageDirection = titleText || focusPoint
@@ -304,8 +313,8 @@ export function buildCopyPrompt(params: CopyPromptParams): string {
 ${messageDirection}
 
 【活動資訊】
-- 主題：${theme}
-- 品牌調性：${toneLabels.join("、") || "專業、親切"}
+${themeLine}
+${productLine ? productLine + "\n" : ""}- 品牌調性：${toneLabels.join("、") || "專業、親切"}
 - 版型方向：${persona.direction}
 - 禁忌事項：${taboos.length > 0 ? taboos.join("、") : "無特別限制"}
 

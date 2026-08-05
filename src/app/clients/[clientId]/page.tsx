@@ -5,7 +5,7 @@ import { Trash2, Search } from "lucide-react";
 import { BrandWorkspaceHeader } from "@/components/layout/BrandWorkspaceHeader";
 import { BrandMemoryCards } from "@/components/clients/BrandMemoryCards";
 
-type Activity = { id: string; theme: string; focusPoint: string; status: string; createdAt: string };
+type Activity = { id: string; theme: string; focusPoint: string; status: string; createdAt: string; imageRatio?: string; customW?: number; customH?: number };
 type Client = {
   id: string; name: string; activities: Activity[];
   // 品牌記憶卡用（/api/clients/[id] 已一併返）
@@ -93,12 +93,19 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
               <div className="space-y-2.5">
                 {acts.map((act) => (
                   <Link key={act.id} href={`/clients/${clientId}/activities/${act.id}`} className="block">
-                    <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm cursor-pointer transition-all">
-                      <div>
-                        <div className="font-medium">{act.theme}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{act.focusPoint}</div>
-                        <div className="text-xs text-gray-300 mt-0.5">
-                          {new Date(act.createdAt).toLocaleDateString("zh-TW")}
+                    <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm cursor-pointer transition-all gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{act.theme}</div>
+                        <div className="text-xs text-gray-400 mt-0.5 truncate">{act.focusPoint}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-gray-400">
+                            {new Date(act.createdAt).toLocaleDateString("zh-TW")}
+                          </span>
+                          {act.imageRatio && (
+                            <span className="text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                              {act.imageRatio}{act.customW && act.customH ? ` · ${act.customW}×${act.customH}` : ""}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

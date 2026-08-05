@@ -32,6 +32,7 @@ export default function EditActivityPage({
             productImageUrls:     data.productImageUrls  ?? [],
             referenceImageUrls:   data.referenceImageUrls ?? [],
             selectedComponentIds: data.selectedComponentIds ?? [],
+            baseImageUrl:         data.baseImageUrl ?? undefined, // [2b] 底圖模式：編輯時要保留，唔可以 fallback 去普通生成
           })
         );
     });
@@ -53,6 +54,7 @@ export default function EditActivityPage({
         productImageUrls:     values.productImageUrls,
         referenceImageUrls:   values.referenceImageUrls,
         selectedComponentIds: values.selectedComponentIds,
+        baseImageUrl:         values.baseImageUrl ?? null, // [2b] 底圖模式 round-trip（取消底圖 → null → 轉普通生成）
         _regenerate: true,
       }),
     });
