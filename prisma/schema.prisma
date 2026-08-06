@@ -41,6 +41,12 @@ model Activity {
   imageModel           String            @default("google/gemini-3-pro-image-preview") // [COLLEAGUE] 生圖模型
   baseImageUrl         String?           // [2b] 底圖模式：成張相 100% 做背景，唔重新生圖；null=行現有生圖流程
   typographyMood       String?           // [2b] 特效字風格 override（auto/luxury/cozy/noble/fresh）；null/auto=Gemini 綜合底圖+品牌+主題自選
+  layoutId             String            @default("single")  // [MULTI] 多圖版型 id（single = 單圖）
+  genMode              String            @default("unified") // [MULTI] 生成模式：unified（統一主題）| perCell（各圖獨立）
+  cells                String            @default("[]")      // [MULTI] 各格資料 JSON: [{description, mustText, assetUrls[]}]
+  logoMode             String            @default("first")   // [MULTI] LOGO 位置：first | all | none
+  variantCount         Int               @default(1)         // [MULTI] 統一主題生成幾組（1 或 2＝A導購+B敘事）
+  errorMessage         String?           // [MULTI] 生成失敗時的真正錯誤原因（顯示在 UI，免翻 log）
   status               String            @default("PENDING")
   createdAt            DateTime          @default(now())
   generatedLayouts     GeneratedLayout[]
@@ -58,6 +64,7 @@ model GeneratedLayout {
   textBurnedIn    Boolean  @default(false)  // [COLLEAGUE] 文字是否已由 AI 燒入圖片
   savedToLibrary  Boolean  @default(false)  // [COLLEAGUE] 是否已加入素材庫（策展）
   textLayerJson   String   @default("{}")   // [2b] 底圖模式：交俾後續文字排版階段嘅文字層 JSON
+  cellImageUrls   String   @default("[]")   // [MULTI] 多圖拼版：各格子圖 URL（供日後個別編輯）
   createdAt       DateTime @default(now())
 }
 

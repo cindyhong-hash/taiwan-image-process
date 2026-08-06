@@ -38,6 +38,7 @@ import { buildCopyPrompt, buildImagePrompt } from "@/lib/prompts";
 import { extractStyleComponents, buildAiPromptText } from "@/lib/extract-components";
 import { LAYOUT_CONFIGS } from "@/types";
 import type { LayoutType } from "@/types";
+import { generateMulti } from "@/lib/generate-multi";  // [MULTI] 多圖拼版流程（獨立模組）
 
 export const maxDuration = 180;
 
@@ -142,6 +143,11 @@ export async function POST(request: Request) {
   });
   if (!activity) {
     return NextResponse.json({ error: "Activity not found" }, { status: 404 });
+  }
+
+  // [MULTI] 多圖版型 → 走獨立的多圖拼版流程（單圖/底圖仍走下方原流程）
+  if (activity.layoutId && activity.layoutId !== "single") {
+    return generateMulti(activityId);
   }
 
   await db.activity.update({ where: { id: activityId }, data: { status: "GENERATING" } });

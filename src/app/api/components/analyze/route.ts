@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const OPENROUTER_MODEL = process.env.OPENROUTER_VISION_MODEL ?? "google/gemini-2.0-flash-001";
+// gemini-2.0-flash-001 已從 OpenRouter 下架(404) → 改用可用的 2.5-flash（與 analyze-image/optimize-prompt 一致）
+const OPENROUTER_MODEL = process.env.OPENROUTER_VISION_MODEL ?? "google/gemini-2.5-flash";
 
 export async function POST(request: Request) {
   try {
