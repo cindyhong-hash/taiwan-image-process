@@ -9,106 +9,8 @@ import { buildImagePrompt } from "@/lib/prompts";
 import { getMultiLayout, getCellRects } from "@/types/multiLayout";
 import { generateGlobalDesignSpec, designSpecPromptBlock, type GlobalDesignSpec } from "@/lib/multi/design-spec";
 import { generateFramePlans, framePlanCellBlock, type FramePlan } from "@/lib/multi/frame-planner";
-
-/** 多圖分鏡 prompt（電商文案小編語氣，場景多樣、同一人物貫穿、文案符合產品功能）*/
-function storyboardPrompt(theme: string, n: number, productDesc?: string): string {
-  const layoutLogicMap: Record<number, string> = {
-    2: `- 圖1（封面）：最強 Hook，點出痛點或情境共鳴，讓人想繼續滑
-- 圖2（收尾）：產品功效 + 行動呼籲，引導下單或留言`,
-
-    3: `- 圖1（封面大圖）：吸睛主標題，點出主題與痛點，情境帶入
-- 圖2（產品引出）：帶出商品名稱與亮眼外觀或核心賣點
-- 圖3（收尾）：使用體感或效果 + 行動呼籲（如限時優惠、引導留言）`,
-
-    4: `- 圖1（封面大圖）：情境帶入，吸睛主標題，點出主題與痛點
-- 圖2（產品引出）：帶出商品名稱與亮眼外觀
-- 圖3（體驗放大）：強調使用時的舒適體感、實際功效（如：不刺激、超順滑）
-- 圖4（收尾生火）：呼應主題，引導粉絲留言或心動下單，可帶限時優惠`,
-
-    5: `- 圖1（主封面）：最震撼情境大標題，強烈 Hook
-- 圖2（產品亮相）：產品外觀與第一印象
-- 圖3（核心特點A）：放大強調第一個優勢體感
-- 圖4（核心特點B）：放大強調第二個優勢或安全性
-- 圖5（封底生火）：呼應主題，引導留言或心動下單`,
-  };
-
-  const layoutLogic = layoutLogicMap[n] ?? layoutLogicMap[4];
-
-  const productContext = productDesc
-    ? `\n【產品資訊】${productDesc}\n文案必須符合這個產品的實際功能。`
-    : "";
-
-  return `你是一位精通頂級電商視覺與 IG/FB 排版美學的 UI/UX 設計總監，同時是資深電商文案小編。
-
-【活動主題】${theme}
-${productContext}
-
-【任務】請針對以上主題，規劃一套共 ${n} 張圖的「視覺與文案排版企劃」，確保多圖之間具有極高一致性。
-
-【多圖敘事邏輯】
-${layoutLogic}
-
-【設計規範（必須嚴格遵守）】
-1. 定義全局視覺主題：所有圖片共享同一個視覺調性（如：日系雜誌輕透感、夏日渡假風、北歐極簡清爽感）
-2. 文字容器：文字絕對禁止直接壓在雜亂背景上，每張圖必須指定文字底框樣式（如：日系微透白底色塊、精緻細線邊框、漸層色塊）
-3. 裝飾元件：指定 2-3 個貫穿全套的小裝飾（如：清新水滴、金箔光影、小碎花），增強系列感
-4. 防呆：每格文案主張嚴禁重複，第1格和最後1格文案不可相同
-
-【文案規則】
-- mustText（圖上主標題）控制在 10-15 字，精簡有力，口語自然，可用 Emoji
-- subtitle（副標題）控制在 10-15 字，補充說明或功效
-- 第1格是最強 Hook，讓人想繼續滑
-- 語氣要有行銷人感：短句、帶動作性或情感痛點
-
-【畫面描述規則】
-- 每格可以有不同場景，但同一人物主角貫穿
-- 描述要具體：場景地點 + 人物動作 + 產品出現方式 + 情緒氛圍（30-50字）
-- 必須包含構圖留白指引（例如：人物靠左，右側大面積留白放文字）
-
-【輸出格式】嚴格只輸出 JSON 物件，不要任何說明文字或 markdown：
-{
-  "global_design": {
-    "visual_theme": "全局視覺調性描述",
-    "shared_decorations": "貫穿全套的點綴元件"
-  },
-  "cells": [
-    {
-      "description": "畫面描述（含構圖留白指引，30-50字）",
-      "tag": "2-4字超短分類標（如 舒緩/限時/必備/步驟1/新品），當作卡片小標籤用",
-      "mustText": "圖上主標題（10-15字）",
-      "subtitle": "副標題（10-15字，可空字串）",
-      "container_style": "固定使用統一卡片元件：左上彩色膠囊標籤＋粗體標題＋細字副標（不需自行設計，將由系統套用固定樣式）",
-      "composition_hint": "構圖提示（如：左側留白放文字，右側人物）"
-    }
-  ]
-}
-共 ${n} 個 cell 物件。`;
-}
-
-/** 兩組分鏡：A 高效導購流 + B 感性敘事流，輸出 JSON 兩組（供「2 組」模式用）*/
-function storyboardPrompt2(theme: string, n: number, productDesc?: string): string {
-  const productContext = productDesc ? `\n【產品資訊】${productDesc}\n文案必須符合產品實際功能。` : "";
-  const cellSchema = `{ "description": "畫面描述(含構圖留白,30-50字)", "tag": "2-4字超短分類標(如 舒緩/限時/必備/步驟1)", "mustText": "圖上主標題(10-15字)", "subtitle": "副標(10-15字,可空)", "container_style": "固定使用統一卡片元件，不需自行設計", "composition_hint": "構圖提示" }`;
-  return `你是頂尖社群行銷「設計總監」。請針對主題與產品，規劃出「風格、切入點、視覺邏輯截然不同」的 **兩組** ${n} 頁社群多圖分鏡。
-
-【主題】${theme}${productContext}
-
-【風格 A — 高效導購流】痛點直擊、強調轉化。第1格最強 Hook 直戳痛點；中段帶出產品與核心功效；最後一格強烈行動呼籲（限時/優惠/引導下單留言）。文案精準有張力、口語化。
-【風格 B — 感性敘事流】品牌美學、理想生活氛圍。完全避免硬性催單，改用優雅詩意的字句、生活提案、心靈共鳴收尾，提升高級感。
-
-【共同規則】
-- 每組都要有同一人物主角貫穿、統一視覺調性；每格場景可不同
-- mustText 10-15 字、subtitle 10-15 字；每格主張不重複、首尾不同
-- 每格指定文字底框（container_style）與構圖留白（composition_hint）
-- 文案需符合產品實際功能，繁體中文（台灣）頂級行銷語感，拒絕 AI 腔
-
-【輸出格式】嚴格只輸出 JSON 物件，不要任何說明或 markdown：
-{
-  "styleA": { "global_design": { "visual_theme": "...", "shared_decorations": "..." }, "cells": [ ${cellSchema} ] },
-  "styleB": { "global_design": { "visual_theme": "...", "shared_decorations": "..." }, "cells": [ ${cellSchema} ] }
-}
-styleA 與 styleB 各 ${n} 個 cell。`;
-}
+import { buildMultiImagePrompt, type LockBlocks } from "@/lib/multi/prompt-builder";
+import { VARIANT_STYLE } from "@/lib/multi/variant-style";
 
 // 各圖獨立模式 B 組：內容＋色調＋人物都相同，只換「文字排版/底框/構圖角度」（附加在每格圖片 prompt 末尾）
 const VARIANT_B_STYLE_SUFFIX =
@@ -579,7 +481,26 @@ If the style reference images show a product that looks slightly different from 
           ? `\n\nRAZOR HANDLED SEPARATELY — DO NOT DRAW IT: Do NOT render, draw, sketch, or include any razor, shaver, blade cartridge, or hair-removal device anywhere in this image — not in hands, not on surfaces, not in the background. A real razor product photo will be composited in afterward. IMPORTANT: keep the RIGHT ~40% of the frame a clean, uncluttered surface (no clutter, no extra props) so the razor can be placed there cleanly.`
           : "";
 
-        const seriesStyleGuide = `${TYPOGRAPHY_LOCK}${fontReferenceNote}${layoutReferenceNote}
+        const lockBlocks: LockBlocks = {
+          productIdentityLock: heroComposite ? "" : PRODUCT_IDENTITY_LOCK,
+          typographyLock: TYPOGRAPHY_LOCK,
+          colorTempLock: fontReferenceNote,
+          noTextBlock: subImageNoText,
+          reserveNote: "",
+          productFreeNote: cellProductFreeNote,
+          razorExclusionNote,
+          noProductWarning,
+          cellNoProduct,
+        };
+        const variant: "A" | "B" = set.label.startsWith("B") ? "B" : "A";
+        const seriesStyleGuide = set.framePlans
+          ? buildMultiImagePrompt({
+              globalSpec: set.globalSpec!,
+              framePlan: set.framePlans[i],
+              variantStyle: VARIANT_STYLE[variant],
+              i, n, lockBlocks,
+            })
+          : `${TYPOGRAPHY_LOCK}${fontReferenceNote}${layoutReferenceNote}
 
 ${heroComposite ? "" : PRODUCT_IDENTITY_LOCK}
 
