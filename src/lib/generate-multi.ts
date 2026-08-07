@@ -7,6 +7,7 @@ import { compositeCollage, overlaySubImageCard, overlayProduct, extractDominantC
 import { overlayLogo } from "@/lib/composite";
 import { buildImagePrompt } from "@/lib/prompts";
 import { getMultiLayout, getCellRects } from "@/types/multiLayout";
+import { generateGlobalDesignSpec, designSpecPromptBlock, type GlobalDesignSpec } from "@/lib/multi/design-spec";
 
 /** 多圖分鏡 prompt（電商文案小編語氣，場景多樣、同一人物貫穿、文案符合產品功能）*/
 function storyboardPrompt(theme: string, n: number, productDesc?: string): string {
@@ -368,7 +369,7 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
       subtitle?: string; container_style?: string; composition_hint?: string; tag?: string;
     };
     type GD = { visual_theme?: string; shared_decorations?: string };
-    type GenSet = { cellData: CellIn[]; globalDesign: GD; label: string; stylePromptSuffix?: string };
+    type GenSet = { cellData: CellIn[]; globalDesign: GD; label: string; stylePromptSuffix?: string; globalSpec?: GlobalDesignSpec };
     const stored: CellIn[] = activity.cells ? JSON.parse(activity.cells) : [];
     const userMustText = (activity.titleText || activity.focusPoint || "").trim();
     const count = ml?.count ?? 1;
@@ -432,30 +433,16 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
     }
     console.log(`[generate][multi] layout=${multiLayoutId} sets=${sets.length} genMode=${activity.genMode} model=${imageModel}`);
 
-    // 1.5 整組共用的「視覺設計系統」基準（品牌色/人物/產品/排版）
-    const visualWorldPrompt = `你是頂級廣告創意總監。根據以下資訊，用英文定義這組多格廣告的「視覺設計系統」。
-
-活動主題：${activity.imagePrompt || activity.theme}
-品牌主色：${client.primaryColor}
-語氣風格：${toneLabels.join("、") || "專業、清新"}
-
-輸出一段英文（80-100字），定義：
-1. COLOR SYSTEM: 主色調、輔色、整體色温（warm/cool/neutral）
-2. PERSON: 主角人物風格（年齡感、穿著風格、氣質關鍵詞）——每格都是同款人物
-3. PRODUCT: 產品出鏡規格（包裝顏色、擺放方式、是否帶盒）
-4. TYPOGRAPHY STYLE: 文字設計風格（字體粗細對比、顏色、排版位置）
-5. BRAND FEEL: 整體品牌氛圍（2-3個關鍵詞）
-
-只輸出英文，不要說明文字。`;
-    let unifiedVisualWorld = "";
-    try {
-      const vw = await anthropic.messages.create({
-        model: "claude-opus-4-5", max_tokens: 400,
-        messages: [{ role: "user", content: visualWorldPrompt }],
+    // 1.5 整組共用的「視覺設計系統」基準（品牌色/人物/產品/排版）——A/B 各自獨立一份 spec
+    for (const s of sets) {
+      const variant: "A" | "B" = s.label.startsWith("B") ? "B" : "A";
+      s.globalSpec = await generateGlobalDesignSpec({
+        theme: activity.imagePrompt || activity.theme,
+        productDesc: multiProductDesc || undefined,
+        primaryColor: client.primaryColor,
+        toneLabels,
+        variant,
       });
-      unifiedVisualWorld = (vw.content[0] as { text: string }).text.trim();
-    } catch (e) {
-      console.warn("[generate][multi] visual world gen failed:", e);
     }
 
     // 2. 產生「一組」拼版（逐格生成→拼版→存一筆 GeneratedLayout）
@@ -597,7 +584,7 @@ ${heroComposite ? "" : PRODUCT_IDENTITY_LOCK}
 
 VISUAL DESIGN SYSTEM — Apply to every cell in this carousel:
 
-${unifiedVisualWorld}${gd.visual_theme ? `\nGLOBAL VISUAL THEME: ${gd.visual_theme}` : ""}${gd.shared_decorations ? `\nSHARED DECORATIONS (use consistently across all cells): ${gd.shared_decorations}` : ""}
+${designSpecPromptBlock(set.globalSpec!)}${gd.visual_theme ? `\nGLOBAL VISUAL THEME: ${gd.visual_theme}` : ""}${gd.shared_decorations ? `\nSHARED DECORATIONS (use consistently across all cells): ${gd.shared_decorations}` : ""}
 
 CRITICAL CONSISTENCY RULES:
 1. TYPOGRAPHY: follow the TYPOGRAPHY LOCK above — only FONT A (headline) + FONT B (subtitle), same text color palette as cell 1.
