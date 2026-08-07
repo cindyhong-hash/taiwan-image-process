@@ -1,12 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 import { ActivityForm, type ActivityFormValues } from "@/components/activities/ActivityForm";
 import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
+import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
 
 export default function NewActivityPage({ params }: { params: Promise<{ clientId: string }> }) {
   const [clientId, setClientId] = useState("");
+  const [showLayoutPicker, setShowLayoutPicker] = useState(false);  // [MULTI] 版型下拉
   const router = useRouter();
+
+  // [MULTI] 選版型：single 留在單圖頁；其餘導去多圖頁
+  const handleLayout = (id: string) => {
+    setShowLayoutPicker(false);
+    if (id !== "single") router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
+  };
 
   // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
   // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
@@ -40,13 +49,27 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
 
   return (
     <div className="max-w-xl">
-      <h1 className="text-xl font-semibold mb-8">新增活動</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-xl font-semibold">新增活動</h1>
+        {/* [MULTI] 版型下拉：可從單圖切換到多圖版型 */}
+        <button
+          type="button"
+          onClick={() => setShowLayoutPicker(true)}
+          className="flex items-center gap-1 text-sm text-gray-500 hover:text-violet-600 border border-gray-200 hover:border-violet-300 rounded-lg px-3 py-1.5 transition-all"
+        >
+          已選版型：<span className="font-medium text-gray-800">1張（單圖）</span>
+          <ChevronDown className="h-4 w-4" />
+        </button>
+      </div>
       <ActivityForm clientId={clientId} onSubmit={handleSubmit}
         initialValues={{
           ...(initial.ref ? { referenceImageUrls: [initial.ref] } : {}),
           ...(initial.base ? { baseImageUrl: initial.base } : {}),
           ...(initial.prompt ? { imagePrompt: initial.prompt } : {}),
         }} />
+      {showLayoutPicker && (
+        <MultiLayoutPicker selectedId="single" onSelect={handleLayout} onClose={() => setShowLayoutPicker(false)} />
+      )}
     </div>
   );
 }

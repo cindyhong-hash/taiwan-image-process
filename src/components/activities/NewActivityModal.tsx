@@ -14,14 +14,21 @@ import { useRouter } from "next/navigation";
 import { Sparkles, ImageDown, X } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
+import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
 
-type Step = "choose" | "pick";
+// [MULTI] 保留同事的「2揀1」簡化；① 改成先揀版型（單圖/多圖）
+type Step = "choose" | "pick" | "layout";
 
 export function NewActivityModal({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>("choose");
 
   const gotoNew = () => router.push(`/clients/${clientId}/activities/new`);
+  // [MULTI] 版型選擇：single → 他的單圖頁；其餘 → 多圖頁並帶 layout 參數
+  const handleLayout = (id: string) => {
+    if (id === "single") gotoNew();
+    else router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
+  };
 
   const handlePicked = (url: string, promptText?: string) => {
     try {
@@ -44,6 +51,10 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
       />
     );
   }
+  // [MULTI] 揀版型：single→單圖頁、其餘→多圖頁
+  if (step === "layout") {
+    return <MultiLayoutPicker onSelect={handleLayout} onClose={onClose} />;
+  }
 
   // step === "choose"
   return (
@@ -58,10 +69,11 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
         </div>
         <div className="p-5 space-y-2.5">
           <p className="text-xs text-gray-500">點樣開始？</p>
-          {/* ① 新生成 */}
-          <button type="button" onClick={gotoNew}
+          {/* ① 新生成（先揀版型：單圖 / 多圖拼版）— 配色沿用同事新 amber */}
+          <button type="button" onClick={() => setStep("layout")}
             className="w-full flex items-start gap-3 text-left rounded-xl border border-gray-200 p-3.5 hover:border-amber-400 hover:bg-amber-50/40 transition-colors">
             <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+
               <Sparkles className="h-4.5 w-4.5" />
             </span>
             <span>

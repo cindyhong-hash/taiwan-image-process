@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; textBurnedIn?: boolean; savedToLibrary?: boolean };
-type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; generatedLayouts: GeneratedLayout[] };
+type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; variantCount?: number; generatedLayouts: GeneratedLayout[] };
 
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
   const [clientId, setClientId] = useState<string>("");
@@ -102,6 +102,11 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
 
   if (!activity) return <div className="text-gray-400">載入中...</div>;
 
+  // [MULTI] 多圖活動 → 編輯導去多圖頁(edit 模式)，還原原本填寫；單圖走他的編輯頁
+  const editHref = activity.layoutId && activity.layoutId !== "single"
+    ? `/clients/${clientId}/activities/new/multi?edit=${activityId}`
+    : `/clients/${clientId}/activities/${activityId}/edit`;
+
   if (
     activity.status === "GENERATING" ||
     activity.status === "PENDING" ||
@@ -110,7 +115,15 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4 text-gray-500">
         <Loader2 className="h-8 w-8 animate-spin" />
-        <div className="font-medium">AI 正在生成 3 款版型，請稍候...</div>
+        <div className="font-medium">
+          {(() => {
+            // 多圖：款數＝生成組數（variantCount）；單圖：固定 3 款(A/B/C)
+            const isMulti = !!activity.layoutId && activity.layoutId !== "single";
+            const n = isMulti ? (activity.variantCount === 2 ? 2 : 1) : 3;
+            const cn = ["", "一", "兩", "三"][n] ?? String(n);
+            return `AI 正在生成${cn}款版型，請稍候...`;
+          })()}
+        </div>
         <div className="text-sm text-gray-400">通常需要 30–60 秒</div>
       </div>
     );
@@ -125,7 +138,7 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
           AI 圖片生成失敗（可能係 API 額度／逾時／網路問題）。<br />
           文案仍可重試。
         </div>
-        <Link href={`/clients/${clientId}/activities/${activityId}/edit`}>
+        <Link href={editHref}>
           <Button variant="outline" size="sm">
             <Pencil className="h-4 w-4 mr-1" />重新生成
           </Button>
@@ -164,7 +177,8 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
               </Button>
             </Link>
           )}
-          <Link href={`/clients/${clientId}/activities/${activityId}/edit`}>
+          {/* [MULTI] 多圖 → editHref 導多圖頁還原填寫；單圖 → 他的編輯頁 */}
+          <Link href={editHref}>
             <Button variant="outline" size="sm">
               <Pencil className="h-4 w-4 mr-1" />編輯 / 重新生成
             </Button>

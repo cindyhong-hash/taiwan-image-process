@@ -9,6 +9,7 @@ export async function POST(request: Request) {
       requiredText, imagePrompt, imageRatio, imageModel, customW, customH,
       productImageUrls, referenceImageUrls, selectedComponentIds,
       baseImageUrl, typographyMood,
+      layoutId, genMode, cells, logoMode, variantCount,  // [MULTI] 多圖欄位
     } = body;
 
     if (!clientId) {
@@ -38,6 +39,12 @@ export async function POST(request: Request) {
         imageModel:           imageModel ?? "google/gemini-3-pro-image-preview",
         baseImageUrl:         baseImageUrl || null,  // [2b] 底圖模式
         typographyMood:       typographyMood || null, // [2b] 特效字風格 override
+        // [MULTI] 多圖版型欄位（single 時走他的單圖流程）
+        layoutId:             layoutId ?? "single",
+        genMode:              genMode ?? "unified",
+        cells:                JSON.stringify(cells ?? []),
+        logoMode:             logoMode ?? "first",
+        variantCount:         Number(variantCount) === 2 ? 2 : 1,
         status: "PENDING",
       },
     });
