@@ -8,6 +8,7 @@ import { overlayLogo } from "@/lib/composite";
 import { buildImagePrompt } from "@/lib/prompts";
 import { getMultiLayout, getCellRects } from "@/types/multiLayout";
 import { generateGlobalDesignSpec, designSpecPromptBlock, type GlobalDesignSpec } from "@/lib/multi/design-spec";
+import { generateFramePlans, framePlanCellBlock, type FramePlan } from "@/lib/multi/frame-planner";
 
 /** 多圖分鏡 prompt（電商文案小編語氣，場景多樣、同一人物貫穿、文案符合產品功能）*/
 function storyboardPrompt(theme: string, n: number, productDesc?: string): string {
@@ -369,7 +370,7 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
       subtitle?: string; container_style?: string; composition_hint?: string; tag?: string;
     };
     type GD = { visual_theme?: string; shared_decorations?: string };
-    type GenSet = { cellData: CellIn[]; globalDesign: GD; label: string; stylePromptSuffix?: string; globalSpec?: GlobalDesignSpec };
+    type GenSet = { cellData: CellIn[]; globalDesign: GD; label: string; stylePromptSuffix?: string; globalSpec?: GlobalDesignSpec; framePlans?: FramePlan[] };
     const stored: CellIn[] = activity.cells ? JSON.parse(activity.cells) : [];
     const userMustText = (activity.titleText || activity.focusPoint || "").trim();
     const count = ml?.count ?? 1;
@@ -385,6 +386,14 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
       assetUrls: productImageUrls,
     }));
 
+    const cellsFromPlans = (plans: FramePlan[]): CellIn[] => plans.map((p, i) => ({
+      description: `${p.action}. ${p.composition}. (camera: ${p.camera}; emotion: ${p.emotion})`,
+      mustText: i === 0 && userMustText ? userMustText : (p.copy.headline ?? ""),
+      subtitle: p.copy.caption ?? "",
+      container_style: "", composition_hint: p.composition, tag: "",
+      assetUrls: productImageUrls,
+    }));
+
     let sets: GenSet[] = [];
     if (activity.genMode === "perCell" && stored.length > 0) {
       // 各圖獨立：2 組＝內容完全相同，B 組只在每格 prompt 附加「換設計風格」修飾詞
@@ -397,39 +406,32 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
         sets = [{ cellData: stored, globalDesign: {}, label: "" }];
       }
     } else if (activity.variantCount === 2) {
-      // 兩組：A 導購 + B 敘事
-      const sb = await anthropic.messages.create({
-        model: "claude-opus-4-5", max_tokens: 3000,
-        messages: [{ role: "user", content: storyboardPrompt2(activity.imagePrompt || activity.theme, count, multiProductDesc || undefined) }],
-      });
-      const raw = (sb.content[0] as { text: string }).text;
-      let A: ParsedCell[] = [], B: ParsedCell[] = [], gdA: GD = {}, gdB: GD = {};
-      try {
-        const obj = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] ?? "{}");
-        A = obj.styleA?.cells ?? []; B = obj.styleB?.cells ?? [];
-        gdA = obj.styleA?.global_design ?? {}; gdB = obj.styleB?.global_design ?? {};
-      } catch (e) { console.warn("[generate][multi] 2-set parse failed:", e); }
+      // 兩組：A 導購 + B 敘事（frame-planner 產生分鏡＋文案，取代 storyboardPrompt2）
+      const [A, B] = await Promise.all([
+        generateFramePlans({
+          theme: activity.imagePrompt || activity.theme, n: count,
+          productDesc: multiProductDesc || undefined, variant: "A",
+          userHeadline: userMustText || undefined,
+        }),
+        generateFramePlans({
+          theme: activity.imagePrompt || activity.theme, n: count,
+          productDesc: multiProductDesc || undefined, variant: "B",
+          userHeadline: userMustText || undefined,
+        }),
+      ]);
       sets = [
-        { cellData: buildCells(A), globalDesign: gdA, label: "A 導購版" },
-        { cellData: buildCells(B), globalDesign: gdB, label: "B 敘事版" },
+        { cellData: cellsFromPlans(A), globalDesign: {}, label: "A 導購版", framePlans: A },
+        { cellData: cellsFromPlans(B), globalDesign: {}, label: "B 敘事版", framePlans: B },
       ];
-      console.log(`[generate][multi] 2 sets — A:${gdA.visual_theme?.slice(0, 40)} | B:${gdB.visual_theme?.slice(0, 40)}`);
+      console.log(`[generate][multi] 2 sets — A:${A[0]?.copy.headline?.slice(0, 40)} | B:${B[0]?.copy.headline?.slice(0, 40)}`);
     } else {
-      // 單組（設計總監版）
-      const sb = await anthropic.messages.create({
-        model: "claude-opus-4-5", max_tokens: 2000,
-        messages: [{ role: "user", content: storyboardPrompt(activity.imagePrompt || activity.theme, count, multiProductDesc || undefined) }],
+      // 單組（設計總監版，frame-planner 取代 storyboardPrompt）
+      const plans = await generateFramePlans({
+        theme: activity.imagePrompt || activity.theme, n: count,
+        productDesc: multiProductDesc || undefined, variant: "A",
+        userHeadline: userMustText || undefined,
       });
-      const raw = (sb.content[0] as { text: string }).text;
-      let parsed: ParsedCell[] = []; let gd: GD = {};
-      try {
-        const obj = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] ?? "{}");
-        if (obj.cells && Array.isArray(obj.cells)) { parsed = obj.cells; gd = obj.global_design ?? {}; }
-      } catch {
-        const arrMatch = raw.match(/\[[\s\S]*\]/);
-        if (arrMatch) { try { parsed = JSON.parse(arrMatch[0]); } catch { parsed = []; } }
-      }
-      sets = [{ cellData: buildCells(parsed), globalDesign: gd, label: "" }];
+      sets = [{ cellData: cellsFromPlans(plans), globalDesign: {}, label: "", framePlans: plans }];
     }
     console.log(`[generate][multi] layout=${multiLayoutId} sets=${sets.length} genMode=${activity.genMode} model=${imageModel}`);
 
@@ -449,7 +451,6 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
     const produceSet = async (set: GenSet, seedKey: string) => {
       const cd = set.cellData;
       const n = cd.length;
-      const gd = set.globalDesign;
       const cellUrls: string[] = [];
       // 副圖延後處理：先全部生成乾淨底圖，等看完整組才決定版型（維持同組一致），再統一合成卡片
       const subPending: { i: number; url: string; c: CellIn; hasMustText: boolean; seed: string }[] = [];
@@ -584,7 +585,7 @@ ${heroComposite ? "" : PRODUCT_IDENTITY_LOCK}
 
 VISUAL DESIGN SYSTEM — Apply to every cell in this carousel:
 
-${designSpecPromptBlock(set.globalSpec!)}${gd.visual_theme ? `\nGLOBAL VISUAL THEME: ${gd.visual_theme}` : ""}${gd.shared_decorations ? `\nSHARED DECORATIONS (use consistently across all cells): ${gd.shared_decorations}` : ""}
+${designSpecPromptBlock(set.globalSpec!)}
 
 CRITICAL CONSISTENCY RULES:
 1. TYPOGRAPHY: follow the TYPOGRAPHY LOCK above — only FONT A (headline) + FONT B (subtitle), same text color palette as cell 1.
