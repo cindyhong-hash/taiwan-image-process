@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, Palette, Image as ImageIcon, Check } from "lucide-react";
+import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, Palette, Image as ImageIcon, Check, RefreshCw } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
 import { getColors } from "@/types/library";
@@ -186,6 +186,9 @@ export function ActivityForm({
   const [uploadingRef,     setUploadingRef]     = useState(false);
   const [loading,          setLoading]          = useState(false);
   const [showLibPicker,    setShowLibPicker]    = useState(false); // 從素材庫揀參考圖
+  const [showBasePicker,   setShowBasePicker]   = useState(false); // 底圖模式：重新揀另一張底圖（唔會跌落空白模式）
+  const [confirmRemoveBase, setConfirmRemoveBase] = useState(false); // 移除底圖模式前要確認（避免手滑跌落空白模式）
+  const [previewBase,      setPreviewBase]      = useState(false); // 底圖模式 banner 圖：click 放大
   // 由素材庫揀嗰張參考圖已有嘅 AI Prompt（有就直接用，免再 call analyze API）；上傳新圖時清空。
   const [refStylePrompt,   setRefStylePrompt]   = useState<string>("");
   // 03 風格積木（構圖 / 顏色 / 背景）— 揀完會把標籤直接寫入「畫面描述 Prompt」，可再喺嗰度改字。
@@ -368,7 +371,12 @@ export function ActivityForm({
       {isBaseMode && (
         <div className="flex items-start gap-3 rounded-xl border border-violet-200 bg-violet-50 p-3.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={values.baseImageUrl} alt="活動圖底圖" className="w-16 h-16 rounded-lg border object-cover bg-white shrink-0" />
+          <img
+            src={values.baseImageUrl}
+            alt="活動圖底圖"
+            onClick={() => setPreviewBase(true)}
+            className="w-28 h-28 rounded-lg border object-cover bg-white shrink-0 cursor-zoom-in hover:opacity-90 transition-opacity"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-sm font-semibold text-violet-700">
               <ImageIcon className="h-4 w-4" />活動圖底圖模式
@@ -376,10 +384,57 @@ export function ActivityForm({
             <p className="text-[11px] text-violet-600/90 mt-1 leading-relaxed">
               呢張相會 <b>100% 做背景</b>，唔會重新生圖。填下面嘅文字內容，系統會幫你生成文案，再交排版加落圖上。
             </p>
+            <button type="button" onClick={() => setShowBasePicker(true)}
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-violet-600 border border-violet-200 rounded-lg px-2 py-1 hover:bg-violet-100 transition-colors">
+              <RefreshCw className="h-3 w-3" />換一張底圖
+            </button>
           </div>
-          <button type="button" onClick={() => set("baseImageUrl", undefined)}
-            className="text-violet-400 hover:text-red-500 shrink-0" title="取消底圖模式">
+          <button type="button" onClick={() => setConfirmRemoveBase(true)}
+            className="text-violet-400 hover:text-red-500 shrink-0" title="移除底圖模式（改做一般由零生成）">
             <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* 移除底圖模式前確認——避免手滑撳 X 就跌落空白模式 */}
+      {confirmRemoveBase && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5">
+            <h3 className="text-sm font-semibold text-gray-800">移除底圖模式？</h3>
+            <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+              呢張相會被移除，表單改做「由零開始」一般生成模式（可以再上傳素材 / 用 AI 生成）。想換另一張底圖的話，可以用「換一張底圖」代替。
+            </p>
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button type="button" onClick={() => setConfirmRemoveBase(false)}
+                className="text-xs font-medium text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors">
+                取消
+              </button>
+              <button type="button"
+                onClick={() => { set("baseImageUrl", undefined); setConfirmRemoveBase(false); }}
+                className="text-xs font-medium text-white bg-red-500 rounded-lg px-3 py-1.5 hover:bg-red-600 transition-colors">
+                確認移除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 底圖 banner 圖放大預覽 */}
+      {previewBase && values.baseImageUrl && (
+        <div
+          onClick={() => setPreviewBase(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-6 cursor-zoom-out"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={values.baseImageUrl}
+            alt="活動圖底圖放大預覽"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[85vh] max-w-[85vw] rounded-lg shadow-2xl object-contain cursor-default"
+          />
+          <button type="button" onClick={() => setPreviewBase(false)}
+            className="absolute top-4 right-4 bg-white/90 hover:bg-white rounded-full p-1.5 shadow">
+            <X className="h-5 w-5 text-gray-700" />
           </button>
         </div>
       )}
@@ -694,6 +749,19 @@ export function ActivityForm({
             handleAnalyzeStyle({ url, prompt: promptText ?? "" }); // 揀完自動反推提示詞
           }}
           onClose={() => setShowLibPicker(false)}
+        />
+      )}
+
+      {/* 底圖模式：換一張底圖（唔會跌落空白/一般生成模式，留喺底圖模式換另一張）*/}
+      {showBasePicker && (
+        <LibraryImagePickerModal
+          clientId={clientId}
+          title="從素材庫揀底圖"
+          onPick={(url, promptText) => {
+            setValues((prev) => ({ ...prev, baseImageUrl: url, imagePrompt: promptText?.trim() || prev.imagePrompt }));
+            setShowBasePicker(false);
+          }}
+          onClose={() => setShowBasePicker(false)}
         />
       )}
 

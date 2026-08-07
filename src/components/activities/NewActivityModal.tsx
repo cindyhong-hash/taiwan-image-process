@@ -1,26 +1,27 @@
 "use client";
 /**
  * NewActivityModal — Mode A（廣告活動圖頁「新增活動」入口，WF3 v3 方案 B）。
- * 撳「新增活動」先揀方式：
- *   ① 新活動圖生成   → 入空白表單（現有流程）
- *   ② 用素材庫圖片   → 揀圖 → RolePicker（參考圖 / 底圖，同 Mode B 共用）→ 入預填表單
- * 帶入表單嘅圖經 sessionStorage 傳（唔喺網址外露）：
- *   參考圖 → "activityRefImage"；底圖 → "activityBaseImage"
+ * 撳「新增活動」一屏兩揀：
+ *   ① 新活動圖生成       → 入空白表單（現有流程；表單內部仍可用「從素材庫揀」加參考圖）
+ *   ② 用素材庫圖片·底圖   → 揀圖 → 呢張相 100% 做背景，唔重新生圖
+ * （原本仲有「② 用素材庫圖片·作參考圖」，但呢個本質同①一樣係「AI 生成全新
+ *   畫面」，只係加咗個風格參考——同①重複，移除。想用參考圖可以揀①之後
+ *   喺表單入面「從素材庫揀」，唔失去呢個能力，只係唔再喺呢一屏重複問。）
+ * 帶入表單嘅底圖經 sessionStorage 傳（唔喺網址外露）："activityBaseImage"
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Images, X } from "lucide-react";
+import { Sparkles, ImageDown, X } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
-import { RolePickerModal, ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, type ActivityImageRole } from "@/components/activities/RolePickerModal";
+import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
 import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
 
-type Step = "choose" | "pick" | "role" | "layout";
+// [MULTI] 保留同事的「2揀1」簡化；① 改成先揀版型（單圖/多圖）
+type Step = "choose" | "pick" | "layout";
 
 export function NewActivityModal({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>("choose");
-  const [picked, setPicked] = useState<string | null>(null);
-  const [pickedPrompt, setPickedPrompt] = useState<string>(""); // 揀嗰張圖已有嘅 AI prompt
 
   const gotoNew = () => router.push(`/clients/${clientId}/activities/new`);
   // [MULTI] 版型選擇：single → 他的單圖頁；其餘 → 多圖頁並帶 layout 參數
@@ -29,30 +30,26 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
     else router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
   };
 
-  const handleRole = (role: ActivityImageRole) => {
-    if (!picked) return;
+  const handlePicked = (url: string, promptText?: string) => {
     try {
       sessionStorage.removeItem(ACTIVITY_REF_KEY);
       sessionStorage.removeItem(ACTIVITY_BASE_KEY);
       sessionStorage.removeItem(ACTIVITY_IMAGE_PROMPT_KEY);
-      sessionStorage.setItem(role === "base" ? ACTIVITY_BASE_KEY : ACTIVITY_REF_KEY, picked);
-      if (pickedPrompt.trim()) sessionStorage.setItem(ACTIVITY_IMAGE_PROMPT_KEY, pickedPrompt.trim());
+      sessionStorage.setItem(ACTIVITY_BASE_KEY, url);
+      if (promptText?.trim()) sessionStorage.setItem(ACTIVITY_IMAGE_PROMPT_KEY, promptText.trim());
     } catch { /* ignore */ }
     gotoNew();
   };
 
-  // 揀圖 / 揀角色兩步：直接 render 對應 modal（佢哋自己有 backdrop）。
   if (step === "pick") {
     return (
       <LibraryImagePickerModal
         clientId={clientId}
-        onPick={(url, promptText) => { setPicked(url); setPickedPrompt(promptText ?? ""); setStep("role"); }}
+        title="從素材庫揀底圖"
+        onPick={handlePicked}
         onClose={onClose}
       />
     );
-  }
-  if (step === "role" && picked) {
-    return <RolePickerModal imageUrl={picked} onPick={handleRole} onClose={onClose} />;
   }
   // [MULTI] 揀版型：single→單圖頁、其餘→多圖頁
   if (step === "layout") {
@@ -72,10 +69,11 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
         </div>
         <div className="p-5 space-y-2.5">
           <p className="text-xs text-gray-500">點樣開始？</p>
-          {/* ① 新生成（先揀版型：單圖 / 多圖拼版） */}
+          {/* ① 新生成（先揀版型：單圖 / 多圖拼版）— 配色沿用同事新 amber */}
           <button type="button" onClick={() => setStep("layout")}
-            className="w-full flex items-start gap-3 text-left rounded-xl border border-gray-200 p-3.5 hover:border-violet-400 hover:bg-violet-50/40 transition-colors">
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+            className="w-full flex items-start gap-3 text-left rounded-xl border border-gray-200 p-3.5 hover:border-amber-400 hover:bg-amber-50/40 transition-colors">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+
               <Sparkles className="h-4.5 w-4.5" />
             </span>
             <span>
@@ -83,15 +81,15 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
               <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">由零開始，AI 幫你生成全新活動圖。</span>
             </span>
           </button>
-          {/* ② 用素材庫圖片 */}
+          {/* ② 用素材庫圖片 · 作活動圖底圖 */}
           <button type="button" onClick={() => setStep("pick")}
-            className="w-full flex items-start gap-3 text-left rounded-xl border border-gray-200 p-3.5 hover:border-blue-400 hover:bg-blue-50/40 transition-colors">
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-              <Images className="h-4.5 w-4.5" />
+            className="w-full flex items-start gap-3 text-left rounded-xl border border-gray-200 p-3.5 hover:border-violet-400 hover:bg-violet-50/40 transition-colors">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+              <ImageDown className="h-4.5 w-4.5" />
             </span>
             <span>
-              <span className="block text-sm font-semibold text-gray-800">② 用素材庫圖片</span>
-              <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">揀一張現有素材做起點（參考圖或活動圖底圖）。</span>
+              <span className="block text-sm font-semibold text-gray-800">② 用素材庫圖片 · 作活動圖底圖</span>
+              <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">揀一張現有素材做背景，AI幫手加文字。</span>
             </span>
           </button>
         </div>
