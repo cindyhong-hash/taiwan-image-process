@@ -15,6 +15,7 @@ export type LockBlocks = {
   razorExclusionNote: string;    // = 現有 razorExclusionNote
   noProductWarning: string;      // = 現有 noProductWarning
   cellNoProduct: string;         // = 現有 cellNoProduct
+  imageRoleReminder: string;     // = 現有 imageRoleReminder（產品參考圖 vs 風格參考圖角色分工）
 };
 
 export type BuildInput = {
@@ -39,6 +40,7 @@ export function buildMultiImagePrompt(input: BuildInput): string {
     lb.colorTempLock,
     "=== 3. PRODUCT IDENTITY LOCK ===",
     lb.productIdentityLock,
+    lb.imageRoleReminder,
     "=== 4. FRAME-SPECIFIC INSTRUCTION ===",
     framePlanCellBlock(framePlan, i, n),
     i === 0 ? `HERO headline to render: "${headline}". Establish the typography/color system for the whole series.` : `This is a supporting cell — produce a CLEAN scene photo, no typography (text added in post).`,

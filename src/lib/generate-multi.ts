@@ -8,7 +8,7 @@ import { overlayLogo } from "@/lib/composite";
 import { buildImagePrompt } from "@/lib/prompts";
 import { getMultiLayout, getCellRects } from "@/types/multiLayout";
 import { generateGlobalDesignSpec, designSpecPromptBlock, type GlobalDesignSpec } from "@/lib/multi/design-spec";
-import { generateFramePlans, framePlanCellBlock, type FramePlan } from "@/lib/multi/frame-planner";
+import { generateFramePlans, type FramePlan } from "@/lib/multi/frame-planner";
 import { buildMultiImagePrompt, type LockBlocks } from "@/lib/multi/prompt-builder";
 import { VARIANT_STYLE } from "@/lib/multi/variant-style";
 
@@ -271,8 +271,7 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
       description: string; mustText: string; assetUrls: string[];
       subtitle?: string; container_style?: string; composition_hint?: string; tag?: string;
     };
-    type GD = { visual_theme?: string; shared_decorations?: string };
-    type GenSet = { cellData: CellIn[]; globalDesign: GD; label: string; stylePromptSuffix?: string; globalSpec?: GlobalDesignSpec; framePlans?: FramePlan[] };
+    type GenSet = { cellData: CellIn[]; label: string; stylePromptSuffix?: string; globalSpec?: GlobalDesignSpec; framePlans?: FramePlan[] };
     const stored: CellIn[] = activity.cells ? JSON.parse(activity.cells) : [];
     const userMustText = (activity.titleText || activity.focusPoint || "").trim();
     const count = ml?.count ?? 1;
@@ -301,11 +300,11 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
       // 各圖獨立：2 組＝內容完全相同，B 組只在每格 prompt 附加「換設計風格」修飾詞
       if (activity.variantCount === 2) {
         sets = [
-          { cellData: stored, globalDesign: {}, label: "A 原版", stylePromptSuffix: "" },
-          { cellData: stored, globalDesign: {}, label: "B 換設計", stylePromptSuffix: VARIANT_B_STYLE_SUFFIX },
+          { cellData: stored, label: "A 原版", stylePromptSuffix: "" },
+          { cellData: stored, label: "B 換設計", stylePromptSuffix: VARIANT_B_STYLE_SUFFIX },
         ];
       } else {
-        sets = [{ cellData: stored, globalDesign: {}, label: "" }];
+        sets = [{ cellData: stored, label: "" }];
       }
     } else if (activity.variantCount === 2) {
       // 兩組：A 導購 + B 敘事（frame-planner 產生分鏡＋文案，取代 storyboardPrompt2）
@@ -322,8 +321,8 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
         }),
       ]);
       sets = [
-        { cellData: cellsFromPlans(A), globalDesign: {}, label: "A 導購版", framePlans: A },
-        { cellData: cellsFromPlans(B), globalDesign: {}, label: "B 敘事版", framePlans: B },
+        { cellData: cellsFromPlans(A), label: "A 導購版", framePlans: A },
+        { cellData: cellsFromPlans(B), label: "B 敘事版", framePlans: B },
       ];
       console.log(`[generate][multi] 2 sets — A:${A[0]?.copy.headline?.slice(0, 40)} | B:${B[0]?.copy.headline?.slice(0, 40)}`);
     } else {
@@ -333,13 +332,13 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
         productDesc: multiProductDesc || undefined, variant: "A",
         userHeadline: userMustText || undefined,
       });
-      sets = [{ cellData: cellsFromPlans(plans), globalDesign: {}, label: "", framePlans: plans }];
+      sets = [{ cellData: cellsFromPlans(plans), label: "", framePlans: plans }];
     }
     console.log(`[generate][multi] layout=${multiLayoutId} sets=${sets.length} genMode=${activity.genMode} model=${imageModel}`);
 
     // 1.5 整組共用的「視覺設計系統」基準（品牌色/人物/產品/排版）——A/B 各自獨立一份 spec
     for (const s of sets) {
-      const variant: "A" | "B" = s.label.startsWith("B") ? "B" : "A";
+      const variant: "A" | "B" = activity.genMode === "perCell" ? "A" : (s.label.startsWith("B") ? "B" : "A");
       s.globalSpec = await generateGlobalDesignSpec({
         theme: activity.imagePrompt || activity.theme,
         productDesc: multiProductDesc || undefined,
@@ -491,6 +490,7 @@ If the style reference images show a product that looks slightly different from 
           razorExclusionNote,
           noProductWarning,
           cellNoProduct,
+          imageRoleReminder,
         };
         const variant: "A" | "B" = set.label.startsWith("B") ? "B" : "A";
         const seriesStyleGuide = set.framePlans
