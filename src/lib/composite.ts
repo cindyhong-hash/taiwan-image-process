@@ -8,11 +8,9 @@
  */
 
 import sharp from "sharp";
-import { join } from "path";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import "@/lib/fonts"; // 必須喺 sharp 之前 import，令 fontconfig 揾到打包咗嘅中文字型
 import { removeBackground } from "@/lib/fal";
-
-const UPLOADS = join(process.cwd(), "public/uploads");
+import { loadBuffer, saveBuffer } from "@/lib/storage";
 
 type Placement = {
   productHeightRatio: number;
@@ -26,12 +24,6 @@ const PLACEMENT: Record<string, Placement> = {
   B: { productHeightRatio: 0.42, xRatio: 0.70, yRatio: 0.63, textZone: "top-full"   },
   C: { productHeightRatio: 0.38, xRatio: 0.75, yRatio: 0.67, textZone: "top-center" },
 };
-
-async function loadBuffer(url: string): Promise<Buffer> {
-  if (url.startsWith("/")) return readFile(join(process.cwd(), "public", url));
-  const res = await fetch(url);
-  return Buffer.from(await res.arrayBuffer());
-}
 
 function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -340,7 +332,6 @@ export async function overlayLogo(opts: {
   /** 新增：傳入後啟用智慧選位（推薦） */
   textZone?:   TextZone;
 }): Promise<string> {
-  await mkdir(UPLOADS, { recursive: true });
   const { imageUrl, logoUrl, widthRatio = 0.12, seed, textZone, position } = opts;
 
   // 1. 底圖
@@ -445,9 +436,8 @@ export async function overlayLogo(opts: {
   if (glowBuf) layers.push({ input: glowBuf, left: glowLeft, top: glowTop, blend: "over" });
   layers.push({ input: finalLogo, left: ll, top: lt, blend: "over" });
 
-  const filename = `ai-${seed ?? Date.now()}-logo.png`;
-  await sharp(baseBuf).composite(layers).png().toFile(join(UPLOADS, filename));
-  return `/uploads/${filename}`;
+  const buf = await sharp(baseBuf).composite(layers).png().toBuffer();
+  return saveBuffer(buf, "png", `ai-${seed ?? Date.now()}-logo-`);
 }
 
 // ── 主要合成函式 ──────────────────────────────────────────────────────────────
@@ -468,8 +458,6 @@ export async function compositeImage(opts: {
   /** brandGrad 用嘅品牌主色（hex）。 */
   primaryColor?: string;
 }): Promise<string> {
-  await mkdir(UPLOADS, { recursive: true });
-
   const { backgroundUrl, productImageUrl, layoutType, canvasWidth, canvasHeight,
           titleText, subtitleText, seed, textZone, textStyle, primaryColor } = opts;
   const pl = PLACEMENT[layoutType] ?? PLACEMENT["A"];
@@ -541,11 +529,10 @@ export async function compositeImage(opts: {
   }
 
   // 4. 輸出
-  const filename = `ai-${seed ?? Date.now()}.jpg`;
-  await sharp(bgResized)
+  const buf = await sharp(bgResized)
     .composite(layers)
     .jpeg({ quality: 93 })
-    .toFile(join(UPLOADS, filename));
+    .toBuffer();
 
-  return `/uploads/${filename}`;
+  return saveBuffer(buf, "jpg", `ai-${seed ?? Date.now()}-`);
 }

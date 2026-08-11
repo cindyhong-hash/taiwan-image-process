@@ -17,6 +17,7 @@ import { ColorCards } from "./ColorCards";
 import { SlotPickerModal } from "./SlotPickerModal";
 import { INDUSTRY_PRESETS } from "@/types/presets";
 import { useRotatingHint } from "@/hooks/useRotatingHint";
+import { pollLibraryImage } from "@/lib/pollLibraryImage";
 
 // 生成 loading 輪播提示（保留時間估計，額外報進度）
 const GEN_HINTS = ["正在生成 AI 圖片…", "分析構圖 / 配色…", "合成場景中…", "處理光影細節…", "快好喇，請稍候…"];
@@ -29,6 +30,8 @@ type Props = {
   onPickSlot: (comp: StyleComponent) => void;
   clientId: string | null;
   onGenerated?: () => void;
+  /** 撳「生成」送出去 server 嗰刻（未等生成完）即刻通知上層 —— 令主畫廊即刻見到「生成中」佔位卡。 */
+  onStarted?: () => void;
   prefill?: Prefill;
   prefillNonce?: number;
   // 通知上層（modal header）：組裝台有冇內容（用嚟決定 header「清空重來」掣顯示與否）。
@@ -199,7 +202,7 @@ function SectionLabel({ step, title, hint }: { step: string; title: string; hint
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function PromptComposer(
-  { slots, onClearSlot, onPickSlot, clientId, onGenerated, prefill, prefillNonce, onDirtyChange }, ref) {
+  { slots, onClearSlot, onPickSlot, clientId, onGenerated, onStarted, prefill, prefillNonce, onDirtyChange }, ref) {
   const [subject, setSubject] = useState("");
   const [notes, setNotes] = useState("");
   const [copied, setCopied] = useState(false);
@@ -210,7 +213,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
   // #3 多輸出（合成）：一次生 N 張 draft（唔即刻入庫）→ 揀邊張保留。
   const [count, setCount] = useState(1);
   // draft 各自帶用咗嘅產品圖（系列圖時每張得一件）。
-  const [drafts, setDrafts] = useState<{ imageUrl: string; copyText: string; mode: string; selected: boolean; productImageUrls: string[] }[] | null>(null);
+  const [drafts, setDrafts] = useState<{ imageUrl: string; copyText: string; mode: string; selected: boolean; productImageUrls: string[]; id?: string }[] | null>(null);
   const [savingDrafts, setSavingDrafts] = useState(false);
   // 生成完成（drafts 一出）自動 scroll 落揀圖區（同素材生成一致）。
   // ref 擺喺真正嘅 drafts 容器（唔再用 0 高度空錨點）+ block:"start"；draft 圖 async load，
@@ -361,7 +364,11 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
     try {
       const res = await fetch("/api/library/polish", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brief: source }),
+        body: JSON.stringify({
+          brief: source,
+          clientId,
+          ...(productUrls.length > 0 ? { productImageUrls: productUrls } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "潤色失敗");
@@ -456,17 +463,32 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
         // 合成模式：若用咗潤色，把擴寫後嘅「場景描述」作為合成場景覆寫（唔含主體，避免重畫產品）。
         sceneOverride: composite ? (polishedBrief ?? undefined) : undefined,
       };
-      const postJson = (body: Record<string, unknown>) =>
-        fetch("/api/library/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+      const batchId = `pc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      // 送出即刻落 DB（status:GENERATING），poll 到完成先攞返 imageUrl——即刻安全，
+      // 就算中途關咗 popup，server 都會用 after() 繼續生成完，唔會流失。
+      // 呢個 flag 淨係俾同一個 batch 觸發一次 onStarted——如果每張圖各自 call 一次
+      // （count 張 = N 次 refresh），主畫廊會喺短時間內連續跳幾次，好唐突。
+      let notifiedStart = false;
+      const postJson = async (body: Record<string, unknown>) => {
+        const { id } = await fetch("/api/library/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, batchId }) }).then((r) => r.json());
+        if (!id) throw new Error("生成請求送出失敗");
+        if (!notifiedStart) { notifiedStart = true; onStarted?.(); } // 呢個 batch 已經有記錄落咗 DB → 通知主畫廊 refresh 一次
+        const item = await pollLibraryImage(id);
+        if (item.status !== "DONE") throw new Error(item.errorMessage ?? "生成失敗");
+        const mode = (() => { try { return JSON.parse(item.paramsJson ?? "{}").mode as string | undefined; } catch { return undefined; } })();
+        return { id: item.id, imageUrl: item.imageUrl, copyText: item.copyText ?? "", mode };
+      };
       const post = (extra: Record<string, unknown>) => postJson({ ...baseBody, ...extra });
 
       // #4 系列圖 = 固定模板貼圖：共用背景 + 固定 placement，每件產品去背貼上 → 100% 一致。
       if (composite && seriesMode && productUrls.length >= 2) {
         let sharedBg = (slots.background?.data?.imageUrl as string | undefined) || undefined;
+        let sharedBgId: string | undefined;
         if (!sharedBg) {
           const bgPrompt = `${buildSceneBrief() || "簡潔專業棚拍背景、柔光"}，純背景場景，無產品、無人物、無文字`;
-          const bgRes = await postJson({ clientId, customPrompt: bgPrompt, size: "custom", customW: outDims.w, customH: outDims.h, draftOnly: true });
+          const bgRes = await postJson({ clientId, customPrompt: bgPrompt, size: "custom", customW: outDims.w, customH: outDims.h });
           sharedBg = bgRes.imageUrl;
+          sharedBgId = bgRes.id;
           if (!sharedBg) throw new Error("共用背景生成失敗，請重試");
         }
         const results = await Promise.allSettled(productUrls.map((p) =>
@@ -479,13 +501,14 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
           .filter((x): x is NonNullable<typeof x> => !!x);
         if (!ok.length) throw new Error("系列圖全部生成失敗，請重試");
         setDrafts(ok);
+        // 共用背景淨係內部中間步驟，唔係俾用戶揀嘅候選圖——用完即刪，唔留喺畫廊。
+        if (sharedBgId) fetch(`/api/library/images/${sharedBgId}`, { method: "DELETE" }).catch(() => {});
       } else {
-        // 一律 draftOnly（唔即刻入庫）→ 跳結果俾你揀/確認 → saveDrafts 先 save-image。
-        // 對齊 背景/人像/插畫：產品成圖（合成 or 文字）都唔再直接落 gallery。
-        const results = await Promise.allSettled(Array.from({ length: count }, () => post({ draftOnly: true })));
+        // 送出即刻落 DB，poll 到完成 → 跳結果俾你揀/確認 → saveDrafts 先確認保留（其他刪走）。
+        const results = await Promise.allSettled(Array.from({ length: count }, () => post({})));
         const ok = results
-          .filter((r): r is PromiseFulfilledResult<{ imageUrl: string; copyText?: string; mode?: string }> => r.status === "fulfilled" && !!r.value?.imageUrl)
-          .map((r) => ({ imageUrl: r.value.imageUrl, copyText: r.value.copyText ?? "", mode: r.value.mode ?? (composite ? "flux2-edit" : "flux"), selected: true, productImageUrls: composite ? productUrls : [] }));
+          .filter((r): r is PromiseFulfilledResult<{ id: string; imageUrl: string; copyText: string; mode: string | undefined }> => r.status === "fulfilled" && !!r.value?.imageUrl)
+          .map((r) => ({ id: r.value.id, imageUrl: r.value.imageUrl, copyText: r.value.copyText ?? "", mode: r.value.mode ?? (composite ? "flux2-edit" : "flux"), selected: true, productImageUrls: composite ? productUrls : [] }));
         if (!ok.length) throw new Error("全部生成失敗，請重試");
         setDrafts(ok);
       }
@@ -543,9 +566,13 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
     return base;
   }
 
-  // #3 揀完 draft → 逐張存入圖庫（save-image，建 LibraryImage）。
+  // #3 揀完 draft →「揀」嗰幾張已經係真素材（生成嗰刻已經落 DB），呢步只係更新最終
+  // metadata；冇揀嗰幾張（已經生成完、真係存在 DB）就刪走。有 id（composite/文字模式）
+  // 用 PATCH 完善現有記錄；冇 id（系列圖 template-paste，本身唔經呢套即時落 DB 機制）
+  // 先用 save-image 補建。
   async function saveDrafts() {
-    const sel = (drafts ?? []).filter((d) => d.selected);
+    const all = drafts ?? [];
+    const sel = all.filter((d) => d.selected);
     if (!sel.length) return;
     setSavingDrafts(true);
     setGenError(null);
@@ -561,11 +588,21 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
         const params = isComposite
           ? { slots: effectiveSlots, palette, notes, productImageUrl: d.productImageUrls[0], productImageUrls: d.productImageUrls, composite: true, mode: d.mode }
           : { slots: effectiveSlots, palette, notes, customPrompt: effectiveBrief, mode: d.mode };
+        if (d.id) {
+          return fetch(`/api/library/images/${d.id}`, {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subject, copyText: d.copyText, paramsJson: JSON.stringify(params) }),
+          });
+        }
         return fetch("/api/library/save-image", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId, imageUrl: d.imageUrl, subject, prompt: promptStr, copyText: d.copyText, paramsJson: JSON.stringify(params) }),
         });
       }));
+      // 冇揀嗰幾張：早已經生成完、真係存在 DB，用戶明確唔要 → 刪走，唔留喺畫廊佔位。
+      await Promise.all(
+        all.filter((d) => !d.selected && d.id).map((d) => fetch(`/api/library/images/${d.id}`, { method: "DELETE" }))
+      );
       setDrafts(null);
       resetComposer(); // 儲存後自動清空成個組裝台（開新設計）；亦可撳 header「清空重來」手動清。
       onGenerated?.();

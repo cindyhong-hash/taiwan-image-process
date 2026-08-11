@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFile } from "fs/promises";
 import { join } from "path";
+import { contentTypeForExt } from "@/lib/storage";
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
@@ -10,7 +11,7 @@ async function toBase64DataUrl(imageUrl: string): Promise<string> {
   if (imageUrl.startsWith("/")) {
     const buf = await readFile(join(process.cwd(), "public", imageUrl));
     const ext = imageUrl.split(".").pop() ?? "jpeg";
-    const mime = ext === "png" ? "image/png" : "image/jpeg";
+    const mime = contentTypeForExt(ext);
     return `data:${mime};base64,${buf.toString("base64")}`;
   }
 

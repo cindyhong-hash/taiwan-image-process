@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import "@/lib/fonts"; // 必須喺 sharp 之前 import，令 fontconfig 揾到打包咗嘅中文字型
 import { editImageFal, eraseImageFal } from "@/lib/fal";
 import { generateImageOpenRouter, chatTextOpenRouter, describeImageOpenRouter } from "@/lib/openrouter";
 import sharp from "sharp";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile } from "fs/promises";
 import { join } from "path";
+import { loadBuffer, saveBuffer, contentTypeForExt } from "@/lib/storage";
 
 export const maxDuration = 120;
 
@@ -36,12 +38,7 @@ async function addTextToImage(
   text: string,
   bounds?: { x: number; y: number; width: number; height: number }
 ): Promise<string> {
-  const uploadsDir = join(process.cwd(), "public/uploads");
-  await mkdir(uploadsDir, { recursive: true });
-
-  const imgBuf = imageUrl.startsWith("/")
-    ? await readFile(join(process.cwd(), "public", imageUrl))
-    : Buffer.from(await (await fetch(imageUrl)).arrayBuffer());
+  const imgBuf = await loadBuffer(imageUrl);
 
   const meta = await sharp(imgBuf).metadata();
   const W = meta.width  ?? 1024;
@@ -81,9 +78,7 @@ async function addTextToImage(
     .jpeg({ quality: 95 })
     .toBuffer();
 
-  const filename = `ai-text-${Date.now()}.jpg`;
-  await writeFile(join(uploadsDir, filename), result);
-  return `/uploads/${filename}`;
+  return saveBuffer(result, "jpg", "ai-text-");
 }
 
 // ── 品牌 Logo 疊加（讀取真實 logo，不讓 AI 生成）─────────────────────────────
@@ -135,17 +130,20 @@ async function getBrandLogoPath(directUrl?: string): Promise<string | null> {
   } catch { /* 檔案不存在或格式錯誤 → 繼續 */ }
 
   // b. 掃描 public/uploads/ 找名稱含 "logo" 的圖片檔
-  try {
-    const { readdir } = await import("fs/promises");
-    const files = await readdir(join(process.cwd(), "public", "uploads"));
-    const logoFile = files.find(
-      (f) => /logo/i.test(f) && /\.(png|jpe?g|webp)$/i.test(f)
-    );
-    if (logoFile) {
-      console.log(`[logo] Found logo file in uploads: ${logoFile}`);
-      return `/uploads/${logoFile}`;
-    }
-  } catch { /* 目錄不存在 → 繼續 */ }
+  //    Blob storage 冇「list 本地目錄」呢個概念 → 有 BLOB_READ_WRITE_TOKEN 時直接跳過此步。
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const { readdir } = await import("fs/promises");
+      const files = await readdir(join(process.cwd(), "public", "uploads"));
+      const logoFile = files.find(
+        (f) => /logo/i.test(f) && /\.(png|jpe?g|webp)$/i.test(f)
+      );
+      if (logoFile) {
+        console.log(`[logo] Found logo file in uploads: ${logoFile}`);
+        return `/uploads/${logoFile}`;
+      }
+    } catch { /* 目錄不存在 → 繼續 */ }
+  }
 
   // c. 都找不到
   return null;
@@ -157,16 +155,8 @@ async function addLogoToImage(
   position: LogoPosition,
   bounds?: { x: number; y: number; width: number; height: number }
 ): Promise<string> {
-  const uploadsDir = join(process.cwd(), "public/uploads");
-  await mkdir(uploadsDir, { recursive: true });
-
-  const imgBuf = imageUrl.startsWith("/")
-    ? await readFile(join(process.cwd(), "public", imageUrl))
-    : Buffer.from(await (await fetch(imageUrl)).arrayBuffer());
-
-  const logoBuf = logoPath.startsWith("/")
-    ? await readFile(join(process.cwd(), "public", logoPath))
-    : Buffer.from(await (await fetch(logoPath)).arrayBuffer());
+  const imgBuf = await loadBuffer(imageUrl);
+  const logoBuf = await loadBuffer(logoPath);
 
   const meta = await sharp(imgBuf).metadata();
   const W = meta.width  ?? 1024;
@@ -206,10 +196,9 @@ async function addLogoToImage(
     .jpeg({ quality: 95 })
     .toBuffer();
 
-  const filename = `ai-logo-${Date.now()}.jpg`;
-  await writeFile(join(uploadsDir, filename), result);
-  console.log(`[logo] ✅ Logo added at ${position} (${left},${top}): /uploads/${filename}`);
-  return `/uploads/${filename}`;
+  const url = await saveBuffer(result, "jpg", "ai-logo-");
+  console.log(`[logo] ✅ Logo added at ${position} (${left},${top}): ${url}`);
+  return url;
 }
 
 // ── 字體更改（Gemini AI，鎖定文字內容只換字型）───────────────────────────────
@@ -232,11 +221,9 @@ function extractFontChange(prompt: string): { fontName: string; cssDescription: 
 
 async function extractTextFromImage(imageUrl: string): Promise<string | null> {
   try {
-    const imgBuf = imageUrl.startsWith("/")
-      ? await readFile(join(process.cwd(), "public", imageUrl))
-      : Buffer.from(await (await fetch(imageUrl)).arrayBuffer());
+    const imgBuf = await loadBuffer(imageUrl);
     const ext  = imageUrl.split(".").pop()?.toLowerCase() ?? "jpg";
-    const mime = ext === "png" ? "image/png" : "image/jpeg";
+    const mime = contentTypeForExt(ext);
 
     // 讀圖改用 OpenRouter vision（prompt 不變）。
     const dataUrl = `data:${mime};base64,${imgBuf.toString("base64")}`;
@@ -287,12 +274,7 @@ async function eraseRegion(
   imageUrl: string,
   bounds: { x: number; y: number; width: number; height: number }
 ): Promise<string> {
-  const uploadsDir = join(process.cwd(), "public/uploads");
-  await mkdir(uploadsDir, { recursive: true });
-
-  const imgBuf = imageUrl.startsWith("/")
-    ? await readFile(join(process.cwd(), "public", imageUrl))
-    : Buffer.from(await (await fetch(imageUrl)).arrayBuffer());
+  const imgBuf = await loadBuffer(imageUrl);
 
   const meta = await sharp(imgBuf).metadata();
   const W = meta.width  ?? 1024;
@@ -342,10 +324,9 @@ async function eraseRegion(
     .jpeg({ quality: 95 })
     .toBuffer();
 
-  const filename = `ai-erase-${Date.now()}.jpg`;
-  await writeFile(join(uploadsDir, filename), result);
-  console.log(`[erase] ✅ blur-fill done: /uploads/${filename}`);
-  return `/uploads/${filename}`;
+  const url = await saveBuffer(result, "jpg", "ai-erase-");
+  console.log(`[erase] ✅ blur-fill done: ${url}`);
+  return url;
 }
 
 // ── 精確局部擦除（Nano Banana Pro / Gemini，語意理解移除文字）──────────────
@@ -353,9 +334,7 @@ async function eraseRegionWithAI(
   imageUrl: string,
   bounds: { x: number; y: number; width: number; height: number }
 ): Promise<string> {
-  const imgBuf = imageUrl.startsWith("/")
-    ? await readFile(join(process.cwd(), "public", imageUrl))
-    : Buffer.from(await (await fetch(imageUrl)).arrayBuffer());
+  const imgBuf = await loadBuffer(imageUrl);
 
   const meta = await sharp(imgBuf).metadata();
 
@@ -368,7 +347,7 @@ async function eraseRegionWithAI(
 
   // 原圖 → base64 data URL（直接傳給 Gemini）
   const ext     = imageUrl.split(".").pop()?.toLowerCase() ?? "jpg";
-  const mime    = ext === "png" ? "image/png" : "image/jpeg";
+  const mime    = contentTypeForExt(ext);
   const dataUrl = `data:${mime};base64,${imgBuf.toString("base64")}`;
 
   const erasePrompt =
@@ -419,12 +398,10 @@ async function editWithReferenceImage(opts: {
 }): Promise<string> {
   const { imageUrl, referenceImageDataUrl, prompt, selectionBounds } = opts;
 
-  const imgBuf = imageUrl.startsWith("/")
-    ? await readFile(join(process.cwd(), "public", imageUrl))
-    : Buffer.from(await (await fetch(imageUrl)).arrayBuffer());
+  const imgBuf = await loadBuffer(imageUrl);
 
   const ext  = imageUrl.split(".").pop()?.toLowerCase() ?? "jpg";
-  const mime = ext === "png" ? "image/png" : "image/jpeg";
+  const mime = contentTypeForExt(ext);
   const baseDataUrl = `data:${mime};base64,${imgBuf.toString("base64")}`;
 
   // 偵測是否為「文字風格參考」意圖
@@ -446,12 +423,13 @@ async function editWithReferenceImage(opts: {
       `You have TWO images:\n` +
       `- IMAGE 1: Current advertisement to redesign the typography\n` +
       `- IMAGE 2: Typography style inspiration\n\n` +
-      `YOUR TASK: Redesign the Chinese text in IMAGE 1 to match the visual aesthetic of IMAGE 2.\n\n` +
+      `YOUR TASK: Redesign the text in IMAGE 1 to match the visual aesthetic of IMAGE 2.\n\n` +
       `TYPOGRAPHY REDESIGN RULES:\n` +
       `- Study IMAGE 2's text: font style, color (gold gradient/metallic/glowing), weight, shadow effects\n` +
-      `- Apply that same visual treatment to the Chinese text in IMAGE 1\n` +
+      `- Apply that same visual treatment to the text in IMAGE 1\n` +
       `- You MAY adjust text size, position, and layout to look beautiful and well-composed\n` +
-      `- The Chinese text CONTENT must stay identical (same characters, same meaning)\n` +
+      `- The text CONTENT and LANGUAGE must stay identical (same characters, same meaning) — do NOT translate it. ` +
+      `If it is Traditional Chinese, keep it Traditional Chinese; if it is English, keep it English\n` +
       `- Make it look like a premium professional beauty advertisement\n\n` +
       `WHAT MUST STAY THE SAME:\n` +
       `- The person (face, body, pose, skin) — pixel identical\n` +
@@ -462,7 +440,7 @@ async function editWithReferenceImage(opts: {
       `- Text should be elegantly placed — not cut off, not overlapping the face\n` +
       `- Use the available space beautifully (left area, top area, or wherever fits)\n` +
       `- The result should look like it came from a professional design agency\n` +
-      `- If IMAGE 2 has gold metallic text → apply gold metallic treatment to the Chinese characters`;
+      `- If IMAGE 2 has gold metallic text → apply gold metallic treatment to the characters, keeping their original language unchanged`;
   } else {
     // 一般參考圖（產品替換）→ Gemini multimodal，能同時看到廣告圖和參考產品圖
     const areaHint = boundsToAreaHint(selectionBounds);
@@ -519,10 +497,7 @@ async function editWithReferenceImage(opts: {
   //    - 比例接近（誤差 <8%）→ fit:fill（微量拉伸，幾乎看不出來）
   //    - 比例差很多（Gemini 輸出正方形）→ fit:cover + 置中裁切（裁邊比壓扁好看）
   try {
-    const uploadsDir = join(process.cwd(), "public/uploads");
-    await mkdir(uploadsDir, { recursive: true });
-
-    const localResultBuf = await readFile(join(process.cwd(), "public", resultUrl));
+    const localResultBuf = await loadBuffer(resultUrl);
     const resultMeta = await sharp(localResultBuf).metadata();
     const resultRatio = (resultMeta.width ?? origW) / (resultMeta.height ?? origH);
     const ratioDiff = Math.abs(resultRatio - origRatio) / origRatio;
@@ -538,10 +513,9 @@ async function editWithReferenceImage(opts: {
       .jpeg({ quality: 95 })
       .toBuffer();
 
-    const resizedFilename = `ai-resized-${Date.now()}.jpg`;
-    await writeFile(join(uploadsDir, resizedFilename), resizedBuf);
-    console.log(`[editWithRef] ✅ Resized to ${origW}×${origH}: /uploads/${resizedFilename}`);
-    return `/uploads/${resizedFilename}`;
+    const resizedUrl = await saveBuffer(resizedBuf, "jpg", "ai-resized-");
+    console.log(`[editWithRef] ✅ Resized to ${origW}×${origH}: ${resizedUrl}`);
+    return resizedUrl;
   } catch (e) {
     console.warn("[editWithRef] Resize failed, returning original result:", e);
     return resultUrl;
@@ -733,12 +707,19 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── Case 3: 一般編輯 → Kontext ──────────────────────────────────────────
+    // ── Case 3: 一般編輯（場景/背景/顏色等非文字編輯）→ Kontext ──────────────
+    //    呢個分支唔應該處理文字內容（文字類指令已被上面幾個 Case 攔咗）。
+    //    但翻譯咗嘅英文指令送去 Kontext 時，AI 有機會將翻譯後嗰句英文直接畫落圖，
+    //    等於中文文案被英文取代 → 明確叫佢唔好動任何文字，防呆。
     const areaHint = boundsToAreaHint(selectionBounds);
-    const finalPrompt = /[一-鿿]/.test(trim)
+    const translatedPrompt = /[一-鿿]/.test(trim)
       ? (await translateToEnglish(trim) ?? trim)
       : trim;
-    console.log(`[inpaint] EDIT mode | area=${areaHint} | prompt="${finalPrompt.slice(0, 80)}"`);
+    const finalPrompt =
+      `${translatedPrompt}\n\n` +
+      `IMPORTANT: Do not add, translate, remove, or alter any text/typography in the image. ` +
+      `Preserve all existing text exactly as-is, in its original language and characters. This edit is about the scene/visual only.`;
+    console.log(`[inpaint] EDIT mode | area=${areaHint} | prompt="${translatedPrompt.slice(0, 80)}"`);
 
     const resultUrl = await editImageFal({ imageUrl, prompt: finalPrompt, areaHint });
     return NextResponse.json({ imageUrl: resultUrl });

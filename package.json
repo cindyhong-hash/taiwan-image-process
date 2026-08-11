@@ -1,19 +1,22 @@
 {
   "name": "marketing-tool",
-  "version": "0.11.0",
+  "version": "0.13.0",
   "private": true,
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "dotenv -e .env.local -- next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "unused-assets": "dotenv -e .env.local -- node scripts/list-unused-assets.mjs"
+    "unused-assets": "dotenv -e .env.local -- node scripts/list-unused-assets.mjs",
+    "migrate-to-cloud": "dotenv -e .env.production.local -- node scripts/migrate-to-cloud.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
     "@base-ui/react": "^1.5.0",
     "@fal-ai/client": "^1.10.1",
     "@libsql/client": "^0.17.3",
+    "@vercel/blob": "^2.7.0",
     "openai": "^6.41.0",
     "sharp": "^0.34.5",
     "@prisma/adapter-libsql": "^7.8.0",

@@ -9,8 +9,7 @@
  *   叫佢自己揀最襯嘅風格。用戶亦可 UI 手揀（styleOverride）override。
  */
 import sharp from "sharp";
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { join } from "path";
+import { loadBuffer, saveBuffer } from "@/lib/storage";
 
 const OR = "https://openrouter.ai/api/v1/chat/completions";
 const IMG_MODEL = "google/gemini-3-pro-image-preview";
@@ -118,7 +117,7 @@ async function needsHeadroom(buf: Buffer): Promise<boolean> {
 async function readImageBuffer(url: string): Promise<Buffer | null> {
   try {
     if (url.startsWith("data:")) return Buffer.from(url.split(",")[1], "base64");
-    if (url.startsWith("/")) return await readFile(join(process.cwd(), "public", url.split("?")[0]));
+    if (url.startsWith("/")) return await loadBuffer(url.split("?")[0]);
     return Buffer.from(await (await fetch(url)).arrayBuffer());
   } catch { return null; }
 }
@@ -207,7 +206,7 @@ async function geminiEdit(dataUrl: string, prompt: string, outW = 1024, outH = 1
   } catch (e) { console.warn("[typography] gen 失敗:", e); return null; }
 }
 
-/** 喺底圖上生成特效字廣告圖。成功回 /uploads/... URL；任何失敗回 null（上層 fallback）。 */
+/** 喺底圖上生成特效字廣告圖。成功回圖片 URL；任何失敗回 null（上層 fallback）。 */
 export async function generateTypographyImage(opts: {
   baseImageUrl: string;
   title: string;
@@ -266,11 +265,7 @@ export async function generateTypographyImage(opts: {
         }
       }
     }
-    const dir = join(process.cwd(), "public/uploads");
-    await mkdir(dir, { recursive: true });
-    const name = `ai-${opts.seed}-typo.jpg`;
-    await writeFile(join(dir, name), final);
-    return `/uploads/${name}`;
+    return await saveBuffer(final, "jpg", `ai-${opts.seed}-typo-`);
   } catch (e) {
     console.warn("[typography] 生成失敗:", e);
     return null;

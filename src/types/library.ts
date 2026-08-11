@@ -153,6 +153,10 @@ export type GalleryItem =
       paramsJson: string;
       prompt: string | null;
       createdAt: string;
+      /** PENDING｜GENERATING｜DONE｜FAILED（舊資料一律 DONE）。 */
+      status: string;
+      errorMessage?: string | null;
+      batchId?: string | null;
     };
 
 /** Payload to open the shared ImageDetailModal (from gallery / card / 圖片紀錄). */

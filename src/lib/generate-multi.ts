@@ -304,7 +304,12 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
           { cellData: stored, label: "B 換設計", stylePromptSuffix: VARIANT_B_STYLE_SUFFIX },
         ];
       } else {
-        sets = [{ cellData: stored, label: "" }];
+        // [MULTI] 暫時關閉同時生成 2 組（Vercel Hobby 逾時風險）→ 用 variantChoice 揀單組要 A 定 B
+        const wantB = activity.variantChoice === "B";
+        sets = [{
+          cellData: stored, label: wantB ? "B 換設計" : "",
+          stylePromptSuffix: wantB ? VARIANT_B_STYLE_SUFFIX : "",
+        }];
       }
     } else if (activity.variantCount === 2) {
       // 兩組：A 導購 + B 敘事（frame-planner 產生分鏡＋文案，取代 storyboardPrompt2）
@@ -326,13 +331,14 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
       ];
       console.log(`[generate][multi] 2 sets — A:${A[0]?.copy.headline?.slice(0, 40)} | B:${B[0]?.copy.headline?.slice(0, 40)}`);
     } else {
-      // 單組（設計總監版，frame-planner 取代 storyboardPrompt）
+      // [MULTI] 暫時關閉同時生成 2 組（Vercel Hobby 逾時風險）→ 用 variantChoice 揀單組要 A 導購定 B 敘事
+      const chosenVariant: "A" | "B" = activity.variantChoice === "B" ? "B" : "A";
       const plans = await generateFramePlans({
         theme: activity.imagePrompt || activity.theme, n: count,
-        productDesc: multiProductDesc || undefined, variant: "A",
+        productDesc: multiProductDesc || undefined, variant: chosenVariant,
         userHeadline: userMustText || undefined,
       });
-      sets = [{ cellData: cellsFromPlans(plans), label: "", framePlans: plans }];
+      sets = [{ cellData: cellsFromPlans(plans), label: chosenVariant === "B" ? "B 敘事版" : "", framePlans: plans }];
     }
     console.log(`[generate][multi] layout=${multiLayoutId} sets=${sets.length} genMode=${activity.genMode} model=${imageModel}`);
 

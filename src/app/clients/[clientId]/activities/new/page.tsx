@@ -8,14 +8,8 @@ import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
 
 export default function NewActivityPage({ params }: { params: Promise<{ clientId: string }> }) {
   const [clientId, setClientId] = useState("");
-  const [showLayoutPicker, setShowLayoutPicker] = useState(false);  // [MULTI] 版型下拉
   const router = useRouter();
-
-  // [MULTI] 選版型：single 留在單圖頁；其餘導去多圖頁
-  const handleLayout = (id: string) => {
-    setShowLayoutPicker(false);
-    if (id !== "single") router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
-  };
+  const [showLayoutPicker, setShowLayoutPicker] = useState(false);  // [MULTI] 版型下拉
 
   // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
   // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
@@ -34,6 +28,12 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   useEffect(() => {
     params.then(({ clientId }) => setClientId(clientId));
   }, [params]);
+
+  // [MULTI] 選版型：single 留在單圖頁；其餘導去多圖頁
+  const handleLayout = (id: string) => {
+    setShowLayoutPicker(false);
+    if (id !== "single") router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
+  };
 
   const handleSubmit = async (values: ActivityFormValues) => {
     const res = await fetch("/api/activities", {

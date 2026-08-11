@@ -7,12 +7,10 @@
  * - 顏色根據背景感自適應（深色字 + 白色陰影，或反之）
  */
 
+import "@/lib/fonts"; // 必須喺 sharp 之前 import，令 fontconfig 揾到打包咗嘅中文字型
 import sharp from "sharp";
-import { join } from "path";
-import { readFile, writeFile, mkdir } from "fs/promises";
 import { removeBackground } from "@/lib/fal";
-
-const UPLOADS = join(process.cwd(), "public/uploads");
+import { loadBuffer, saveBuffer } from "@/lib/storage";
 
 type Placement = {
   productHeightRatio: number;
@@ -26,12 +24,6 @@ const PLACEMENT: Record<string, Placement> = {
   B: { productHeightRatio: 0.42, xRatio: 0.70, yRatio: 0.63, textZone: "top-full"   },
   C: { productHeightRatio: 0.38, xRatio: 0.75, yRatio: 0.67, textZone: "top-center" },
 };
-
-async function loadBuffer(url: string): Promise<Buffer> {
-  if (url.startsWith("/")) return readFile(join(process.cwd(), "public", url));
-  const res = await fetch(url);
-  return Buffer.from(await res.arrayBuffer());
-}
 
 /**
  * 多圖拼版：把多張子圖依歸一化矩形排進一張畫布（白底、細縫隔開）。
@@ -47,7 +39,6 @@ export async function compositeCollage(opts: {
   plusOverlayText?: string;  // five-plus：在最後一格疊「+X」黑底遮罩
   accentColor?: string;      // 給了就用「主色調出的淡底」當拼版底色（延伸主題），否則白底
 }): Promise<string> {
-  await mkdir(UPLOADS, { recursive: true });
   const { cellUrls, rects, canvasWidth: W, canvasHeight: H } = opts;
   const gap = opts.gap ?? Math.round(Math.min(W, H) * 0.012);
   const half = Math.floor(gap / 2);
@@ -97,10 +88,9 @@ export async function compositeCollage(opts: {
     .jpeg({ quality: 95 })
     .toBuffer();
 
-  const filename = `collage-${opts.seed ?? Date.now()}.jpg`;
-  await writeFile(join(UPLOADS, filename), out);
-  console.log(`[collage] ✅ ${cellUrls.length} cells → /uploads/${filename}`);
-  return `/uploads/${filename}`;
+  const url = await saveBuffer(out, "jpg", "collage-");
+  console.log(`[collage] ✅ ${cellUrls.length} cells → ${url}`);
+  return url;
 }
 
 // ── 副圖文字卡片（Sharp 程式合成，7 種版型；同組一致、跨組可輪換）─────────────
@@ -219,8 +209,7 @@ export async function overlaySubImageCard(opts: {
   targetHeight?: number;
   seed?: string;
 }): Promise<string> {
-  await mkdir(UPLOADS, { recursive: true });
-  let imgBuf = await loadBuffer(opts.imageUrl);
+  let imgBuf: Buffer = await loadBuffer(opts.imageUrl);
   let W: number, H: number;
   if (opts.targetWidth && opts.targetHeight) {
     // 依格子實際比例排版：先把底圖 cover 到格子尺寸，之後文字/照片都以此比例佈局，拼版時不再裁掉文字
@@ -252,9 +241,7 @@ export async function overlaySubImageCard(opts: {
       priceText, originalPriceText,
       variant: opts.variant as "photo-caption-pill" | "card-price-bottom" | "card-badge-straddle" | "title-top-caption-bottom" | "split-left-text" | "ribbon-top-card" | "corner-label-card" | "ribbon-tab-card" | "diagonal-ribbon-card" | "minimal-top-label-card" | "speech-bubble-price" | "photo-full-top-text",
     });
-    const filename = `subcard-${opts.seed ?? Date.now()}.jpg`;
-    await writeFile(join(UPLOADS, filename), out);
-    return `/uploads/${filename}`;
+    return saveBuffer(out, "jpg", "subcard-");
   }
 
   // ═══════ 文字疊照片（原 4 種，補上動態縮字/防溢出）═══════
@@ -354,9 +341,7 @@ export async function overlaySubImageCard(opts: {
     .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
     .jpeg({ quality: 95 })
     .toBuffer();
-  const filename = `subcard-${opts.seed ?? Date.now()}.jpg`;
-  await writeFile(join(UPLOADS, filename), out);
-  return `/uploads/${filename}`;
+  return saveBuffer(out, "jpg", "subcard-");
 }
 
 /** 白底卡片容器合成：① 白卡背景 → ② 圓角照片 → ③ 文字 → ④ 標籤（最上層，避免被照片蓋住） */
@@ -913,7 +898,6 @@ export async function overlayProduct(opts: {
   align?: "center" | "bottom"; // 垂直對齊（產品排成一列時用 bottom 貼齊檯面）
   seed?: string;
 }): Promise<string> {
-  await mkdir(UPLOADS, { recursive: true });
   const sceneBuf = await loadBuffer(opts.sceneUrl);
   const meta = await sharp(sceneBuf).metadata();
   const W = meta.width ?? 800;
@@ -950,9 +934,7 @@ export async function overlayProduct(opts: {
     ])
     .jpeg({ quality: 95 })
     .toBuffer();
-  const filename = `prod-${opts.seed ?? Date.now()}.jpg`;
-  await writeFile(join(UPLOADS, filename), out);
-  return `/uploads/${filename}`;
+  return saveBuffer(out, "jpg", "prod-");
 }
 
 // ── 文字 SVG（無色塊，純文字 + drop-shadow）─────────────────────────────────
@@ -1248,8 +1230,7 @@ export async function overlayLogo(opts: {
   /** 新增：傳入後啟用智慧選位（推薦） */
   textZone?:   TextZone;
 }): Promise<string> {
-  await mkdir(UPLOADS, { recursive: true });
-  const { imageUrl, logoUrl, widthRatio = 0.12, seed, textZone, position } = opts;
+  const { imageUrl, logoUrl, widthRatio = 0.12, textZone, position } = opts;
 
   // 1. 底圖
   const baseBuf  = await loadBuffer(imageUrl);
@@ -1353,9 +1334,8 @@ export async function overlayLogo(opts: {
   if (glowBuf) layers.push({ input: glowBuf, left: glowLeft, top: glowTop, blend: "over" });
   layers.push({ input: finalLogo, left: ll, top: lt, blend: "over" });
 
-  const filename = `ai-${seed ?? Date.now()}-logo.png`;
-  await sharp(baseBuf).composite(layers).png().toFile(join(UPLOADS, filename));
-  return `/uploads/${filename}`;
+  const out = await sharp(baseBuf).composite(layers).png().toBuffer();
+  return saveBuffer(out, "png", "logo-");
 }
 
 // ── 主要合成函式 ──────────────────────────────────────────────────────────────
@@ -1370,8 +1350,6 @@ export async function compositeImage(opts: {
   subtitleText?: string;
   seed?: string;
 }): Promise<string> {
-  await mkdir(UPLOADS, { recursive: true });
-
   const { backgroundUrl, productImageUrl, layoutType, canvasWidth, canvasHeight,
           titleText, subtitleText, seed } = opts;
   const pl = PLACEMENT[layoutType] ?? PLACEMENT["A"];
@@ -1421,11 +1399,10 @@ export async function compositeImage(opts: {
   }
 
   // 4. 輸出
-  const filename = `ai-${seed ?? Date.now()}.jpg`;
-  await sharp(bgResized)
+  const out = await sharp(bgResized)
     .composite(layers)
     .jpeg({ quality: 93 })
-    .toFile(join(UPLOADS, filename));
+    .toBuffer();
 
-  return `/uploads/${filename}`;
+  return saveBuffer(out, "jpg", "ai-");
 }

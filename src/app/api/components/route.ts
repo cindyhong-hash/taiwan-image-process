@@ -10,8 +10,7 @@ export async function GET(request: Request) {
   const previewUrl = searchParams.get("previewUrl");
   const unassigned = searchParams.get("unassigned") === "1"; // 未分組：clientId 為 null
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const where: Record<string, any> = {};
+  const where: { clientId?: string | null; previewUrl?: string } = {};
   if (clientId) where.clientId = clientId;
   else if (unassigned) where.clientId = null;
   if (previewUrl) where.previewUrl = previewUrl;

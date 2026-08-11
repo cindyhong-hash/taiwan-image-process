@@ -155,6 +155,7 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [dims, setDims] = useState("");
+  const [retrying, setRetrying] = useState(false);
   // 長按（~0.5s）入多選：手機相簿式操作。pointer 事件兼容滑鼠 + 觸控。
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longFired = useRef(false);
@@ -163,6 +164,55 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
     pressTimer.current = setTimeout(() => { longFired.current = true; onLongPress(); }, 500);
   };
   const cancelPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
+
+  // 生成中／生成失敗：呢個 tile 仲冇真正圖片——顯示佔位卡，唔開大圖 modal。
+  const isGenerating = item.kind === "generated" && item.status === "GENERATING";
+  const isFailed = item.kind === "generated" && item.status === "FAILED";
+
+  const retry = async () => {
+    if (item.kind !== "generated") return;
+    setRetrying(true);
+    try {
+      let body: Record<string, unknown> = {};
+      try { body = JSON.parse(item.paramsJson || "{}"); } catch { /* keep {} */ }
+      await fetch("/api/library/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, batchId: item.batchId ?? undefined }),
+      });
+      await fetch(`/api/library/images/${item.libraryImageId}`, { method: "DELETE" });
+      onDelete(item); // 觸發上層 refresh（已刪走舊嗰筆，新嗰筆會自動 poll 出嚟）
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  if (isGenerating || isFailed) {
+    return (
+      <div className={`relative rounded-xl overflow-hidden border bg-gray-50 aspect-square flex flex-col items-center justify-center gap-2 ${isFailed ? "border-red-200" : "border-gray-200"}`}>
+        {isGenerating ? (
+          <>
+            <div className="h-6 w-6 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin" />
+            <span className="text-xs text-gray-500">生成中…</span>
+          </>
+        ) : (
+          <>
+            <span className="text-xs text-red-500 px-3 text-center">{item.errorMessage || "生成失敗"}</span>
+            <button onClick={retry} disabled={retrying}
+              className="text-xs px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+              {retrying ? "重試中…" : "重試"}
+            </button>
+          </>
+        )}
+        <button
+          onClick={() => onDelete(item)}
+          className="absolute top-2 right-2 p-1 rounded-lg text-[10px] bg-white/90 text-gray-500 hover:bg-red-50 hover:text-red-500 shadow transition-colors"
+          title="移除">
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className={`group relative rounded-xl overflow-hidden border bg-gray-50 transition-all select-none ${selected ? "border-violet-500 ring-2 ring-violet-400" : "border-gray-200 hover:shadow-md hover:border-gray-300"}`}>
       <button
@@ -341,6 +391,18 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
 
   // Expose imperative refresh for cases where parent needs it
   useImperativeHandle(ref, () => ({ refresh: () => setLocalTick((t) => t + 1) }), []);
+
+  // 有圖仲喺「生成中」→ 定期 poll 到冚唪唥完成（同 Activity list 嗰套一致）。
+  // 呢個 poll 唔靠邊個 popup 開住——就算 popup 已經關咗，返呢頁都會自動見到最新進度。
+  const hasInFlight = gallery.some((g) => g.kind === "generated" && g.status === "GENERATING");
+  useEffect(() => {
+    if (!hasInFlight) return;
+    // setInterval（唔係 setTimeout）：淨用 setTimeout 嗰陣，因為 dependency [hasInFlight]
+    // 喺持續生成中嘅時候值一直係 true（冇變過），effect 唔會再重新排程，poll 咗一次
+    // 之後就永遠停咗——變成「生成完都仲顯示生成中，要手動 refresh 先見到結果」嘅 bug。
+    const t = setInterval(() => setLocalTick((v) => v + 1), 3000);
+    return () => clearInterval(t);
+  }, [hasInFlight]);
 
   const handleDelete = useCallback(async (id: string) => {
     await fetch(`/api/components/${id}`, { method: "DELETE" });

@@ -17,6 +17,7 @@ export function ProductComposeModal({
   onClearSlot,
   onPickSlot,
   onGenerated,
+  onStarted,
   prefill,
   prefillNonce,
   onClose,
@@ -26,6 +27,7 @@ export function ProductComposeModal({
   onClearSlot: (slot: keyof PromptSlots) => void;
   onPickSlot: (comp: StyleComponent) => void;
   onGenerated?: () => void;
+  onStarted?: () => void;
   prefill?: Prefill;
   prefillNonce?: number;
   onClose: () => void;
@@ -63,6 +65,7 @@ export function ProductComposeModal({
             onPickSlot={onPickSlot}
             clientId={clientId}
             onGenerated={onGenerated}
+            onStarted={onStarted}
             prefill={prefill}
             prefillNonce={prefillNonce}
             onDirtyChange={setDirty}

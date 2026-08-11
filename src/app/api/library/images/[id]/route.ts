@@ -108,6 +108,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       try { parsed = JSON.parse(existing.paramsJson || "{}"); } catch { /* keep {} */ }
       parsed.slots = body.slots;
       data.paramsJson = JSON.stringify(parsed);
+    } else if (body.paramsJson !== undefined) {
+      // 直接整份覆寫（生成流程「揀一張留低」確認時，用嗰刻最終 metadata 完善呢筆記錄）。
+      data.paramsJson = body.paramsJson;
     }
     if (body.copyText !== undefined) data.copyText = body.copyText;
     if (body.subject !== undefined) data.subject = body.subject || null; // editable photo title

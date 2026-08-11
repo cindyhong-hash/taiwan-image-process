@@ -51,6 +51,7 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
       />
     );
   }
+
   // [MULTI] 揀版型：single→單圖頁、其餘→多圖頁
   if (step === "layout") {
     return <MultiLayoutPicker onSelect={handleLayout} onClose={onClose} />;
@@ -73,7 +74,6 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
           <button type="button" onClick={() => setStep("layout")}
             className="w-full flex items-start gap-3 text-left rounded-xl border border-gray-200 p-3.5 hover:border-amber-400 hover:bg-amber-50/40 transition-colors">
             <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
-
               <Sparkles className="h-4.5 w-4.5" />
             </span>
             <span>

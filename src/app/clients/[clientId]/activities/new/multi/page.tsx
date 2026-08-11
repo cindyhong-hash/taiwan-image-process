@@ -29,7 +29,8 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   const [showPicker, setShowPicker] = useState(false);
 
   const [genMode, setGenMode] = useState<"unified" | "perCell">("unified");
-  const [variantCount, setVariantCount] = useState<1 | 2>(1);  // 統一主題：生成幾組
+  const [variantCount, setVariantCount] = useState<1 | 2>(1);  // 統一主題：生成幾組（暫時鎖定 1，同時生成 2 組喺 Vercel Hobby 會逾時）
+  const [variantChoice, setVariantChoice] = useState<"A" | "B">("A");  // 生成組數=1 時，揀單組要 A 定 B
 
   // 模式 A（統一主題）
   const [theme, setTheme] = useState("");
@@ -75,6 +76,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         setRefUrls(Array.isArray(a.referenceImageUrls) ? a.referenceImageUrls : []);
         setLogoMode(a.logoMode || "first");
         setVariantCount(a.variantCount === 2 ? 2 : 1);
+        setVariantChoice(a.variantChoice === "B" ? "B" : "A");
         let parsed: Cell[] = [];
         try { parsed = typeof a.cells === "string" ? JSON.parse(a.cells) : (a.cells || []); } catch { parsed = []; }
         const l = getMultiLayout(lid);
@@ -260,6 +262,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
           }))
         );
         setGenMode("perCell");
+        setVariantChoice("A");
       } else {
         alert(data.error ?? "拆解失敗，請稍後再試");
       }
@@ -315,7 +318,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             titleText: mappedText,
             imagePrompt: mappedPrompt,
             layoutId, genMode, logoMode,
-            variantCount,
+            variantCount, variantChoice,
             productImageUrls: mappedProducts,
             referenceImageUrls: mappedRefs,
             cells: mappedCells,
@@ -332,7 +335,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientId, layoutId, genMode, logoMode,
-          variantCount,
+          variantCount, variantChoice,
           imagePrompt: mappedPrompt,
           requiredText: mappedText,
           productImageUrls: mappedProducts,
@@ -386,7 +389,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
           </button>
           <button
             type="button"
-            onClick={() => setGenMode("perCell")}
+            onClick={() => { setGenMode("perCell"); setVariantChoice("A"); }}
             className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
               genMode === "perCell" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
             }`}
@@ -396,25 +399,34 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         </div>
       </div>
 
-      {/* 生成組數（兩種模式共用，下拉選單）*/}
-      <div className="space-y-1">
-        <Label className="text-sm font-medium">生成組數</Label>
-        <div className="relative w-full max-w-md">
-          <select
-            value={variantCount}
-            onChange={(e) => setVariantCount(Number(e.target.value) === 2 ? 2 : 1)}
-            className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer"
-          >
-            <option value={1}>1 組（單一風格）</option>
-            <option value={2}>
-              {genMode === "unified" ? "2 組：A 導購 ＋ B 敘事（時間約 ×2）" : "2 組：A 原版 ＋ B 換設計風格（時間約 ×2）"}
-            </option>
-          </select>
-          <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+      {/* 生成款式：統一主題 A 導購/B 敘事係真正唔同文案內容，先開放揀款；
+          各圖獨立填寫嘅內容本身由用戶逐格手動填，A/B 冇實質分別，唔顯示（一律 A）。
+          暫時只開放一次生成一款（同時生成 2 款會逾時），想要另一款可以再新增一次活動生成。 */}
+      {genMode === "unified" && (
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">生成款式</Label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setVariantCount(1); setVariantChoice("A"); }}
+              className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
+                variantChoice === "A" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+              }`}
+            >
+              A 導購版
+            </button>
+            <button
+              type="button"
+              onClick={() => { setVariantCount(1); setVariantChoice("B"); }}
+              className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
+                variantChoice === "B" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+              }`}
+            >
+              B 敘事版
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── 模式 A：統一主題 ── */}
       {genMode === "unified" && (

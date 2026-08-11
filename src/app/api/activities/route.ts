@@ -9,7 +9,7 @@ export async function POST(request: Request) {
       requiredText, imagePrompt, imageRatio, imageModel, customW, customH,
       productImageUrls, referenceImageUrls, selectedComponentIds,
       baseImageUrl, typographyMood,
-      layoutId, genMode, cells, logoMode, variantCount,  // [MULTI] 多圖欄位
+      layoutId, genMode, cells, logoMode, variantCount, variantChoice,  // [MULTI] 多圖欄位
     } = body;
 
     if (!clientId) {
@@ -45,6 +45,7 @@ export async function POST(request: Request) {
         cells:                JSON.stringify(cells ?? []),
         logoMode:             logoMode ?? "first",
         variantCount:         Number(variantCount) === 2 ? 2 : 1,
+        variantChoice:        variantChoice === "B" ? "B" : "A",
         status: "PENDING",
       },
     });

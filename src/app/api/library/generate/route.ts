@@ -1,26 +1,19 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir, readFile } from "fs/promises";
-import path from "path";
-import { randomUUID } from "crypto";
+import { after } from "next/server";
 import sharp from "sharp";
 import { db } from "@/lib/db";
 import { generateImage, generateCopy, compileChineseBrief, translateBriefToEnglishPrompt, falFlux2Edit, falSeedreamEdit, falQwenEdit, falImageEdit, falRemoveBg, falUpscale, describeReferenceStyle, falSceneFromRef, falNanoTextToImage, type GeneratedImage } from "@/lib/generate";
+import { loadBuffer, saveBuffer } from "@/lib/storage";
+
+export const maxDuration = 120;
 
 const W = 1024;
 const H = 1024;
 
-async function saveBuffer(buffer: Buffer, ext: string): Promise<string> {
-  const filename = `${randomUUID()}.${ext}`;
-  const uploadDir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(uploadDir, { recursive: true });
-  await writeFile(path.join(uploadDir, filename), buffer);
-  return `/uploads/${filename}`;
-}
-
 /** Load an image buffer from a local /uploads path (disk) or a remote URL. */
 async function loadImageBuffer(url: string, host: string): Promise<Buffer> {
   if (url.startsWith("/uploads/")) {
-    return readFile(path.join(process.cwd(), "public", url));
+    return loadBuffer(url);
   }
   const abs = url.startsWith("http") ? url : `${host}${url}`;
   const res = await fetch(abs, { signal: AbortSignal.timeout(30_000) });
@@ -33,17 +26,46 @@ async function loadImageBuffer(url: string, host: string): Promise<Buffer> {
  * Two modes:
  *  • 全 AI 生成: compile prompt from slots/subject/notes → HF image + copy
  *  • 合成 (composite): 去背產品 PNG 疊落「直接使用嘅背景圖」或「AI 生成背景」
- * Saves the result image to public/uploads and records a LibraryImage.
+ *
+ * 即刻落一筆 LibraryImage（status:GENERATING）並馬上回應 { id }，令 client 可以安全
+ * 關閉 popup ——實際生成用 `after()` 喺 response 送出之後繼續行，完成/失敗都會更新
+ * 返嗰筆記錄（DONE/FAILED），畫廊 poll 呢個 id 就會見到最新狀態。
  */
 export async function POST(request: Request) {
+  const body = await request.json();
+  const { clientId, subject, batchId } = body ?? {};
+  const host = new URL(request.url).origin;
+
+  const row = await db.libraryImage.create({
+    data: {
+      clientId: clientId ?? null,
+      subject: subject ?? null,
+      status: "GENERATING",
+      batchId: batchId ?? null,
+      paramsJson: JSON.stringify(body ?? {}),
+    },
+  });
+
+  after(() => runGeneration(row.id, body ?? {}, host));
+
+  return NextResponse.json({ id: row.id, status: "GENERATING" });
+}
+
+async function markFailed(rowId: string, message: string) {
+  await db.libraryImage.update({
+    where: { id: rowId },
+    data: { status: "FAILED", errorMessage: message.slice(0, 500) },
+  }).catch(() => {});
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runGeneration(rowId: string, body: Record<string, any>, host: string): Promise<void> {
   try {
-    const body = await request.json();
-    const { clientId, subject, slots, palette, notes, seed, productImageUrl, productImageUrls, composite, customPrompt, draftOnly, size, customW, customH, engine, upscaleSource, overlay, genType, sceneOverride, refImageUrl } = body ?? {};
+    const { clientId, subject, slots, palette, notes, seed, productImageUrl, productImageUrls, composite, customPrompt, size, customW, customH, engine, upscaleSource, overlay, genType, sceneOverride, refImageUrl } = body;
     // Support 1–3 product photos. New clients send productImageUrls[]; keep productImageUrl for back-compat.
     const productUrls: string[] = (Array.isArray(productImageUrls) && productImageUrls.length
       ? productImageUrls
       : (productImageUrl ? [productImageUrl] : [])).slice(0, 3);
-    const host = new URL(request.url).origin;
 
     // Output size 對照表（wireframe ⑧）：正方形 / 橫向 / 直向 / 限時動態。
     const SIZE_MAP: Record<string, { w: number; h: number; ar: string }> = {
@@ -152,24 +174,21 @@ export async function POST(request: Request) {
         refImageDataUri = await toJpegUri(await loadImageBuffer(bgImageUrl, host));
       }
 
-      // Persist a composite result + return the API response.
+      // 完成一組合成結果 → 更新返嗰筆 GENERATING 記錄做 DONE。
       const saveComposite = async (img: GeneratedImage, mode: string, promptStr: string, copyText: string | null) => {
         const sized = await applyTextOverlay(await fitToSize(img.buffer), copyText);
         const ext = overlay?.enabled ? "png" : (img.contentType.includes("webp") ? "webp" : img.contentType.includes("jpeg") ? "jpg" : "png");
         const imageUrl = await saveBuffer(sized, ext);
-        // draftOnly（多輸出預覽）：只存檔，唔入庫；client 揀完先 save-image。回傳 bare mode 供 client 砌 paramsJson。
-        if (draftOnly) return NextResponse.json({ imageUrl, copyText, mode });
-        const row = await db.libraryImage.create({
+        await db.libraryImage.update({
+          where: { id: rowId },
           data: {
-            clientId: clientId ?? null,
+            status: "DONE",
             imageUrl,
             prompt: promptStr,
             copyText: copyText || null,
-            subject: subject ?? null,
             paramsJson: JSON.stringify({ slots, palette, notes, productImageUrl: productUrls[0], productImageUrls: productUrls, composite: true, mode }),
           },
         });
-        return NextResponse.json({ id: row.id, imageUrl, copyText, mode: `ai-composite-${mode}` });
       };
 
       // ── Engine selection (user-chosen via 合成方式): try the chosen primary, then fall back. ──
@@ -183,28 +202,28 @@ export async function POST(request: Request) {
           falFlux2Edit({ productDataUris, refImageDataUri, sceneDescription: sceneEn, aspectRatio }),
           generateCopy(copyInput),
         ]);
-        return saveComposite(img, "flux2-edit", `[AI 合成] ${sceneCn}`, copy.copyText);
+        await saveComposite(img, "flux2-edit", `[AI 合成] ${sceneCn}`, copy.copyText);
       };
       const tryNano = async () => {
         const [img, copy] = await Promise.all([
           falImageEdit({ productDataUris, refImageDataUri, sceneDescription: sceneEn, aspectRatio }),
           generateCopy(copyInput),
         ]);
-        return saveComposite(img, "fal-edit", `[AI 合成] ${sceneCn}`, copy.copyText);
+        await saveComposite(img, "fal-edit", `[AI 合成] ${sceneCn}`, copy.copyText);
       };
       const trySeedream = async () => {
         const [img, copy] = await Promise.all([
           falSeedreamEdit({ productDataUris, refImageDataUri, sceneDescription: sceneEn, aspectRatio }),
           generateCopy(copyInput),
         ]);
-        return saveComposite(img, "seedream-edit", `[AI 合成] ${sceneCn}`, copy.copyText);
+        await saveComposite(img, "seedream-edit", `[AI 合成] ${sceneCn}`, copy.copyText);
       };
       const tryQwen = async () => {
         const [img, copy] = await Promise.all([
           falQwenEdit({ productDataUris, refImageDataUri, sceneDescription: sceneEn, aspectRatio }),
           generateCopy(copyInput),
         ]);
-        return saveComposite(img, "qwen-edit", `[AI 合成] ${sceneCn}`, copy.copyText);
+        await saveComposite(img, "qwen-edit", `[AI 合成] ${sceneCn}`, copy.copyText);
       };
       // 文字保真：rembg 攞每件產品真像素 → 貼落 AI/所選背景（唔重畫 → 中文字 100% 清晰）。
       const tryPaste = async () => {
@@ -230,7 +249,7 @@ export async function POST(request: Request) {
         }
         const out = await sharp(base).composite(layers).png().toBuffer();
         const copy = await generateCopy(copyInput);
-        return saveComposite({ buffer: out, contentType: "image/png", seed: 0 }, "paste-text", `[文字保真貼圖] ${sceneCn}`, copy.copyText);
+        await saveComposite({ buffer: out, contentType: "image/png", seed: 0 }, "paste-text", `[文字保真貼圖] ${sceneCn}`, copy.copyText);
       };
       // ╔══════════════════════════════════════════════════════════════════════════════════╗
       // ║ 「AI 生圖引擎排序」：改下面 `order`。第 1 個=主力，失敗順序試下一個，全失敗先 sharp 疊圖。║
@@ -242,17 +261,15 @@ export async function POST(request: Request) {
         : engine === "paste" ? [tryPaste, tryFlux2Edit]
         : [tryFlux2Edit, tryNano];   // 預設 / "flux2edit"：FLUX.2 edit 主力 → Nano 後備
       for (const attempt of order) {
-        try { return await attempt(); }
+        try { await attempt(); return; }
         catch (e) { console.error("[composite] engine attempt failed, trying next:", e instanceof Error ? e.message : e); }
       }
 
       // ── Fallback: mechanical sharp overlay (needs a transparent PNG) ──
       const meta = await sharp(product).metadata();
       if (!meta.hasAlpha) {
-        return NextResponse.json(
-          { error: "AI 合成失敗，且產品圖唔係透明去背圖。請先去背（remove.bg / photoroom）再上傳，或重試。" },
-          { status: 400 },
-        );
+        await markFailed(rowId, "AI 合成失敗，且產品圖唔係透明去背圖。請先去背（remove.bg / photoroom）再上傳，或重試。");
+        return;
       }
       let backdrop: Buffer;
       let bgPrompt = "";
@@ -273,17 +290,17 @@ export async function POST(request: Request) {
       const top = Math.round((H - (pm.height ?? 0)) / 2);
       const out = await sharp(bg).composite([{ input: prodResized, left, top }]).png().toBuffer();
       const imageUrl = await saveBuffer(await applyTextOverlay(await fitToSize(out), copy.copyText), "png");
-      const row = await db.libraryImage.create({
+      await db.libraryImage.update({
+        where: { id: rowId },
         data: {
-          clientId: clientId ?? null,
+          status: "DONE",
           imageUrl,
           prompt: `[疊圖] ${sceneCn}`,
           copyText: copy.copyText || null,
-          subject: subject ?? null,
           paramsJson: JSON.stringify({ slots, palette, notes, seed, productImageUrl: productUrls[0], productImageUrls: productUrls, composite: true, mode: "sharp" }),
         },
       });
-      return NextResponse.json({ id: row.id, imageUrl, copyText: copy.copyText, mode: "composite-sharp" });
+      return;
     }
 
     // ── Full AI generation (Chinese-first) ──
@@ -299,7 +316,8 @@ export async function POST(request: Request) {
     });
 
     if (!brief.trim()) {
-      return NextResponse.json({ error: "請至少選一個積木、輸入主體，或上傳產品圖" }, { status: 400 });
+      await markFailed(rowId, "請至少選一個積木、輸入主體，或上傳產品圖");
+      return;
     }
 
     // If a reference image is provided, analyze its style and prepend to the brief.
@@ -335,29 +353,22 @@ export async function POST(request: Request) {
     const ext = img.contentType.includes("png") ? "png" : img.contentType.includes("webp") ? "webp" : "jpg";
     const fitted = await fitToSize(img.buffer);
 
-    // draftOnly: just save the file (no overlay, no DB record) — used for 背景生成 previews.
-    if (draftOnly) {
-      return NextResponse.json({ imageUrl: await saveBuffer(fitted, ext), seed: img.seed });
-    }
-
     const copy = await generateCopy(copyInput);
     const imageUrl = await saveBuffer(await applyTextOverlay(fitted, copy.copyText), overlay?.enabled ? "png" : ext);
-    const row = await db.libraryImage.create({
+    await db.libraryImage.update({
+      where: { id: rowId },
       data: {
-        clientId: clientId ?? null,
+        status: "DONE",
         imageUrl,
         // Store the Chinese brief as the human-facing prompt; keep the English render prompt too.
         prompt: brief,
         copyText: copy.copyText || null,
-        subject: subject ?? null,
         paramsJson: JSON.stringify({ slots, palette, notes, seed: img.seed, brief, enPrompt: prompt, mode: genMode, genType: genType ?? "scene" }),
       },
     });
-
-    return NextResponse.json({ id: row.id, imageUrl, copyText: copy.copyText, prompt: brief, enPrompt: prompt, seed: img.seed });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[library/generate] error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    await markFailed(rowId, message);
   }
 }

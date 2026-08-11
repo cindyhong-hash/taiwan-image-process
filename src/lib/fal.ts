@@ -4,6 +4,7 @@
 
 import { fal } from "@fal-ai/client";
 import { describeImageOpenRouter } from "@/lib/openrouter";
+import { loadBuffer, saveBuffer, contentTypeForExt } from "@/lib/storage";
 
 function initFal() {
   const key = process.env.FAL_KEY;
@@ -154,28 +155,20 @@ type InpaintOptions = {
 export async function inpaintImageFal(opts: InpaintOptions): Promise<string> {
   initFal();
 
-  const { readFile, writeFile, mkdir } = await import("fs/promises");
-  const { join } = await import("path");
-  const uploadsDir = join(process.cwd(), "public/uploads");
-  await mkdir(uploadsDir, { recursive: true });
-
   // 1. 原圖 → Buffer
   console.log("[fal:inpaint] Loading original:", opts.imageUrl.slice(0, 60));
-  const origBuf = opts.imageUrl.startsWith("/")
-    ? await readFile(join(process.cwd(), "public", opts.imageUrl))
-    : Buffer.from(await (await fetch(opts.imageUrl)).arrayBuffer());
+  const origBuf = await loadBuffer(opts.imageUrl);
 
   const ext  = (opts.imageUrl.split(".").pop() ?? "jpg").toLowerCase();
-  const mime = ext === "png" ? "image/png" : "image/jpeg";
+  const mime = contentTypeForExt(ext);
 
-  // 2. 遮罩 base64 → Buffer，並存到磁碟讓我們能確認
+  // 2. 遮罩 base64 → Buffer，並存起嚟以便驗證
   const maskB64 = opts.maskDataUrl.replace(/^data:image\/\w+;base64,/, "");
   const maskBuf = Buffer.from(maskB64, "base64");
 
-  // DEBUG: 先把遮罩存到磁碟以便驗證
-  const debugMaskPath = join(uploadsDir, `debug-mask-${Date.now()}.png`);
-  await writeFile(debugMaskPath, maskBuf);
-  console.log("[fal:inpaint] Mask saved for debug:", debugMaskPath);
+  // DEBUG: 先存起遮罩以便驗證
+  const debugMaskUrl = await saveBuffer(maskBuf, "png", "debug-mask-");
+  console.log("[fal:inpaint] Mask saved for debug:", debugMaskUrl);
   console.log("[fal:inpaint] Mask buffer size:", maskBuf.length, "bytes");
 
   // 3. 上傳原圖到 Fal storage
@@ -218,9 +211,7 @@ async function resolveToDataUrl(url: string): Promise<string | undefined> {
   try {
     if (url.startsWith("data:")) return url;
     if (url.startsWith("/")) {
-      const { readFile } = await import("fs/promises");
-      const { join } = await import("path");
-      const buf = await readFile(join(process.cwd(), "public", url));
+      const buf = await loadBuffer(url);
       const ext = url.split(".").pop() ?? "jpeg";
       const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
       return `data:${mime};base64,${buf.toString("base64")}`;
@@ -239,14 +230,8 @@ async function downloadAndSave(url: string, seed?: string): Promise<string> {
   const res = await fetch(url);
   const buf = Buffer.from(await res.arrayBuffer());
   const ct  = res.headers.get("content-type") ?? "image/jpeg";
-  const ext = ct.includes("png") ? "png" : "jpg";
-  const { writeFile, mkdir } = await import("fs/promises");
-  const { join } = await import("path");
-  const dir = join(process.cwd(), "public/uploads");
-  await mkdir(dir, { recursive: true });
-  const filename = `ai-${seed ?? Date.now()}.${ext}`;
-  await writeFile(join(dir, filename), buf);
-  return `/uploads/${filename}`;
+  const ext = ct.includes("png") ? "png" : ct.includes("webp") ? "webp" : "jpg";
+  return saveBuffer(buf, ext, `ai-${seed ?? Date.now()}-`);
 }
 
 // ── Flux Schnell（極速生成，支援文字渲染）─────────────────────────────────────
@@ -313,17 +298,10 @@ export async function eraseImageFal(opts: {
 }): Promise<string> {
   initFal();
 
-  const { readFile, mkdir } = await import("fs/promises");
-  const { join } = await import("path");
-  const uploadsDir = join(process.cwd(), "public/uploads");
-  await mkdir(uploadsDir, { recursive: true });
-
   // 1. 原圖 → Buffer → 上傳
-  const origBuf = opts.imageUrl.startsWith("/")
-    ? await readFile(join(process.cwd(), "public", opts.imageUrl))
-    : Buffer.from(await (await fetch(opts.imageUrl)).arrayBuffer());
+  const origBuf = await loadBuffer(opts.imageUrl);
   const ext  = (opts.imageUrl.split(".").pop() ?? "jpg").toLowerCase();
-  const mime = ext === "png" ? "image/png" : "image/jpeg";
+  const mime = contentTypeForExt(ext);
   const imageUrl = await fal.storage.upload(
     new File([origBuf], `orig.${ext}`, { type: mime })
   );
@@ -374,16 +352,10 @@ export async function editImageFal(opts: {
 }): Promise<string> {
   initFal();
 
-  const { readFile, mkdir } = await import("fs/promises");
-  const { join } = await import("path");
-  await mkdir(join(process.cwd(), "public/uploads"), { recursive: true });
-
   // 上傳原圖
-  const origBuf = opts.imageUrl.startsWith("/")
-    ? await readFile(join(process.cwd(), "public", opts.imageUrl))
-    : Buffer.from(await (await fetch(opts.imageUrl)).arrayBuffer());
+  const origBuf = await loadBuffer(opts.imageUrl);
   const ext  = (opts.imageUrl.split(".").pop() ?? "jpg").toLowerCase();
-  const mime = ext === "png" ? "image/png" : "image/jpeg";
+  const mime = contentTypeForExt(ext);
   const imageUrl = await fal.storage.upload(new File([origBuf], `orig.${ext}`, { type: mime }));
 
   // 如果有參考產品圖，用 Claude Vision 描述它

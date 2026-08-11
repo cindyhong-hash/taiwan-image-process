@@ -45,7 +45,8 @@ model Activity {
   genMode              String            @default("unified") // [MULTI] 生成模式：unified（統一主題）| perCell（各圖獨立）
   cells                String            @default("[]")      // [MULTI] 各格資料 JSON: [{description, mustText, assetUrls[]}]
   logoMode             String            @default("first")   // [MULTI] LOGO 位置：first | all | none
-  variantCount         Int               @default(1)         // [MULTI] 統一主題生成幾組（1 或 2＝A導購+B敘事）
+  variantCount         Int               @default(1)         // [MULTI] 統一主題生成幾組（1 或 2＝A導購+B敘事；2 暫時關閉，Vercel Hobby 逾時風險，留返升級 Pro 先重開）
+  variantChoice        String            @default("A")       // [MULTI] variantCount=1 時揀嘅單組款式：A｜B
   errorMessage         String?           // [MULTI] 生成失敗時的真正錯誤原因（顯示在 UI，免翻 log）
   status               String            @default("PENDING")
   createdAt            DateTime          @default(now())
@@ -81,12 +82,15 @@ model StyleComponent {
 }
 
 model LibraryImage {
-  id         String   @id @default(cuid())
-  clientId   String?
-  imageUrl   String
-  prompt     String
-  copyText   String?
-  subject    String?
-  paramsJson String   @default("{}")
-  createdAt  DateTime @default(now())
+  id           String   @id @default(cuid())
+  clientId     String?
+  imageUrl     String   @default("")
+  prompt       String   @default("")
+  copyText     String?
+  subject      String?
+  paramsJson   String   @default("{}")
+  status       String   @default("DONE")  // PENDING｜GENERATING｜DONE｜FAILED（舊資料一律當 DONE）
+  errorMessage String?                     // 生成失敗時嘅真正原因（顯示喺 UI，免翻 log）
+  batchId      String?                     // 同一次「生成 N 張」嘅群組 id，畫廊用嚟顯示「批次 x/N」
+  createdAt    DateTime @default(now())
 }

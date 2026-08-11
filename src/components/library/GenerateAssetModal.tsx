@@ -12,16 +12,19 @@
 import { useState, useRef, useEffect } from "react";
 import { X, Wand2, Loader2, Check, Save, ImageIcon, UserRound, Palette, Link2, Sparkles, Upload, RefreshCw } from "lucide-react";
 import { useRotatingHint } from "@/hooks/useRotatingHint";
+import { pollLibraryImage } from "@/lib/pollLibraryImage";
 
 const GEN_HINTS = ["正在生成 AI 素材…", "分析色調 / 光影…", "描繪細節中…", "快好喇，請稍候…"];
 
-type GeneratedItem = { imageUrl: string; selected: boolean };
+type GeneratedItem = { imageUrl: string; selected: boolean; id?: string };
 type AssetType = "background" | "person" | "illustration";
 
 type Props = {
   clientId: string | null;
   onClose: () => void;
   onSaved: () => void;
+  /** 撳「生成」送出去 server 嗰刻（未等生成完）即刻通知上層 —— 令主畫廊即刻見到「生成中」佔位卡。 */
+  onStarted?: () => void;
   /** Pre-fill values when opening from a popup's「重新生成/調整」action. */
   init?: { description?: string; refImageUrl?: string; type?: AssetType; engine?: "flux" | "nano" };
   /** 由「新增產品／素材圖片」融合入口揀完類型進入 → 鎖死該類型、隱藏類型選擇器（wireframe ⑧）。 */
@@ -45,7 +48,7 @@ function SectionLabel({ step, title, hint }: { step: string; title: string; hint
   );
 }
 
-export function GenerateAssetModal({ clientId, onClose, onSaved, init, lockedType }: Props) {
+export function GenerateAssetModal({ clientId, onClose, onSaved, onStarted, init, lockedType }: Props) {
   const [type, setType] = useState<AssetType>(lockedType ?? init?.type ?? "background");
   const [description, setDescription] = useState(init?.description ?? "");
   const [count, setCount] = useState(3);
@@ -180,7 +183,7 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init, lockedTyp
       }
       const res = await fetch("/api/library/polish", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brief: currentDesc, genType: genType ?? "scene", ...(hasRef ? { refImageUrl: refImageUrl.trim() } : {}) }),
+        body: JSON.stringify({ brief: currentDesc, genType: genType ?? "scene", clientId, ...(hasRef ? { refImageUrl: refImageUrl.trim() } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "潤色失敗");
@@ -200,9 +203,15 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init, lockedTyp
     setItems([]);
     try {
       const prompt = buildPrompt(description);
+      const batchId = `gam-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      // 送出即刻落 DB（status:GENERATING），poll 到完成先攞返 imageUrl——即刻安全，
+      // 就算中途關咗 popup，server 都會用 after() 繼續生成完，唔會流失。
+      // 呢個 flag 淨係俾同一個 batch 觸發一次 onStarted——如果每張圖各自 call 一次
+      // （count 張 = N 次 refresh），主畫廊會喺短時間內連續跳幾次，好唐突。
+      let notifiedStart = false;
       const results = await Promise.allSettled(
-        Array.from({ length: count }, () =>
-          fetch("/api/library/generate", {
+        Array.from({ length: count }, async () => {
+          const { id } = await fetch("/api/library/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -211,16 +220,21 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init, lockedTyp
               customPrompt: prompt,
               size: "custom", customW: outDims.w, customH: outDims.h,
               genType,
-              draftOnly: true,
+              batchId,
               ...(refImageUrl.trim() ? { refImageUrl: refImageUrl.trim() } : {}),
               engine,
             }),
-          }).then((r) => r.json())
-        )
+          }).then((r) => r.json());
+          if (!id) throw new Error("生成請求送出失敗");
+          if (!notifiedStart) { notifiedStart = true; onStarted?.(); } // 呢個 batch 已經有記錄落咗 DB → 通知主畫廊 refresh 一次
+          const item = await pollLibraryImage(id);
+          if (item.status !== "DONE") throw new Error(item.errorMessage ?? "生成失敗");
+          return { id: item.id, imageUrl: item.imageUrl };
+        })
       );
       const ok: GeneratedItem[] = results
-        .filter((r): r is PromiseFulfilledResult<{ imageUrl: string }> => r.status === "fulfilled" && !!r.value?.imageUrl)
-        .map((r) => ({ imageUrl: r.value.imageUrl, selected: true }));
+        .filter((r): r is PromiseFulfilledResult<{ id: string; imageUrl: string }> => r.status === "fulfilled" && !!r.value?.imageUrl)
+        .map((r) => ({ id: r.value.id, imageUrl: r.value.imageUrl, selected: true }));
       if (ok.length === 0) throw new Error("所有圖片生成失敗，請重試");
       setItems(ok);
     } catch (e: unknown) {
@@ -236,13 +250,15 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init, lockedTyp
 
   async function handleSave() {
     const selected = items.filter((it) => it.selected);
+    const unselected = items.filter((it) => !it.selected);
     if (selected.length === 0) { setError("請至少選取一張圖片"); return; }
     setSaving(true);
     setError(null);
     const name0 = description.trim().slice(0, 20);
     try {
       if (type === "background") {
-        // 背景 → 存為可重用 背景素材（BACKGROUND 組件）。
+        // 背景 → 額外存為可重用 背景素材（BACKGROUND 組件）；LibraryImage 記錄本身已經
+        // 生成嗰刻落咗 DB，唔使再建一次，畫廊 dedup 邏輯會當佢係同一張。
         await Promise.all(selected.map((it, i) =>
           fetch("/api/components", {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -254,18 +270,19 @@ export function GenerateAssetModal({ clientId, onClose, onSaved, init, lockedTyp
           })
         ));
       } else {
-        // 人像 / 插畫 → 存為圖庫成圖（最終交付）；genType 入 paramsJson 供圖庫分類。
-        await Promise.all(selected.map((it) =>
-          fetch("/api/library/save-image", {
-            method: "POST", headers: { "Content-Type": "application/json" },
+        // 人像 / 插畫：生成嗰刻已經係真 LibraryImage 記錄，呢步淨係完善最終 metadata。
+        await Promise.all(selected.filter((it) => it.id).map((it) =>
+          fetch(`/api/library/images/${it.id}`, {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              clientId, imageUrl: it.imageUrl, subject: name0,
-              prompt: description.trim(),
+              subject: name0,
               paramsJson: JSON.stringify({ genType, mode: engine === "nano" ? "nano-banana" : (type === "person" ? "flux2-person" : "recraft-illustration"), ...(refImageUrl.trim() ? { refImageUrl: refImageUrl.trim() } : {}) }),
             }),
           })
         ));
       }
+      // 冇揀嗰幾張：已經生成完、真係存在 DB，用戶明確唔要 → 刪走，唔留喺畫廊佔位。
+      await Promise.all(unselected.filter((it) => it.id).map((it) => fetch(`/api/library/images/${it.id}`, { method: "DELETE" })));
       onSaved();
     } catch {
       setError("儲存失敗，請重試");

@@ -6,6 +6,8 @@
  * so Gemini can learn the brand's actual composition, color, and aesthetic.
  */
 
+import { loadBuffer, saveBuffer, contentTypeForExt } from "@/lib/storage";
+
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const IMAGE_MODEL = "google/gemini-3-pro-image-preview";
 
@@ -30,11 +32,9 @@ async function toBase64DataUrl(url: string): Promise<string | null> {
   try {
     if (url.startsWith("data:")) return url;  // 已是 data URL，直接回傳
     if (url.startsWith("/")) {
-      const { readFile } = await import("fs/promises");
-      const { join } = await import("path");
-      const buf = await readFile(join(process.cwd(), "public", url.replace(/^\//, "")));
+      const buf = await loadBuffer(url);
       const ext = url.split(".").pop() ?? "jpeg";
-      const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      const mime = contentTypeForExt(ext);
       return `data:${mime};base64,${buf.toString("base64")}`;
     }
     if (url.startsWith("http")) {
@@ -50,13 +50,7 @@ async function toBase64DataUrl(url: string): Promise<string | null> {
 }
 
 async function downloadAndSave(b64: string, ext: string, seed?: string): Promise<string> {
-  const { writeFile, mkdir } = await import("fs/promises");
-  const { join } = await import("path");
-  const dir = join(process.cwd(), "public/uploads");
-  await mkdir(dir, { recursive: true });
-  const filename = `ai-${seed ?? Date.now()}.${ext}`;
-  await writeFile(join(dir, filename), Buffer.from(b64, "base64"));
-  return `/uploads/${filename}`;
+  return saveBuffer(Buffer.from(b64, "base64"), ext, `ai-${seed ?? Date.now()}-`);
 }
 
 // ── main export ───────────────────────────────────────────────────────────────

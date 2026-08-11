@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateImageFal, generateImageFluxSchnell, describeStyle, describeProduct, editImageFal } from "@/lib/fal";
 import { generateImageOpenRouter, chatTextOpenRouter } from "@/lib/openrouter";
+import { loadBuffer, saveBuffer } from "@/lib/storage";
 
 /** 背景生成：優先 OpenRouter Gemini（更寫實），備援 Fal FLUX */
 async function generateBackground(opts: {
@@ -64,14 +65,9 @@ function parseImageText(raw: string): { title: string; imageSubtitle: string } {
 async function readImageSize(url: string): Promise<{ w: number; h: number }> {
   try {
     const sharp = (await import("sharp")).default;
-    let buf: Buffer;
-    if (url.startsWith("/")) {
-      const { readFile } = await import("fs/promises");
-      const { join } = await import("path");
-      buf = await readFile(join(process.cwd(), "public", url.split("?")[0]));
-    } else {
-      buf = Buffer.from(await (await fetch(url)).arrayBuffer());
-    }
+    const buf = url.startsWith("/")
+      ? await loadBuffer(url.split("?")[0])
+      : Buffer.from(await (await fetch(url)).arrayBuffer());
     const m = await sharp(buf).metadata();
     return { w: m.width ?? 0, h: m.height ?? 0 };
   } catch {
@@ -527,14 +523,13 @@ export async function POST(request: Request) {
 
       // ── 3.4 輸出尺寸：使用者設定咗就把成圖 resize 到該尺寸（比例已鎖＝純縮放）。
       //     包 try/catch：任何失敗都保留原圖，絕不阻斷生成。
-      if (activity.customW > 0 && activity.customH > 0 && imageUrl.startsWith("/uploads/") && !imageUrl.includes("picsum")) {
+      if (activity.customW > 0 && activity.customH > 0 && !imageUrl.includes("picsum")) {
         try {
           const sharp = (await import("sharp")).default;
-          const { join } = await import("path");
-          const { writeFile } = await import("fs/promises");
-          const fp = join(process.cwd(), "public", imageUrl.split("?")[0]);
-          const resized = await sharp(fp).resize(size.w, size.h, { fit: "cover" }).toBuffer();
-          await writeFile(fp, resized);
+          const buf = await loadBuffer(imageUrl.split("?")[0]);
+          const resized = await sharp(buf).resize(size.w, size.h, { fit: "cover" }).toBuffer();
+          const ext = imageUrl.split("?")[0].split(".").pop()?.toLowerCase() || "jpg";
+          imageUrl = await saveBuffer(resized, ext, "resized-");
         } catch (e) {
           console.warn("[generate] 輸出尺寸 resize 失敗，保留原圖:", e);
         }

@@ -197,7 +197,16 @@ export async function translateBriefToEnglishPrompt(brief: string): Promise<stri
  * 回傳嘅文字俾用戶喺 UI 編輯後再生圖（opt-in，唔自動套用）。保留原意、唔虛構品牌事實。
  * 無 API key 時原樣回傳（graceful fallback）。
  */
-export async function polishBriefToChinese(input: { brief: string; genType?: string; styleDesc?: string }): Promise<string> {
+export async function polishBriefToChinese(input: {
+  brief: string;
+  genType?: string;
+  styleDesc?: string;
+  productContext?: string;
+  toneLabels?: string[];
+  taboos?: string[];
+  primaryColor?: string;
+  secondaryColor?: string;
+}): Promise<string> {
   const text = input.brief.trim();
   if (!text) return "";
   if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === "your-openrouter-api-key-here") return text;
@@ -208,6 +217,14 @@ export async function polishBriefToChinese(input: { brief: string; genType?: str
   const styleHint = input.styleDesc
     ? `\n\n【參考圖風格分析】${input.styleDesc}\n請在擴寫時融入以上風格特徵（色調、光影、質感氣氛），不要參考構圖或佈局，保留用戶原意，只補充具體畫面細節。`
     : "";
+  const productHint = input.productContext
+    ? `\n\n【實際產品內容（AI 睇圖認出，擴寫嗰個背景/場景/氛圍必須同呢個產品有明確關聯，唔可以憑空加入同產品無關嘅通用場景）】${input.productContext}`
+    : "";
+  const brandHint = (input.toneLabels?.length || input.primaryColor || input.taboos?.length)
+    ? `\n\n【品牌調性】${input.toneLabels?.length ? input.toneLabels.join("、") : "專業、親切"}` +
+      (input.primaryColor ? `\n【品牌主色】${input.primaryColor}${input.secondaryColor ? `／${input.secondaryColor}` : ""}（如適合可融入場景色調，唔強制）` : "") +
+      (input.taboos?.length ? `\n【禁忌】${input.taboos.join("、")}（擴寫時要避免）` : "")
+    : "";
   const sys =
     "你是一位資深美術指導兼 AI 生圖 prompt 寫手。你會把用戶手寫、簡短或零碎的設計指令，" +
     "擴寫成一段更完整、具體、有畫面感的繁體中文設計描述，用來生成行銷圖片。\n\n" +
@@ -215,8 +232,9 @@ export async function polishBriefToChinese(input: { brief: string; genType?: str
     "1. 保留用戶原意與所有已給的具體細節（主體、顏色、文字、風格），只補充畫面細節：構圖、光線、氛圍、背景、材質、鏡頭角度。\n" +
     "2. 嚴禁虛構品牌事實、功效、價格，或加入用戶沒提到的標語文字。\n" +
     "3. 一律繁體中文（台灣用語），100字內（含標點），簡潔有創意，留空間給用戶和 AI 修改，不要過度鋪排。\n" +
-    "4. 只輸出擴寫後的中文設計描述，不要解釋、不要英文、不要加標題。";
-  const user = `${typeHint}${styleHint}\n\n用戶原始指令：\n${text}\n\n擴寫後的中文設計描述：`;
+    "4. 只輸出擴寫後的中文設計描述，不要解釋、不要英文、不要加標題。\n" +
+    "5. 如果有提供【實際產品內容】，擴寫嗰個背景/場景/氛圍一定要圍住呢個產品嘅實際用途、質感或目標客群嚟諗，唔可以無端加入天空、沙灘、大自然等同產品完全無關嘅通用場景。";
+  const user = `${typeHint}${styleHint}${productHint}${brandHint}\n\n用戶原始指令：\n${text}\n\n擴寫後的中文設計描述：`;
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",

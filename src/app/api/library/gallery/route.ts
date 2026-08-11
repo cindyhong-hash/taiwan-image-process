@@ -85,6 +85,9 @@ export async function GET(request: Request) {
       paramsJson: g.paramsJson,
       prompt: g.prompt,
       createdAt: g.createdAt,
+      status: g.status,
+      errorMessage: g.errorMessage,
+      batchId: g.batchId,
     })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 

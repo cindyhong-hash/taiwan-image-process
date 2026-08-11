@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir, readFile } from "fs/promises";
-import path from "path";
-import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { falRemoveBg, falRelightComposite } from "@/lib/generate";
+import { loadBuffer, saveBuffer } from "@/lib/storage";
 
 /**
  * POST /api/library/template-paste — 固定模板貼圖（系列圖一致性方案 A）
@@ -16,16 +14,8 @@ import { falRemoveBg, falRelightComposite } from "@/lib/generate";
  * 回傳 { imageUrl }（draft；唔入庫，client 揀完用 save-image）。
  */
 
-async function saveBuffer(buffer: Buffer, ext: string): Promise<string> {
-  const filename = `${randomUUID()}.${ext}`;
-  const dir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, filename), buffer);
-  return `/uploads/${filename}`;
-}
-
 async function loadImageBuffer(url: string, host: string): Promise<Buffer> {
-  if (url.startsWith("/uploads/")) return readFile(path.join(process.cwd(), "public", url));
+  if (url.startsWith("/uploads/")) return loadBuffer(url);
   const abs = url.startsWith("http") ? url : `${host}${url}`;
   const res = await fetch(abs, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`無法載入圖片：${url} (${res.status})`);

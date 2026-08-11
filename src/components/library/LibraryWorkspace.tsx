@@ -170,6 +170,13 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
 
   const handleGenerated = useCallback(() => {
     componentGridRef.current?.refresh();
+    setShowCompose(false);
+  }, []);
+
+  // 撳「生成」嗰刻（仲未等生成完）即刻叫一次 refresh——令主畫廊即刻見到「生成中」
+  // 佔位卡，唔使等成個 poll 完先反映，亦唔靠關咗 popup 之後先見到。
+  const handleGenerationStarted = useCallback(() => {
+    componentGridRef.current?.refresh();
   }, []);
 
   const handleDeleteLibraryImage = useCallback(async (id: string) => {
@@ -226,6 +233,7 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
           onClearSlot={handleClearSlot}
           onPickSlot={handleInject}
           onGenerated={handleGenerated}
+          onStarted={handleGenerationStarted}
           prefill={prefill}
           prefillNonce={prefillNonce}
           onClose={() => setShowCompose(false)}
@@ -279,6 +287,7 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
           init={generateAssetInit ?? undefined}
           lockedType={lockedAssetType ?? undefined}
           onClose={() => { setShowGenerateAsset(false); setGenerateAssetInit(null); setLockedAssetType(null); }}
+          onStarted={handleGenerationStarted}
           onSaved={() => {
             setShowGenerateAsset(false);
             setGenerateAssetInit(null);
