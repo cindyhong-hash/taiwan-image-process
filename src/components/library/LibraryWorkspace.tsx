@@ -223,6 +223,7 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
         onOpenImage={setDetail}
         reloadKey={componentReloadKey}
         clients={clients}
+        paused={showCompose || showGenerateAsset}
       />
 
       {/* 產品圖生成（PromptComposer modal） */}

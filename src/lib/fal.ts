@@ -34,7 +34,13 @@ async function describeWithClaude(imageUrl: string, prompt: string): Promise<str
 
 export async function describeProduct(productImageUrl: string): Promise<string | null> {
   return describeWithClaude(productImageUrl,
-    "Describe this product in 2-3 sentences for an image generation AI. Focus on: shape, color, materials, packaging design, brand name if visible. Be specific and visual. English only."
+    "Describe this product in 3-5 sentences for an image generation AI that will design a marketing scene around it. " +
+    "Be precise and visual, not generic. Cover: (1) exact category — if it's food or drink, name the specific dish/item " +
+    "(e.g. 'chocolate layer cake', not just 'dessert') and its visible texture/toppings/garnish/condiments; " +
+    "(2) shape, color, materials, packaging design, brand name if visible; " +
+    "(3) any distinctive decorative motif, pattern, or theme printed/embossed on the product or packaging " +
+    "(e.g. floral print, geometric pattern, specific icon) — call it out explicitly since it can inspire matching props in the scene. " +
+    "Do not use vague filler like 'elegant' or 'high quality' — describe only what is literally visible. English only."
   );
 }
 

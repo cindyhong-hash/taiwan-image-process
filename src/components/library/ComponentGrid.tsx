@@ -156,6 +156,7 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
   const [confirmDel, setConfirmDel] = useState(false);
   const [dims, setDims] = useState("");
   const [retrying, setRetrying] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   // 長按（~0.5s）入多選：手機相簿式操作。pointer 事件兼容滑鼠 + 觸控。
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longFired = useRef(false);
@@ -228,11 +229,13 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
         }}
         className="w-full text-left"
         style={{ touchAction: "manipulation" }}>
-        {/* Show the FULL image (no crop) — object-contain, letterboxed in a square box. */}
+        {/* Show the FULL image (no crop) — object-contain, letterboxed in a square box.
+            淡入而唔係一出現就即刻硬切（尤其生成中 → 完成嗰刻剛好由佔位卡換成呢個 tile）。 */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={item.imageUrl} alt="brand" loading="lazy" decoding="async"
-          onLoad={(e) => { const t = e.currentTarget; setDims((d) => d || sizeTag(t.naturalWidth, t.naturalHeight)); }}
-          className="w-full aspect-square object-contain" />
+          ref={(el) => { if (el?.complete) setImgLoaded(true); }}
+          onLoad={(e) => { const t = e.currentTarget; setDims((d) => d || sizeTag(t.naturalWidth, t.naturalHeight)); setImgLoaded(true); }}
+          className={`w-full aspect-square object-contain transition-opacity duration-500 ${imgLoaded ? "opacity-100" : "opacity-0"}`} />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
       </button>
       {dims && (
@@ -345,10 +348,13 @@ type Props = {
   onOpenImage: (detail: ImageDetail) => void;
   reloadKey?: number;
   clients?: { id: string; name: string }[];  // 批次「移到客戶 / 設公用」用
+  /** 生成 popup 開住嗰陣（PromptComposer / GenerateAssetModal）：暫停背景刷新，
+   * 唔好喺用戶專注揀選項嗰陣悄悄重排/插入新 tile 令背景「跳動」。Popup 關咗即刻補刷新一次。 */
+  paused?: boolean;
 };
 
 export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function ComponentGrid(
-  { clientId, unassigned = false, injectedSlots, onInject, onOpenQuickAdd, onOpenGenerateAsset, onOpenImage, reloadKey = 0, clients = [] }, ref,
+  { clientId, unassigned = false, injectedSlots, onInject, onOpenQuickAdd, onOpenGenerateAsset, onOpenImage, reloadKey = 0, clients = [], paused = false }, ref,
 ) {
   const [components, setComponents] = useState<StyleComponent[]>([]);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
@@ -372,22 +378,42 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
     ]);
   }, [clientId, unassigned]);
 
-  // Primary data effect — runs whenever clientId, reloadKey (from parent), or localTick changes
+  const applyFetched = useCallback(([comps, gal]: [unknown, unknown]) => {
+    setComponents(Array.isArray(comps) ? comps : []);
+    // 報告期間隱藏 #4 系列圖成圖（SHOW_SERIES_TEMPLATE=false）。
+    const galArr: GalleryItem[] = Array.isArray(gal) ? gal : [];
+    setGallery(SHOW_SERIES_TEMPLATE ? galArr : galArr.filter((g) => !isSeriesTemplate(g)));
+  }, []);
+
+  // 首次載入／換品牌（clientId、reloadKey 變）：可以顯示「載入中」全版佔位——呢個係真係新畫面。
   useEffect(() => {
     let active = true;
     setLoading(true);
     doFetch()
-      .then(([comps, gal]) => {
-        if (!active) return;
-        setComponents(Array.isArray(comps) ? comps : []);
-        // 報告期間隱藏 #4 系列圖成圖（SHOW_SERIES_TEMPLATE=false）。
-        const galArr: GalleryItem[] = Array.isArray(gal) ? gal : [];
-        setGallery(SHOW_SERIES_TEMPLATE ? galArr : galArr.filter((g) => !isSeriesTemplate(g)));
-      })
+      .then((res) => { if (active) applyFetched(res); })
       .catch(() => {})
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [clientId, reloadKey, localTick, doFetch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, reloadKey]);
+
+  // 靜默背景刷新（生成中 poll / popup onStarted / onGenerated 觸發嘅 localTick）：
+  // 唔可以再 setLoading(true) —— 之前呢度同上面共用一個 effect，令每次刷新（包括生成中
+  // 期間每 3 秒一次嘅 poll）都會將成個畫廊 swap 去「載入中…」文字再切返嚟，睇落成個背景
+  // 不斷閃/跳（用戶回報：popup 開住生成、或者關 popup 嗰刻，背景會閃爍/彈返成頁載入中）。
+  // 淨係靜默更新 data，個別 tile（生成中 spinner → 真圖）先變，其他已載入嘅圖唔會重新渲染。
+  //
+  // paused（生成 popup 開住）嗰陣連呢個靜默更新都要停：用戶開住 popup 專注揀選項嗰陣，
+  // 背景插入新 tile／重排都算係一種「跳動」（唔止之前嗰種 loading 閃爍）。等 popup 關咗
+  // （paused 由 true 變 false）先一次過追返最新 —— 依賴 [paused] 令呢個時機自動觸發。
+  useEffect(() => {
+    if (localTick === 0) return; // 首次（同上面 effect 撞）唔重複 fetch
+    if (paused) return;
+    let active = true;
+    doFetch().then((res) => { if (active) applyFetched(res); }).catch(() => {});
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localTick, paused]);
 
   // Expose imperative refresh for cases where parent needs it
   useImperativeHandle(ref, () => ({ refresh: () => setLocalTick((t) => t + 1) }), []);
@@ -425,7 +451,12 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
   const [busy, setBusy] = useState(false);
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
 
-  const itemKey = (item: GalleryItem) => `${item.kind}-${item.imageUrl}`;
+  // 「生成中」嗰陣 imageUrl 一律係 ""（未有真圖），如果同一批生成多於一張
+  // （例如人像預設一次生成 2 張），淨用 kind-imageUrl 做 key 會撞晒（兩個都係
+  // "generated-"），令 React reconcile 錯 tile——其中一張生成完，另一張留喺
+  // 舊嘅「生成中」畫面唔會自己變返，要 reload 成頁先見到（用戶實測撞過）。
+  // generated kind 有獨立、由生成嗰刻已經確定嘅 libraryImageId，用嚟做 key 先穩陣。
+  const itemKey = (item: GalleryItem) => item.kind === "generated" ? `generated-${item.libraryImageId}` : `${item.kind}-${item.imageUrl}`;
   const toggleSelect = useCallback((key: string) => {
     setSelectedKeys((prev) => {
       const next = new Set(prev);
@@ -605,7 +636,7 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
               {visibleGallery.map((item) => (
-                <GalleryTile key={`${item.kind}-${item.imageUrl}`} item={item}
+                <GalleryTile key={itemKey(item)} item={item}
                   onOpen={openFromGallery} onDelete={handleDeleteGalleryItem}
                   selectMode={selectMode} selected={selectedKeys.has(itemKey(item))}
                   onToggleSelect={() => toggleSelect(itemKey(item))}

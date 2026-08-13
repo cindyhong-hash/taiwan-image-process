@@ -139,13 +139,26 @@ export function MaskCanvas({ imageUrl, onMaskChange, onSelectionChange }: Props)
       }
 
       const canvas = canvasRef.current;
-      if (!canvas) return prev;
+      const img = imgRef.current;
+      if (!canvas || !img) return prev;
+
+      // 座標要跟實際顯示嗰張圖嘅範圍，唔可以淨跟 canvas/container 嘅闊高——canvas
+      // 填滿成個 container，但 container 有時會因為 flexbox align-items:stretch
+      // （同旁邊縮圖欄拉齊高度）或者圖片比例同 container 唔一致，而變到比實際顯示
+      // 嗰張圖大（留白喺下面/側面，img 只係 top-aligned 冇填滿）。如果淨用
+      // canvas.width/height 做分母，揀嘅位置百分比會偏移——愈揀近邊緣（例如底部
+      // 文案）偏差愈明顯，呢個就係「圈選位置不準」嘅根本原因。改用 img 實際嘅
+      // getBoundingClientRect() 做分母，先真正對應返實際張圖。
+      const canvasRect = canvas.getBoundingClientRect();
+      const imgRect = img.getBoundingClientRect();
+      const absX = canvasRect.left + prev.x;
+      const absY = canvasRect.top + prev.y;
 
       const bounds: SelectionBounds = {
-        x:      prev.x / canvas.width,
-        y:      prev.y / canvas.height,
-        width:  prev.w / canvas.width,
-        height: prev.h / canvas.height,
+        x:      (absX - imgRect.left) / imgRect.width,
+        y:      (absY - imgRect.top) / imgRect.height,
+        width:  prev.w / imgRect.width,
+        height: prev.h / imgRect.height,
       };
 
       Promise.resolve().then(() => {

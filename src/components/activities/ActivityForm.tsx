@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -58,6 +58,10 @@ type Props = {
   initialValues?: Partial<ActivityFormValues>;
   submitLabel?: string;
   onSubmit: (values: ActivityFormValues) => Promise<void>;
+  /** 底圖模式（isBaseMode）狀態變化時通知上層——上層要靠呢個嚟決定「已選版型」
+   * 切換器顯唔顯示（底圖模式唔支援多圖版型），初始 prop 唔夠：用戶可以喺表單入面
+   * 撳「移除底圖」跌返做一般生成模式，呢個 state 只喺表單內部，上層要靠呢個 callback 先追得到。 */
+  onBaseModeChange?: (isBase: boolean) => void;
 };
 
 // ── Upload helper ─────────────────────────────────────────────────────────────
@@ -165,6 +169,7 @@ export function ActivityForm({
   initialValues,
   submitLabel = "建立活動並生成圖片",
   onSubmit,
+  onBaseModeChange,
 }: Props) {
   const [values, setValues] = useState<ActivityFormValues>({
     requiredText:         initialValues?.requiredText         ?? "",
@@ -181,6 +186,7 @@ export function ActivityForm({
 
   // 底圖模式：成張相做背景、唔重新生圖 → 收起生圖模型/積木/參考圖等生成相關 UI。
   const isBaseMode = !!values.baseImageUrl;
+  useEffect(() => { onBaseModeChange?.(isBaseMode); }, [isBaseMode, onBaseModeChange]);
 
   const [uploadingProduct, setUploadingProduct] = useState(false);
   const [uploadingRef,     setUploadingRef]     = useState(false);

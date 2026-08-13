@@ -279,9 +279,12 @@ export function MultiEditorCanvas({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={4}
-              placeholder="例：把背景改成日落沙灘 / 移除右下角的水印"
+              placeholder="例：把背景改成日落沙灘 / 移除右下角的水印 / 文字改成：限時優惠中"
               className="w-full rounded-lg border border-violet-200 bg-white p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-400"
             />
+            <p className="text-[11px] text-gray-400 -mt-1.5">
+              想改文字內容：用「文字改成：新內容」呢個句式最準（例：文字改成：限時優惠中），或者圈選好文字範圍後直接打新內容都得。
+            </p>
 
             {/* 參考圖（選填）*/}
             <div className="space-y-2">

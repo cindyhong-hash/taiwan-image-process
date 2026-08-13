@@ -275,9 +275,12 @@ export function EditorCanvas({ layout, brandLogoUrl }: Props) {
             value={imagePrompt}
             onChange={(e) => setImagePrompt(e.target.value)}
             rows={5}
-            placeholder="請輸入修改指令，例如：&#10;・把腳踏車換成奔跑的黑熊&#10;・將背景改為日落沙灘&#10;・移除右下角的水印"
+            placeholder="請輸入修改指令，例如：&#10;・把腳踏車換成奔跑的黑熊&#10;・將背景改為日落沙灘&#10;・移除右下角的水印&#10;・文字改成：限時優惠中"
             className="w-full rounded-lg border border-violet-200 bg-white p-3 text-sm resize-none placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 transition"
           />
+          <p className="text-[11px] text-gray-400 -mt-1.5">
+            想改文字內容：用「文字改成：新內容」呢個句式最準，或者圈選好文字範圍後直接打新內容都得。
+          </p>
 
           <div className="space-y-2">
             <p className="text-xs text-gray-500 font-medium">參考圖（選填）</p>

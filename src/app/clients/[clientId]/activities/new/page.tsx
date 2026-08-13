@@ -10,6 +10,11 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   const [clientId, setClientId] = useState("");
   const router = useRouter();
   const [showLayoutPicker, setShowLayoutPicker] = useState(false);  // [MULTI] 版型下拉
+  // 底圖模式（用素材庫圖片作活動圖底圖）：呢張相 100% 固定做背景，唔支援拆做多格
+  // 拼版——版型切換器擺喺呢個模式冇意義，撳咗轉去多圖頁仲會令底圖脈絡靜雞流失
+  // （多圖頁完全冇 baseImageUrl 呢個概念）。跟 ActivityForm 嘅 live 狀態（唔淨係
+  // 初始值）：用戶喺表單入面撳「移除底圖」跌返做一般生成模式時，切換器要即刻再顯示。
+  const [isBaseMode, setIsBaseMode] = useState(false);
 
   // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
   // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
@@ -51,17 +56,20 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
     <div className="max-w-xl">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-xl font-semibold">新增活動</h1>
-        {/* [MULTI] 版型下拉：可從單圖切換到多圖版型 */}
-        <button
-          type="button"
-          onClick={() => setShowLayoutPicker(true)}
-          className="flex items-center gap-1 text-sm text-gray-500 hover:text-violet-600 border border-gray-200 hover:border-violet-300 rounded-lg px-3 py-1.5 transition-all"
-        >
-          已選版型：<span className="font-medium text-gray-800">1張（單圖）</span>
-          <ChevronDown className="h-4 w-4" />
-        </button>
+        {/* [MULTI] 版型下拉：可從單圖切換到多圖版型（底圖模式唔支援，隱藏） */}
+        {!isBaseMode && (
+          <button
+            type="button"
+            onClick={() => setShowLayoutPicker(true)}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-violet-600 border border-gray-200 hover:border-violet-300 rounded-lg px-3 py-1.5 transition-all"
+          >
+            已選版型：<span className="font-medium text-gray-800">1張（單圖）</span>
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        )}
       </div>
       <ActivityForm clientId={clientId} onSubmit={handleSubmit}
+        onBaseModeChange={setIsBaseMode}
         initialValues={{
           ...(initial.ref ? { referenceImageUrls: [initial.ref] } : {}),
           ...(initial.base ? { baseImageUrl: initial.base } : {}),

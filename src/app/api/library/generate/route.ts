@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { after } from "next/server";
 import sharp from "sharp";
 import { db } from "@/lib/db";
-import { generateImage, generateCopy, compileChineseBrief, translateBriefToEnglishPrompt, falFlux2Edit, falSeedreamEdit, falQwenEdit, falImageEdit, falRemoveBg, falUpscale, describeReferenceStyle, falSceneFromRef, falNanoTextToImage, type GeneratedImage } from "@/lib/generate";
+import { generateImage, generateCopy, compileChineseBrief, translateBriefToEnglishPrompt, polishBriefToChinese, falFlux2Edit, falSeedreamEdit, falQwenEdit, falImageEdit, falRemoveBg, falUpscale, describeReferenceStyle, falSceneFromRef, falNanoTextToImage, type GeneratedImage } from "@/lib/generate";
+import { describeProduct } from "@/lib/fal";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 
 export const maxDuration = 120;
@@ -149,13 +150,41 @@ async function runGeneration(rowId: string, body: Record<string, any>, host: str
       // Keep the user's original Traditional-Chinese brief for storage/display; translate a separate
       // English copy only to feed the image model (which works best in English).
       // 潤色後嘅場景描述（不含主體）優先；否則由積木組裝。
-      const sceneCn = (sceneOverride as string | undefined)?.trim() || compileChineseBrief({
-        compositionDesc: (slots?.layout?.data?.description as string) || slots?.layout?.aiPromptText,
-        backgroundDesc: bgImageUrl ? (slots?.background?.name as string | undefined) : undefined,
-        toneLabels: slots?.tone?.data?.toneLabels,
-        palette,
-        notes,
-      }) || "簡潔專業棚拍背景、柔光";
+      let sceneCn = (sceneOverride as string | undefined)?.trim();
+      if (!sceneCn) {
+        // 用戶冇撳「潤色」就直接生成（甚至完全冇打字）：唔可以淨係用死板通用 fallback，
+        // 要同 /api/library/polish 一致，用產品 vision 分析 + 品牌資料自動 grounding。
+        const baseScene = compileChineseBrief({
+          compositionDesc: (slots?.layout?.data?.description as string) || slots?.layout?.aiPromptText,
+          backgroundDesc: bgImageUrl ? (slots?.background?.name as string | undefined) : undefined,
+          toneLabels: slots?.tone?.data?.toneLabels,
+          palette,
+          notes,
+        }) || "簡潔專業產品攝影場景";
+        let productContext: string | undefined;
+        try { productContext = (await describeProduct(productUrls[0])) ?? undefined; }
+        catch (e) { console.error("[composite] product vision analysis failed:", e instanceof Error ? e.message : e); }
+        let toneLabelsFromClient: string[] | undefined, taboos: string[] | undefined, primaryColor: string | undefined, secondaryColor: string | undefined;
+        if (clientId) {
+          try {
+            const client = await db.client.findUnique({ where: { id: clientId } });
+            if (client) {
+              toneLabelsFromClient = JSON.parse(client.toneLabels || "[]");
+              taboos = JSON.parse(client.taboos || "[]");
+              primaryColor = client.primaryColor;
+              secondaryColor = client.secondaryColor ?? undefined;
+            }
+          } catch (e) { console.error("[composite] client lookup failed:", e instanceof Error ? e.message : e); }
+        }
+        sceneCn = await polishBriefToChinese({
+          brief: baseScene,
+          productContext,
+          toneLabels: toneLabelsFromClient,
+          taboos,
+          primaryColor,
+          secondaryColor,
+        }) || baseScene;
+      }
       const sceneEn = await translateBriefToEnglishPrompt(sceneCn);
 
       // 餵高清原圖：合成前唔再降到 1024（實測高清令標籤/中文字清晰好多）。
@@ -340,14 +369,28 @@ async function runGeneration(rowId: string, body: Record<string, any>, host: str
     const genStyle = genType === "illustration" ? "digital_illustration" : undefined;
     const genMode = useNano ? "nano-banana" : genType === "person" ? "flux2-person" : genType === "illustration" ? "recraft-illustration" : "flux-scene";
 
+    // Nano Banana 對真人寫實 prompt 嘅內容過濾器時鬆時緊，冇任何違規內容都可能誤判拒絕
+    // （content_policy_violation），而呢條「全 AI 生成」路徑之前冇後備——一被拒就直接
+    // 乜圖都冇生成到。跟返「產品合成」路徑已有嘅做法：Nano 失敗就自動轉用非 Nano 引擎
+    // （真人 → FLUX.2 pro；插畫 → Recraft；場景 → FLUX.1 schnell），用戶唔使自己再試。
     let img: GeneratedImage;
-    if (useNanoEdit) {
-      const refBuf = await loadImageBuffer(refImageUrl as string, host);
-      const refDataUri = `data:image/jpeg;base64,${(await sharp(refBuf).resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer()).toString("base64")}`;
-      img = await falSceneFromRef({ refDataUri, sceneDescription: prompt, aspectRatio });
-    } else if (useNano) {
-      img = await falNanoTextToImage({ prompt, aspectRatio });
-    } else {
+    let actualGenMode = genMode;
+    let nanoFallback = false;
+    try {
+      if (useNanoEdit) {
+        const refBuf = await loadImageBuffer(refImageUrl as string, host);
+        const refDataUri = `data:image/jpeg;base64,${(await sharp(refBuf).resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer()).toString("base64")}`;
+        img = await falSceneFromRef({ refDataUri, sceneDescription: prompt, aspectRatio });
+      } else if (useNano) {
+        img = await falNanoTextToImage({ prompt, aspectRatio });
+      } else {
+        [img] = await Promise.all([generateImage({ prompt, seed, width: outW, height: outH, model: genModel, style: genStyle })]);
+      }
+    } catch (e) {
+      if (!useNano) throw e; // 非 Nano 引擎失敗冇後備，維持原本行為（直接 FAILED）
+      console.error("[generate] Nano Banana 失敗，轉用後備引擎:", e instanceof Error ? e.message : e);
+      nanoFallback = true;
+      actualGenMode = genType === "person" ? "flux2-person" : genType === "illustration" ? "recraft-illustration" : "flux-scene";
       [img] = await Promise.all([generateImage({ prompt, seed, width: outW, height: outH, model: genModel, style: genStyle })]);
     }
     const ext = img.contentType.includes("png") ? "png" : img.contentType.includes("webp") ? "webp" : "jpg";
@@ -363,7 +406,7 @@ async function runGeneration(rowId: string, body: Record<string, any>, host: str
         // Store the Chinese brief as the human-facing prompt; keep the English render prompt too.
         prompt: brief,
         copyText: copy.copyText || null,
-        paramsJson: JSON.stringify({ slots, palette, notes, seed: img.seed, brief, enPrompt: prompt, mode: genMode, genType: genType ?? "scene" }),
+        paramsJson: JSON.stringify({ slots, palette, notes, seed: img.seed, brief, enPrompt: prompt, mode: actualGenMode, genType: genType ?? "scene", ...(nanoFallback ? { nanoFallback: true } : {}) }),
       },
     });
   } catch (err: unknown) {
