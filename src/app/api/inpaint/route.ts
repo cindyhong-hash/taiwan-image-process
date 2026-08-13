@@ -11,6 +11,12 @@ export const maxDuration = 120;
 
 // ── 偵測加文字意圖 ────────────────────────────────────────────────────────────
 const ADD_TEXT_PATTERNS = [
+  // 「加字/加文字/加內容/加標題…」+ 冒號 + 新內容——用戶想喺（通常係空白）位置新增
+  // 一段文字，唔係替換現有文字。呢個一定要行呢度（Sharp 直接燒入指定位置），
+  // 唔可以行 Case 0.8 個 AI 文字替換——AI 見到「replace existing headline」
+  // 呢種指令，喺揀嘅位置冇現有文字時會自作主張去改附近其他文字，唔會真係喺
+  // 空白處新增（用戶實測撞到）。
+  /加\s*.{0,4}?(?:文案|文字|標題|主標題|副標題|字幕|內容|字)\s*[：:]\s*(.{1,40})/,
   /加[上入](.{1,20})文字/,
   /加[上入]文字[「"'](.{1,20})[」"']/,
   /加[上入][「"'](.{1,20})[」"']/,
@@ -240,10 +246,14 @@ async function extractTextFromImage(imageUrl: string): Promise<string | null> {
 }
 
 // ── 文字內容替換偵測（「標題改成X」「文案改成：X」）──────────────────────────
-function extractTextReplacement(prompt: string): string | null {
+function extractTextReplacement(prompt: string, hasSelection = false): string | null {
   const patterns = [
     // 「文案/文字/標題...」+ 「改成/換成」+ 冒號（全形半形）+ 新內容
     /(?:文案|文字|標題|主標題|副標題|字幕|內容|字)\s*(?:改成|換成|改為|換為|替換成|替換為|替換)\s*[：:「『"'“”]?\s*(.+)/,
+    // 「換/改」+ 描述詞（例如顏色：黑色/黃色）+「文字/文案/標題…」+「為/成」，中間隔開嘅句式
+    // （例：「換黑色文字為：xxx」「改標題文字成 xxx」）——同上面果條唔同喺於觸發詞
+    // 唔一定貼住關鍵詞，而係關鍵詞之後先接「為/成」，用戶好自然會噉樣打。
+    /(?:換|改)\s*.{0,8}?(?:文案|文字|標題|主標題|副標題|字幕|內容|字)\s*.{0,4}?(?:為|成)\s*[：:「『"'“]?\s*(.+)/,
     // 直接「改成/換成」+「引號包住的內容」
     /(?:改成|換成|改為|換為|替換成|替換為)\s*[「『"'“](.+?)[」』"'”]/,
     // 直接「改成/換成」+ 無引號內容（至少2字）
@@ -266,6 +276,23 @@ function extractTextReplacement(prompt: string): string | null {
       return t;
     }
   }
+
+  // Fallback：用戶已經拖拉圈選咗一個文字區域，但打字嗰陣冇用「改成/換成」呢類
+  // 觸發詞，淨係直接打新文案內容（例如「各大電商平台，網店都買得到」）——呢個
+  // 係好常見嘅操作習慣：揀咗個區域已經表達咗「呢個係要改嘅文字」，唔應該逼用戶
+  // 再打多一個「改成」先。冇呢個 fallback 會跌落 Case 3 嘅 Kontext 一般編輯，
+  // 個指令會被翻譯做英文再直接畫落圖——即係中文文案變英文（已實測撞到嘅真實
+  // bug）。淨係喺明顯唔係文字編輯意圖（場景/顏色/加圖/去除等）先唔套用，
+  // 亦限長度（正常標題/文案唔會太長）減低誤判風險。
+  if (hasSelection && prompt.length >= 2 && prompt.length <= 60) {
+    // 「加字/加文字/加內容…」一律交返俾 Case 1（Sharp 直接燒入指定位置）處理，
+    // 唔可以喺呢度當「替換」——AI 替換模式見到揀嘅位置冇現有文字，會自作主張
+    // 去改附近其他文字，達唔到「喺空白處新增」嘅效果（用戶實測撞到）。
+    const ADD_INTENT = /加\s*.{0,4}?(?:文案|文字|標題|主標題|副標題|字幕|內容|字)/;
+    const NON_TEXT_INTENT = /(?:換一?張|換個|加(?:個|返|一)?(?:植物|花|圖|logo|標誌)|去除|移除|擦除|清除|去背|換臉|換背景|換場景|換顏色|換色調|換產品)/;
+    if (!ADD_INTENT.test(prompt) && !NON_TEXT_INTENT.test(prompt)) return prompt;
+  }
+
   return null;
 }
 
@@ -553,6 +580,20 @@ function boundsToAreaHint(b?: { x:number;y:number;width:number;height:number }):
   return `${v} ${h}`;
 }
 
+// 「lower center」呢類粗略 3x3 grid 標籤太粗——一張圖嘅 lower center 範圍可以同時
+// 包住用戶揀嗰段文字，同附近另一段完全唔想改嘅文字（例如產品下面嘅小行字）。
+// 模型冇辦法單靠粗略標籤分清楚，實測會撞到：明明只圈選咗一小段，AI 連埋
+// 附近另一段文字一齊改／重複咗幾次，令畫面出現重疊亂碼。加返精確百分比座標，
+// 令模型有實際邊界可以跟，唔淨係靠模糊方位詞估。
+function boundsToPreciseLocation(b?: { x:number;y:number;width:number;height:number }): string | undefined {
+  if (!b) return undefined;
+  const left = Math.round(b.x * 100);
+  const right = Math.round((b.x + b.width) * 100);
+  const top = Math.round(b.y * 100);
+  const bottom = Math.round((b.y + b.height) * 100);
+  return `the ${boundsToAreaHint(b)} area — precisely the region spanning horizontally from ${left}% to ${right}% of the image width, and vertically from ${top}% to ${bottom}% of the image height`;
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
@@ -635,7 +676,7 @@ export async function POST(request: Request) {
     }
 
     // ── Case 0.8: 文字內容替換 → Gemini AI（保留背景，只換文字內容）────────────
-    const textReplacement = extractTextReplacement(trim);
+    const textReplacement = extractTextReplacement(trim, !!selectionBounds);
     if (textReplacement) {
       console.log(`[inpaint] TEXT REPLACE mode → Gemini, newText="${textReplacement}"`);
 
@@ -652,14 +693,15 @@ export async function POST(request: Request) {
           ? `FOR REFERENCE — current text visible in the image:\n${existingText}\n\n`
           : "") +
         (selectionBounds
-          ? `LOCATION: Only modify text in the ${boundsToAreaHint(selectionBounds)} area of the image.\n\n`
+          ? `LOCATION: Only modify text strictly inside ${boundsToPreciseLocation(selectionBounds)}. ` +
+            `There may be OTHER text elements near or below this region (e.g. a separate caption, a small call-to-action line) — those are NOT the target, leave them completely untouched even if they look similar or related to the new text.\n\n`
           : `LOCATION: Replace the most prominent headline text.\n\n`) +
         `ABSOLUTE RULES — violations are unacceptable:\n` +
         `1. The new text must be EXACTLY: "${textReplacement}" — not paraphrased, not shortened, not modified in any way\n` +
         `2. Reproduce the new text character by character: ${textReplacement.split("").map((c, i) => `character ${i + 1} is "${c}"`).join(", ")}\n` +
         `3. Keep the EXACT same font style, weight, color, shadow, and visual treatment as the original headline\n` +
         `4. Keep the EXACT same text position — do NOT move anything\n` +
-        `5. ALL other text in the image must remain 100% identical — do NOT touch any other text\n` +
+        `5. ALL other text in the image must remain 100% identical — do NOT touch, duplicate, or repeat any text outside the exact location given above, even text that sits close to it\n` +
         `6. The product, background, lighting, and all non-text elements must be PIXEL IDENTICAL\n` +
         `7. Do NOT add, remove, or alter any element except the specified text\n\n` +
         `OUTPUT: The same image with ONLY the headline text changed to "${textReplacement}". Everything else is unchanged.`;

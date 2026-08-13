@@ -231,6 +231,16 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
     }
   }
 
+  // 一有新圖（一開 modal 就帶咗初始圖，或者用戶喺「手動加入素材」入面自己上傳），
+  // 就自動讀圖填欄位，唔使用戶多撳一次——有圖擺喺度已經表達咗「幫我分析」嘅意圖。
+  // 淨係「調整」（prefillComponents/editComponent 已有真實內容要保護）先跳過，
+  // 避免靜雞蓋走現有資料。跟住 imageUrl（唔淨係初始 prop）：換圖／手動上傳都會再觸發一次。
+  useEffect(() => {
+    if (!imageUrl || isEdit) return;
+    handleAnalyze();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageUrl]);
+
   // Per-block AI: (re)analyze the image but apply ONLY the chosen section — others stay intact.
   async function analyzeSection(section: ComponentCategory) {
     if (!imageUrl) return;
@@ -433,7 +443,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
           {/* COMPOSITION */}
           <SectionWrapper meta={compMeta} label="構圖" checked={include.COMPOSITION}
             onToggle={() => setInclude((p) => ({ ...p, COMPOSITION: !p.COMPOSITION }))}
-            action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COMPOSITION"} disabled={!!sectionAnalyzing || analyzing} onClick={() => analyzeSection("COMPOSITION")} /> : null}>
+            action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COMPOSITION"} disabled={!!sectionAnalyzing || analyzing} filled={!!(compName.trim() || description.trim())} onClick={() => analyzeSection("COMPOSITION")} /> : null}>
             <Field label="素材名稱 *">
               <input value={compName} onChange={(e) => setCompName(e.target.value)} placeholder="例：留白極簡構圖"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
@@ -447,7 +457,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
           {/* COLOR_SCHEME — 5-color palette */}
           <SectionWrapper meta={colorMeta} label="配色" checked={include.COLOR_SCHEME}
             onToggle={() => setInclude((p) => ({ ...p, COLOR_SCHEME: !p.COLOR_SCHEME }))}
-            action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COLOR_SCHEME"} disabled={!!sectionAnalyzing || analyzing} onClick={() => analyzeSection("COLOR_SCHEME")} /> : null}>
+            action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COLOR_SCHEME"} disabled={!!sectionAnalyzing || analyzing} filled={!!colorName.trim()} onClick={() => analyzeSection("COLOR_SCHEME")} /> : null}>
             <Field label="素材名稱 *">
               <input value={colorName} onChange={(e) => setColorName(e.target.value)} placeholder="例：暖橙系配色"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400" />
@@ -484,7 +494,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
           {false && (
           <SectionWrapper meta={toneMeta} label="語氣" checked={include.COPY_TONE}
             onToggle={() => setInclude((p) => ({ ...p, COPY_TONE: !p.COPY_TONE }))}
-            action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COPY_TONE"} disabled={!!sectionAnalyzing || analyzing} onClick={() => analyzeSection("COPY_TONE")} /> : null}>
+            action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COPY_TONE"} disabled={!!sectionAnalyzing || analyzing} filled={!!toneName.trim()} onClick={() => analyzeSection("COPY_TONE")} /> : null}>
             <Field label="素材名稱 *">
               <input value={toneName} onChange={(e) => setToneName(e.target.value)} placeholder="例：活潑親切語氣"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
@@ -557,13 +567,15 @@ function SectionWrapper({ meta, label, checked, onToggle, children, action }: {
 }
 
 // Small per-block「AI 生成此項」button shown in a section header.
-function SectionAIButton({ loading, disabled, onClick }: { loading: boolean; disabled?: boolean; onClick: () => void }) {
+// filled=true（呢個 block 已經有內容——唔論嚟源係 bulk 讀圖、手打，或者之前撳過呢粒掣）
+// → 改顯示「AI 再次生成此項」，令用戶清楚知道再撳會蓋走現有內容。
+function SectionAIButton({ loading, disabled, filled, onClick }: { loading: boolean; disabled?: boolean; filled?: boolean; onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} disabled={loading || disabled}
-      title="只用 AI 重新生成此項（不影響其他積木）"
+      title={filled ? "重新用 AI 生成此項，會覆蓋現有內容（不影響其他積木）" : "只用 AI 生成此項（不影響其他積木）"}
       className="flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg border border-violet-200 text-violet-600 bg-white hover:bg-violet-50 transition-colors disabled:opacity-50 shrink-0">
       {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-      AI 生成此項
+      AI {filled ? "再次生成" : "生成"}此項
     </button>
   );
 }

@@ -184,6 +184,32 @@ async function frameScore(buf: Buffer): Promise<number> {
   } catch { return 0; }
 }
 
+/**
+ * 驗「相中相」嘅另一種常見表現：一條跨幾乎成個闊度嘅**水平**硬邊（矩形嘅頂邊）——
+ * B1 padBaseForText 個 feather 冇融合好時，Gemini 有時會將個複合圖直接當「一張相入面
+ * 貼咗第二張相」處理，喺產品開始嗰行畫一條清晰水平線，而唔係前後兩條垂直側邊
+ * （舊 `frameScore` 淨查垂直線，捉唔到呢種）。用真實生成圖校準：正常圖呢個分 <0.3，
+ * 出現呢種硬邊嘅圖 ~0.79-0.80，分辨度好高，門檻同 `frameScore` 睇齊 0.45。
+ */
+async function horizontalFrameScore(buf: Buffer): Promise<number> {
+  try {
+    const W = 512, H = 512;
+    const { data } = await sharp(buf).resize(W, H, { fit: "fill" }).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const L = (x: number, y: number) => data[y * W + x];
+    const x0 = Math.round(W * 0.1), x1 = Math.round(W * 0.9);
+    let best = 0;
+    for (let yc = Math.round(H * 0.3); yc < Math.round(H * 0.75); yc += 4) {
+      let hit = 0, tot = 0;
+      for (let x = x0; x < x1; x++) {
+        if (Math.abs(L(x, yc + 3) - L(x, yc - 3)) > 18) hit++;
+        tot++;
+      }
+      best = Math.max(best, hit / tot);
+    }
+    return best;
+  } catch { return 0; }
+}
+
 /** 單次 Gemini edit：回 resize 到 outW×outH 嘅 buffer；任何失敗回 null。 */
 async function geminiEdit(dataUrl: string, prompt: string, outW = 1024, outH = 1024): Promise<Buffer | null> {
   try {
@@ -243,15 +269,20 @@ export async function generateTypographyImage(opts: {
     };
     let final = await geminiEdit(dataUrl, editPrompt({ ...promptOpts, preReserved: didPad }), W, H);
     if (!final) return null;
+    // 相框感有兩種表現：左右垂直側邊（frameScore）／頂邊一條橫跨闊度嘅水平線
+    // （horizontalFrameScore——B1 padBaseForText 個 feather 冇融合好、Gemini 將複合圖當
+    // 「相入面貼多一張相」處理時最常見，實測 3 張真實生成圖都撞到，舊 frameScore 淨查
+    // 垂直線完全捉唔到）。兩個都要驗，攞較高嗰個分數。
+    const combinedFrameScore = async (buf: Buffer) => Math.max(await frameScore(buf), await horizontalFrameScore(buf));
     // 逐級去框（只 pad case 驗）：① B1 → 有框 ② B1 re-roll → 仲有框 ③ B2 生成式 outpaint。
     // 多數 ① 就無框；框咗先 +1；頑固先再 +2（B2）。揀框分最低嗰張。
     if (didPad) {
-      let bestScore = await frameScore(final);
+      let bestScore = await combinedFrameScore(final);
       // ② B1 re-roll（加強禁框）
       if (bestScore > 0.45) {
         const retry = editPrompt({ ...promptOpts, preReserved: didPad }) + ` CRITICAL: output MUST be one seamless full-bleed photo — absolutely NO border/frame/inset; the background bleeds to all four edges.`;
         const alt = await geminiEdit(dataUrl, retry, W, H);
-        if (alt) { const s = await frameScore(alt); console.warn(`[typography] re-roll seed=${opts.seed} ${bestScore.toFixed(2)}→${s.toFixed(2)}`); if (s < bestScore) { final = alt; bestScore = s; } }
+        if (alt) { const s = await combinedFrameScore(alt); console.warn(`[typography] re-roll seed=${opts.seed} ${bestScore.toFixed(2)}→${s.toFixed(2)}`); if (s < bestScore) { final = alt; bestScore = s; } }
       }
       // ③ B2 生成式 outpaint：原底圖 → AI 生成真實背景騰位（唔加字）→ 再 typography
       if (bestScore > 0.45) {
@@ -261,7 +292,7 @@ export async function generateTypographyImage(opts: {
         if (outpainted) {
           const opDataUrl = `data:image/jpeg;base64,${outpainted.toString("base64")}`;
           const b2 = await geminiEdit(opDataUrl, editPrompt({ ...promptOpts, preReserved: true }), W, H);
-          if (b2) { const s = await frameScore(b2); console.warn(`[typography] B2 outpaint seed=${opts.seed} ${bestScore.toFixed(2)}→${s.toFixed(2)}`); if (s < bestScore) { final = b2; bestScore = s; } }
+          if (b2) { const s = await combinedFrameScore(b2); console.warn(`[typography] B2 outpaint seed=${opts.seed} ${bestScore.toFixed(2)}→${s.toFixed(2)}`); if (s < bestScore) { final = b2; bestScore = s; } }
         }
       }
     }
