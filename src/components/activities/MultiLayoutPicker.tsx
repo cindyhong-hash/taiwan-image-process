@@ -11,8 +11,8 @@ type Props = {
   onClose: () => void;
 };
 
-/** 單一版型縮圖：用 CSS Grid 模擬格局 */
-function LayoutThumb({ layout, active }: { layout: MultiLayout; active: boolean }) {
+/** 單一版型縮圖：用 CSS Grid 模擬格局（也給表單頂端「版型預覽」重用）。 */
+export function LayoutThumb({ layout, active }: { layout: MultiLayout; active: boolean }) {
   return (
     <div
       className="relative grid"

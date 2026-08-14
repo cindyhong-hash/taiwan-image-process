@@ -5,7 +5,7 @@ import { Loader2, ImagePlus, X, ChevronDown, Sparkles, LayoutGrid, Wand2, Pencil
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
+import { MultiLayoutPicker, LayoutThumb } from "@/components/activities/MultiLayoutPicker";
 import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { getMultiLayout } from "@/types/multiLayout";
 
@@ -390,6 +390,18 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             <ChevronDown className="h-4 w-4" />
           </button>
         </div>
+        {/* [UX] 版型結構預覽：填之前就看到會排成什麼（左圖示意，深色＝主圖） */}
+        <button
+          type="button"
+          onClick={repick}
+          className="mt-3 w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50/60 hover:border-violet-300 hover:bg-violet-50/30 p-3 text-left transition-all"
+        >
+          <span className="shrink-0"><LayoutThumb layout={layout} active /></span>
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-gray-800">{layout.label}</div>
+            <div className="text-xs text-gray-500 mt-0.5">左圖為拼版結構示意（深色＝主圖）。填好內容後 AI 會依此結構排版生成；點此可換版型。</div>
+          </div>
+        </button>
         {editId && (
           <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
             儲存後將刪除舊的拼版，重新用 AI 生成新版本。

@@ -54,7 +54,7 @@ function ActivityRow({
         if (selectMode) onToggleSelect(); else onOpen();
       }}
       style={{ touchAction: "manipulation" }}
-      className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm cursor-pointer transition-all gap-3 select-none"
+      className="group flex items-center justify-between p-3 bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm cursor-pointer transition-all gap-3 select-none"
     >
       <div className="flex items-center gap-3 min-w-0">
       {selectMode && (
@@ -73,7 +73,10 @@ function ActivityRow({
       </div>
       <div className="min-w-0">
         <div className="font-medium truncate">{act.theme}</div>
-        <div className="text-xs text-gray-400 mt-0.5 truncate">{act.focusPoint}</div>
+        {/* [UX] 副標和標題常一樣 → 只在真的不同時才顯示，去重複、降列高 */}
+        {act.focusPoint && act.focusPoint !== act.theme && (
+          <div className="text-xs text-gray-400 mt-0.5 truncate">{act.focusPoint}</div>
+        )}
         <div className="flex items-center gap-2 mt-1">
           <span className="text-xs text-gray-400">
             {new Date(act.createdAt).toLocaleDateString("zh-TW")}
@@ -99,7 +102,8 @@ function ActivityRow({
           <button
             onClick={onDelete}
             disabled={deletingId === act.id}
-            className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-40"
+            title="刪除活動"
+            className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-100"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
