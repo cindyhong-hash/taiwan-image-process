@@ -62,6 +62,8 @@ type Props = {
    * 切換器顯唔顯示（底圖模式唔支援多圖版型），初始 prop 唔夠：用戶可以喺表單入面
    * 撳「移除底圖」跌返做一般生成模式，呢個 state 只喺表單內部，上層要靠呢個 callback 先追得到。 */
   onBaseModeChange?: (isBase: boolean) => void;
+  /** [UX] 表單目前值變化時通知上層——切版型時上層要把共用欄位（主題/必放文字/產品圖）帶去多圖頁，唔可以淨靠初始值。 */
+  onValuesChange?: (values: ActivityFormValues) => void;
 };
 
 // ── Upload helper ─────────────────────────────────────────────────────────────
@@ -170,6 +172,7 @@ export function ActivityForm({
   submitLabel = "建立活動並生成圖片",
   onSubmit,
   onBaseModeChange,
+  onValuesChange,
 }: Props) {
   const [values, setValues] = useState<ActivityFormValues>({
     requiredText:         initialValues?.requiredText         ?? "",
@@ -187,6 +190,8 @@ export function ActivityForm({
   // 底圖模式：成張相做背景、唔重新生圖 → 收起生圖模型/積木/參考圖等生成相關 UI。
   const isBaseMode = !!values.baseImageUrl;
   useEffect(() => { onBaseModeChange?.(isBaseMode); }, [isBaseMode, onBaseModeChange]);
+  // [UX] 目前值同步俾上層（切版型時帶去多圖頁，唔會丟資料）
+  useEffect(() => { onValuesChange?.(values); }, [values, onValuesChange]);
 
   const [uploadingProduct, setUploadingProduct] = useState(false);
   const [uploadingRef,     setUploadingRef]     = useState(false);

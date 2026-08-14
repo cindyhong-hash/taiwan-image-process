@@ -13,6 +13,9 @@ export type ActivityImageRole = "reference" | "base";
 export const ACTIVITY_REF_KEY = "activityRefImage";
 export const ACTIVITY_BASE_KEY = "activityBaseImage";
 export const ACTIVITY_IMAGE_PROMPT_KEY = "activityImagePrompt"; // 帶入圖嘅 AI prompt → 預填畫面描述
+// [UX] 單圖↔多圖切版型時，共用欄位的交接：JSON {imagePrompt, requiredText, productImageUrls}
+// 切版型前寫入、到另一頁 init 時讀入並清掉，令使用者唔會因為換版型而要重打。
+export const ACTIVITY_HANDOFF_KEY = "activityFormHandoff";
 
 export function RolePickerModal({
   imageUrl,

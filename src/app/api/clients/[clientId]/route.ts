@@ -14,7 +14,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ clientI
   const { clientId } = await params;
   const client = await db.client.findUnique({
     where: { id: clientId },
-    include: { activities: { orderBy: { createdAt: "desc" } } },
+    include: {
+      activities: {
+        orderBy: { createdAt: "desc" },
+        // [UX] 帶每個活動的成品縮圖給列表用：優先選中款、否則最新一張
+        include: {
+          generatedLayouts: {
+            orderBy: { createdAt: "desc" },
+            select: { imageUrl: true, isSelected: true },
+          },
+        },
+      },
+    },
   });
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(parseClient(client as unknown as Record<string, unknown>));

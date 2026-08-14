@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
+import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { getMultiLayout } from "@/types/multiLayout";
 
 type Cell = { description: string; mustText: string; assetUrls: string[] };
@@ -90,16 +91,23 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
       setLayoutId(p);
       const l = getMultiLayout(p);
       setCells(Array.from({ length: l?.count ?? 1 }, emptyCell));
+      // [UX] 從單圖頁切過來：帶回共用欄位（主題/必放文字/產品圖），避免重打；讀完清掉
+      const raw = sessionStorage.getItem(ACTIVITY_HANDOFF_KEY);
+      if (raw) {
+        try {
+          const h = JSON.parse(raw);
+          if (h.imagePrompt) setTheme(h.imagePrompt);
+          if (h.requiredText) setMustText(h.requiredText);
+          if (Array.isArray(h.productImageUrls) && h.productImageUrls.length) setProductUrls(h.productImageUrls);
+        } catch { /* ignore */ }
+        sessionStorage.removeItem(ACTIVITY_HANDOFF_KEY);
+      }
     }
   }, [params]);
 
   const layout = getMultiLayout(layoutId);
 
   if (!clientId || !layout) return <div className="text-gray-400 p-8">載入中…</div>;
-
-  const hasContent =
-    !!theme || !!mustText || productUrls.length > 0 || refUrls.length > 0 ||
-    cells.some((c) => c.description || c.mustText || c.assetUrls.length > 0);
 
   const repick = () => setShowPicker(true);
 
@@ -111,20 +119,31 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         setShowPicker(false);
         return;
       }
-      if (hasContent && !window.confirm("切換為單圖將離開此頁、清除目前填寫內容，確定繼續？")) {
+      // [UX] 切回單圖：主題／必放文字／產品圖帶過去（單圖頁會預填），不再清空重打；
+      // 只有「各圖獨立填寫」有逐格內容、且無法帶過去時才提醒。
+      const cellContent = cells.some((c) => c.description || c.mustText || c.assetUrls.length > 0);
+      if (genMode === "perCell" && cellContent &&
+          !window.confirm("切換為單圖：主題／必放文字／產品圖會帶過去，但各格獨立填寫的內容不會保留。確定繼續？")) {
         setShowPicker(false);
         return;
       }
+      try {
+        sessionStorage.setItem(ACTIVITY_HANDOFF_KEY, JSON.stringify({
+          imagePrompt: theme, requiredText: mustText, productImageUrls: productUrls,
+        }));
+      } catch { /* ignore */ }
       router.push(`/clients/${clientId}/activities/new`);  // [MULTI] 選單圖 → 走他的單圖流程
       return;
     }
-    // 換成不同的多圖版型 → 重設格數（有內容先確認）
+    // 換成不同的多圖版型 → 只重設格數，保留共用欄位（主題/必放文字/產品圖/參考圖）
     if (id !== layoutId) {
-      if (hasContent && !window.confirm("切換版型將清除目前填寫內容，確定繼續？")) {
+      const cellContent = cells.some((c) => c.description || c.mustText || c.assetUrls.length > 0);
+      // 只有「各圖獨立填寫」有逐格內容時才需確認（格數變了無法保留）；共用欄位一律保留
+      if (genMode === "perCell" && cellContent &&
+          !window.confirm("切換版型會重設「各圖獨立填寫」的逐格內容（主題／必放文字／產品圖會保留）。確定繼續？")) {
         setShowPicker(false);
         return;
       }
-      setTheme(""); setMustText(""); setProductUrls([]); setRefUrls([]);
       const l = getMultiLayout(id);
       setCells(Array.from({ length: l?.count ?? 1 }, emptyCell));
       setLayoutId(id);

@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2, Search, CheckCircle2, Circle, X } from "lucide-react";
+import { Trash2, Search, CheckCircle2, Circle, X, Image as ImageIcon } from "lucide-react";
 import { BrandWorkspaceHeader } from "@/components/layout/BrandWorkspaceHeader";
 import { BrandMemoryCards } from "@/components/clients/BrandMemoryCards";
 import { getMultiLayout } from "@/types/multiLayout";
 
-type Activity = { id: string; theme: string; focusPoint: string; status: string; createdAt: string; imageRatio?: string; customW?: number; customH?: number; layoutId?: string };
+type Activity = { id: string; theme: string; focusPoint: string; status: string; createdAt: string; imageRatio?: string; customW?: number; customH?: number; layoutId?: string; generatedLayouts?: { imageUrl: string; isSelected?: boolean }[] };
 type Client = {
   id: string; name: string; activities: Activity[];
   // 品牌記憶卡用（/api/clients/[id] 已一併返）
@@ -39,6 +39,8 @@ function ActivityRow({
     pressTimer.current = setTimeout(() => { longFired.current = true; onLongPress(); }, 500);
   };
   const cancelPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
+  // [UX] 列表縮圖：優先選中款、否則最新一張
+  const thumb = act.generatedLayouts?.find((l) => l.isSelected)?.imageUrl ?? act.generatedLayouts?.[0]?.imageUrl;
 
   return (
     <div
@@ -54,6 +56,7 @@ function ActivityRow({
       style={{ touchAction: "manipulation" }}
       className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm cursor-pointer transition-all gap-3 select-none"
     >
+      <div className="flex items-center gap-3 min-w-0">
       {selectMode && (
         <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleSelect(); }}
           className="shrink-0" title={selected ? "取消選取" : "選取"}>
@@ -62,6 +65,12 @@ function ActivityRow({
             : <Circle className="h-5 w-5 text-gray-300" />}
         </button>
       )}
+      {/* [UX] 成品縮圖：讓活動列表也「看得到」成品，和素材庫一致 */}
+      <div className="shrink-0 h-14 w-14 rounded-lg overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center">
+        {thumb
+          ? <img src={thumb} alt="" className="h-full w-full object-cover" loading="lazy" />
+          : <ImageIcon className="h-5 w-5 text-gray-300" />}
+      </div>
       <div className="min-w-0">
         <div className="font-medium truncate">{act.theme}</div>
         <div className="text-xs text-gray-400 mt-0.5 truncate">{act.focusPoint}</div>
@@ -79,6 +88,7 @@ function ActivityRow({
             </span>
           )}
         </div>
+      </div>
       </div>
       <div className="flex items-center gap-2">
         {(() => {

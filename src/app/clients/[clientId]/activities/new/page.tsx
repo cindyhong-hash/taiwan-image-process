@@ -1,15 +1,17 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { ActivityForm, type ActivityFormValues } from "@/components/activities/ActivityForm";
-import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
+import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
 
 export default function NewActivityPage({ params }: { params: Promise<{ clientId: string }> }) {
   const [clientId, setClientId] = useState("");
   const router = useRouter();
   const [showLayoutPicker, setShowLayoutPicker] = useState(false);  // [MULTI] 版型下拉
+  // [UX] ActivityForm 目前值（切版型帶去多圖頁，避免重打）
+  const latestValues = useRef<Partial<ActivityFormValues>>({});
   // 底圖模式（用素材庫圖片作活動圖底圖）：呢張相 100% 固定做背景，唔支援拆做多格
   // 拼版——版型切換器擺喺呢個模式冇意義，撳咗轉去多圖頁仲會令底圖脈絡靜雞流失
   // （多圖頁完全冇 baseImageUrl 呢個概念）。跟 ActivityForm 嘅 live 狀態（唔淨係
@@ -19,15 +21,23 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
   // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
   // 同步喺首次 render 讀取並清走，令 ActivityForm mount 時已有預填。
-  const [initial] = useState<{ ref: string | null; base: string | null; prompt: string | null }>(() => {
-    if (typeof window === "undefined") return { ref: null, base: null, prompt: null };
+  type Handoff = { imagePrompt?: string; requiredText?: string; productImageUrls?: string[] };
+  const [initial] = useState<{ ref: string | null; base: string | null; prompt: string | null; handoff: Handoff | null }>(() => {
+    if (typeof window === "undefined") return { ref: null, base: null, prompt: null, handoff: null };
     const ref = sessionStorage.getItem(ACTIVITY_REF_KEY);
     const base = sessionStorage.getItem(ACTIVITY_BASE_KEY);
     const prompt = sessionStorage.getItem(ACTIVITY_IMAGE_PROMPT_KEY);
     if (ref) sessionStorage.removeItem(ACTIVITY_REF_KEY);
     if (base) sessionStorage.removeItem(ACTIVITY_BASE_KEY);
     if (prompt) sessionStorage.removeItem(ACTIVITY_IMAGE_PROMPT_KEY);
-    return { ref, base, prompt };
+    // [UX] 從多圖頁切回單圖：讀共用欄位交接，讀完清掉
+    let handoff: Handoff | null = null;
+    const raw = sessionStorage.getItem(ACTIVITY_HANDOFF_KEY);
+    if (raw) {
+      try { handoff = JSON.parse(raw); } catch { handoff = null; }
+      sessionStorage.removeItem(ACTIVITY_HANDOFF_KEY);
+    }
+    return { ref, base, prompt, handoff };
   });
 
   useEffect(() => {
@@ -37,7 +47,18 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   // [MULTI] 選版型：single 留在單圖頁；其餘導去多圖頁
   const handleLayout = (id: string) => {
     setShowLayoutPicker(false);
-    if (id !== "single") router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
+    if (id !== "single") {
+      // [UX] 切去多圖頁前，把共用欄位（主題/必放文字/產品圖）帶過去，避免重打
+      const v = latestValues.current;
+      try {
+        sessionStorage.setItem(ACTIVITY_HANDOFF_KEY, JSON.stringify({
+          imagePrompt: v.imagePrompt ?? "",
+          requiredText: v.requiredText ?? "",
+          productImageUrls: v.productImageUrls ?? [],
+        }));
+      } catch { /* ignore */ }
+      router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
+    }
   };
 
   const handleSubmit = async (values: ActivityFormValues) => {
@@ -70,10 +91,15 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
       </div>
       <ActivityForm clientId={clientId} onSubmit={handleSubmit}
         onBaseModeChange={setIsBaseMode}
+        onValuesChange={(v) => { latestValues.current = v; }}
         initialValues={{
           ...(initial.ref ? { referenceImageUrls: [initial.ref] } : {}),
           ...(initial.base ? { baseImageUrl: initial.base } : {}),
           ...(initial.prompt ? { imagePrompt: initial.prompt } : {}),
+          // [UX] 從多圖頁帶回的共用欄位（優先於 prompt-only 帶入）
+          ...(initial.handoff?.imagePrompt ? { imagePrompt: initial.handoff.imagePrompt } : {}),
+          ...(initial.handoff?.requiredText ? { requiredText: initial.handoff.requiredText } : {}),
+          ...(initial.handoff?.productImageUrls?.length ? { productImageUrls: initial.handoff.productImageUrls } : {}),
         }} />
       {showLayoutPicker && (
         <MultiLayoutPicker selectedId="single" onSelect={handleLayout} onClose={() => setShowLayoutPicker(false)} />
