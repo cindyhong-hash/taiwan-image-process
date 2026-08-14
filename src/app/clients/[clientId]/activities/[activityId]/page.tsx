@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { LayoutPicker } from "@/components/activities/LayoutPicker";
-import { Loader2, Pencil, SlidersHorizontal } from "lucide-react";
+import { Loader2, Pencil, SlidersHorizontal, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -149,6 +149,12 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
 
   return (
     <div>
+      <Link
+        href={`/clients/${clientId}`}
+        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 transition-colors mb-3"
+      >
+        <ArrowLeft className="h-4 w-4" />返回活動列表
+      </Link>
       <div className="flex items-center justify-between mb-1">
         {editingTitle ? (
           <input
