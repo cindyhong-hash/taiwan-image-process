@@ -36,7 +36,7 @@ export function AddAssetModal({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <p className="text-xs text-gray-400 mb-5">先揀類型，表單會跟住變（引擎按類型自動切換）。</p>
+        <p className="text-xs text-gray-400 mb-5">先選類型，表單會跟著變（引擎依類型自動切換）。</p>
 
         <div className="grid grid-cols-2 gap-3">
           {TYPES.map((t) => (
