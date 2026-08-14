@@ -269,7 +269,7 @@ export function ImageDetailModal({
               )}
               {onUseAsActivityRef && (
                 <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
-                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
                   <Target className="h-3.5 w-3.5" />帶入活動圖生成
                 </button>
               )}
@@ -352,7 +352,7 @@ export function ImageDetailModal({
           {onUseAsActivityRef && imageUrl && (
             <div className="px-5 py-3 border-t shrink-0">
               <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
-                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
                 <Target className="h-3.5 w-3.5" />帶入活動圖生成
               </button>
             </div>
@@ -380,7 +380,7 @@ export function ImageDetailModal({
             {(onRegenerate || (onInjectAll && (sorted.length > 0 || bgComp))) && (
               <button
                 onClick={onRegenerate ?? (() => onInjectAll?.([...sorted, ...(bgComp ? [bgComp] : [])]))}
-                title="重新生成（用呢張圖嘅原參數 / 積木帶去生成台）"
+                title="重新生成（用這張圖的原參數 / 積木帶到生成台）"
                 className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg whitespace-nowrap bg-violet-600 text-white hover:bg-violet-700 transition-colors">
                 <RefreshCw className="h-3.5 w-3.5" />重新生成{genType === "reference" || !libraryImageId ? "參考圖" : "產品圖"}
               </button>
@@ -453,7 +453,7 @@ export function ImageDetailModal({
           </div>
 
           {/* Linked components — 構圖/配色/語氣 + 背景（合成會直接用到，所以顯示出嚟）。 */}
-          <div className="space-y-3">
+          <div className="flex flex-col gap-3">
             {/* 「全部帶入生成圖片」已併入 header 嘅「重新生成」（同一動作：積木 → 生成台），避免兩粒紫掣重複。 */}
             {/* 來源產品圖：合成時用咗邊張（如有）。 */}
             {sourceImages && sourceImages.length > 0 && (
@@ -473,9 +473,12 @@ export function ImageDetailModal({
             {loading ? (
               <div className="text-sm text-gray-400 py-6 text-center">載入中…</div>
             ) : sorted.length === 0 && !bgComp ? (
-              <div className="text-center py-8 px-3 rounded-xl border border-dashed border-gray-200 bg-gray-50">
-                <div className="text-sm text-gray-500 mb-1">此圖尚未分析風格</div>
-                <p className="text-xs text-gray-400 mb-4">分析後可取得構圖・配色・語氣，並加入素材庫</p>
+              <div className="flex-1 min-h-[260px] flex flex-col items-center justify-center text-center py-8 px-4 rounded-xl border border-dashed border-gray-200 bg-gray-50">
+                <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-violet-100 text-violet-500">
+                  <Sparkles className="h-5 w-5" />
+                </span>
+                <div className="text-sm font-medium text-gray-600 mb-1">此圖尚未分析風格</div>
+                <p className="text-xs text-gray-400 mb-4 max-w-[220px] leading-relaxed">分析後可取得構圖・配色・語氣，加入素材庫，之後生成時就能直接套用。</p>
                 {imageUrl && onAnalyze && (
                   <button
                     onClick={() => onAnalyze(imageUrl, libraryImageId)}
@@ -514,7 +517,7 @@ export function ImageDetailModal({
         {onUseAsActivityRef && imageUrl && (
           <div className="px-5 py-3 border-t shrink-0">
             <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
-              className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+              className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
               <Target className="h-3.5 w-3.5" />帶入活動圖生成
             </button>
           </div>

@@ -904,7 +904,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
                   </button>
                   <span className="leading-snug">
                     <b>固定模板系列</b>：每件產品貼喺固定背景嘅固定位置／大小（{productUrls.length} 件 → {productUrls.length} 張，100% 一致、真像素、零腦補）
-                    {!slots.background && <span className="text-gray-400">；未揀背景會自動鎖一個共用 AI 背景</span>}
+                    {!slots.background && <span className="text-gray-400">；未選背景會自動鎖定一個共用 AI 背景</span>}
                   </span>
                 </label>
 
@@ -924,7 +924,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
                         window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp);
                       }}>
                       {!slots.background?.data?.imageUrl && (
-                        <div className="absolute inset-0 flex items-center justify-center text-[11px] text-gray-400 text-center px-2">未揀背景<br/>生成時自動鎖共用 AI 背景</div>
+                        <div className="absolute inset-0 flex items-center justify-center text-[11px] text-gray-400 text-center px-2">未選背景<br/>生成時自動鎖定共用 AI 背景</div>
                       )}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={productUrls[0]} alt="placement" draggable={false}

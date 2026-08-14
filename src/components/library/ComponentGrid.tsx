@@ -590,7 +590,7 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
               {clients.length > 0 && (
                 <select disabled={busy || selectedItems.length === 0} defaultValue=""
                   onChange={(e) => { const v = e.target.value; if (!v) return; runBatch({ clientId: v === "__unassigned__" ? null : v }); e.currentTarget.value = ""; }}
-                  title="把選取嘅素材移到客戶 / 移入未分類素材（從畫面隱藏）"
+                  title="把選取的素材移到客戶 / 移入未分類素材（從畫面隱藏）"
                   className="flex items-center gap-1 text-xs bg-white border border-violet-300 text-violet-700 rounded-full px-3 py-1.5 outline-none cursor-pointer disabled:opacity-50">
                   <option value="">移到…</option>
                   <option value="__unassigned__">未分類素材（從畫面隱藏）</option>
@@ -617,9 +617,11 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
               const Icon = meta.Icon;
               const cnt = gallery.filter((g) => matchesGalleryFilter(g, f)).length;
               const active = galleryFilter === f;
+              const empty = cnt === 0 && f !== "ALL";  // [UX] 空類別淡化＋停用，減少雜訊
               return (
-                <button key={f} onClick={() => setGalleryFilter(f)}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors ${active ? meta.activeCls : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"}`}>
+                <button key={f} onClick={() => { if (!empty) setGalleryFilter(f); }} disabled={empty}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    empty ? "bg-white text-gray-300 border-gray-100 cursor-default" : active ? meta.activeCls : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"}`}>
                   <Icon className="h-3 w-3" />{meta.label} <span className="opacity-60">{cnt}</span>
                 </button>
               );
@@ -632,7 +634,7 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
             <EmptyState onOpenQuickAdd={onOpenQuickAdd}
               text={clientId ? "此客戶還沒有圖片" : "還沒有任何圖片"} hint="上傳圖片分析，或在「生成圖片」分頁產生新圖" />
           ) : visibleGallery.length === 0 ? (
-            <div className="text-center py-16 text-gray-400 text-sm">搵唔到符合條件嘅圖片</div>
+            <div className="text-center py-16 text-gray-400 text-sm">找不到符合條件的圖片</div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
               {visibleGallery.map((item) => (
