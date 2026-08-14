@@ -94,13 +94,17 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
       // [UX] 從單圖頁切過來：帶回共用欄位（主題/必放文字/產品圖），避免重打；讀完清掉
       const raw = sessionStorage.getItem(ACTIVITY_HANDOFF_KEY);
       if (raw) {
+        sessionStorage.removeItem(ACTIVITY_HANDOFF_KEY);
         try {
           const h = JSON.parse(raw);
-          if (h.imagePrompt) setTheme(h.imagePrompt);
-          if (h.requiredText) setMustText(h.requiredText);
-          if (Array.isArray(h.productImageUrls) && h.productImageUrls.length) setProductUrls(h.productImageUrls);
+          const cid = window.location.pathname.split("/")[2];  // 只在同一品牌才套用，避免帶到別客戶
+          if (h.clientId === cid) {
+            if (h.imagePrompt) setTheme(h.imagePrompt);
+            if (h.requiredText) setMustText(h.requiredText);
+            if (Array.isArray(h.productImageUrls) && h.productImageUrls.length) setProductUrls(h.productImageUrls);
+            if (Array.isArray(h.referenceImageUrls) && h.referenceImageUrls.length) setRefUrls(h.referenceImageUrls);
+          }
         } catch { /* ignore */ }
-        sessionStorage.removeItem(ACTIVITY_HANDOFF_KEY);
       }
     }
   }, [params]);
@@ -123,13 +127,13 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
       // 只有「各圖獨立填寫」有逐格內容、且無法帶過去時才提醒。
       const cellContent = cells.some((c) => c.description || c.mustText || c.assetUrls.length > 0);
       if (genMode === "perCell" && cellContent &&
-          !window.confirm("切換為單圖：主題／必放文字／產品圖會帶過去，但各格獨立填寫的內容不會保留。確定繼續？")) {
+          !window.confirm("切換為單圖：主題／必放文字／產品圖／參考圖會帶過去，但各格獨立填寫的內容不會保留。確定繼續？")) {
         setShowPicker(false);
         return;
       }
       try {
         sessionStorage.setItem(ACTIVITY_HANDOFF_KEY, JSON.stringify({
-          imagePrompt: theme, requiredText: mustText, productImageUrls: productUrls,
+          clientId, imagePrompt: theme, requiredText: mustText, productImageUrls: productUrls, referenceImageUrls: refUrls,
         }));
       } catch { /* ignore */ }
       router.push(`/clients/${clientId}/activities/new`);  // [MULTI] 選單圖 → 走他的單圖流程

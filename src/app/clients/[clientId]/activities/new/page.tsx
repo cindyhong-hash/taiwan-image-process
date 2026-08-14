@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { ActivityForm, type ActivityFormValues } from "@/components/activities/ActivityForm";
@@ -21,7 +21,7 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
   // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
   // 同步喺首次 render 讀取並清走，令 ActivityForm mount 時已有預填。
-  type Handoff = { imagePrompt?: string; requiredText?: string; productImageUrls?: string[] };
+  type Handoff = { clientId?: string; imagePrompt?: string; requiredText?: string; productImageUrls?: string[]; referenceImageUrls?: string[] };
   const [initial] = useState<{ ref: string | null; base: string | null; prompt: string | null; handoff: Handoff | null }>(() => {
     if (typeof window === "undefined") return { ref: null, base: null, prompt: null, handoff: null };
     const ref = sessionStorage.getItem(ACTIVITY_REF_KEY);
@@ -30,12 +30,17 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
     if (ref) sessionStorage.removeItem(ACTIVITY_REF_KEY);
     if (base) sessionStorage.removeItem(ACTIVITY_BASE_KEY);
     if (prompt) sessionStorage.removeItem(ACTIVITY_IMAGE_PROMPT_KEY);
-    // [UX] 從多圖頁切回單圖：讀共用欄位交接，讀完清掉
+    // [UX] 從多圖頁切回單圖：讀共用欄位交接。讀一次即清；只在「同一個品牌」才套用，
+    // 避免中途放棄導航時，殘留內容被帶到別的客戶的新增頁。
     let handoff: Handoff | null = null;
     const raw = sessionStorage.getItem(ACTIVITY_HANDOFF_KEY);
     if (raw) {
-      try { handoff = JSON.parse(raw); } catch { handoff = null; }
       sessionStorage.removeItem(ACTIVITY_HANDOFF_KEY);
+      try {
+        const h = JSON.parse(raw) as Handoff;
+        const cid = window.location.pathname.split("/")[2];  // /clients/{cid}/...
+        if (h.clientId === cid) handoff = h;
+      } catch { handoff = null; }
     }
     return { ref, base, prompt, handoff };
   });
@@ -52,9 +57,11 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
       const v = latestValues.current;
       try {
         sessionStorage.setItem(ACTIVITY_HANDOFF_KEY, JSON.stringify({
+          clientId,
           imagePrompt: v.imagePrompt ?? "",
           requiredText: v.requiredText ?? "",
           productImageUrls: v.productImageUrls ?? [],
+          referenceImageUrls: v.referenceImageUrls ?? [],
         }));
       } catch { /* ignore */ }
       router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
@@ -70,6 +77,9 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
     const activity = await res.json();
     router.push(`/clients/${clientId}/activities/${activity.id}`);
   };
+
+  // [UX] 穩定的 callback，避免每次 render 都重觸發 ActivityForm 的 onValuesChange effect
+  const captureValues = useCallback((v: ActivityFormValues) => { latestValues.current = v; }, []);
 
   if (!clientId) return null;
 
@@ -91,7 +101,7 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
       </div>
       <ActivityForm clientId={clientId} onSubmit={handleSubmit}
         onBaseModeChange={setIsBaseMode}
-        onValuesChange={(v) => { latestValues.current = v; }}
+        onValuesChange={captureValues}
         initialValues={{
           ...(initial.ref ? { referenceImageUrls: [initial.ref] } : {}),
           ...(initial.base ? { baseImageUrl: initial.base } : {}),
@@ -100,6 +110,7 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
           ...(initial.handoff?.imagePrompt ? { imagePrompt: initial.handoff.imagePrompt } : {}),
           ...(initial.handoff?.requiredText ? { requiredText: initial.handoff.requiredText } : {}),
           ...(initial.handoff?.productImageUrls?.length ? { productImageUrls: initial.handoff.productImageUrls } : {}),
+          ...(initial.handoff?.referenceImageUrls?.length ? { referenceImageUrls: initial.handoff.referenceImageUrls } : {}),
         }} />
       {showLayoutPicker && (
         <MultiLayoutPicker selectedId="single" onSelect={handleLayout} onClose={() => setShowLayoutPicker(false)} />
