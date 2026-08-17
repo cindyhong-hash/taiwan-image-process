@@ -7,8 +7,8 @@
 
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import {
-  X, Copy, Check, Sparkles, LayoutTemplate, Palette,
-  Image as ImageIcon, Loader2, Upload, Plus, Trash2, Type, Lock, Wand2, RotateCcw, ChevronDown,
+  X, Check, Sparkles, LayoutTemplate, Palette,
+  Image as ImageIcon, Loader2, Upload, Plus, Trash2, Type, Wand2, ChevronDown, Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PromptSlots, StyleComponent, ComponentCategory, PaletteColor, PaletteRole } from "@/types/library";
@@ -205,7 +205,6 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
   { slots, onClearSlot, onPickSlot, clientId, onGenerated, onStarted, prefill, prefillNonce, onDirtyChange }, ref) {
   const [subject, setSubject] = useState("");
   const [notes, setNotes] = useState("");
-  const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [bgAsImage, setBgAsImage] = useState(false); // 背景：false=作文字參考(預設) / true=直接用背景圖合成
   const [genError, setGenError] = useState<string | null>(null);
@@ -237,7 +236,6 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
   const [activePreset, setActivePreset] = useState<string | null>(null);
   // [UX 精簡] 純顯示用折疊狀態（不影響生成）：進階設定(引擎/系列) 與 自動組裝設計描述 預設收合
   const [showAdvanced, setShowAdvanced] = useState(true);  // 依 mockup 預設展開 Model
-  const [showBriefPreview, setShowBriefPreview] = useState(false);
 
   // Subject input mode — 二選一: "image" (上傳產品圖 → 合成，預設主選) or "text" (純 AI 生成，次選)
   const [inputMode, setInputMode] = useState<"text" | "image">("image");
@@ -333,12 +331,6 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
     onPickSlot(makeComp("COPY_TONE", p.tone.name, { toneLabels: p.tone.toneLabels }, p.tone.aiPromptText));
   }
 
-  const copyPrompt = async () => {
-    if (!effectiveBrief) return;
-    await navigator.clipboard.writeText(effectiveBrief);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   // 合成模式：場景描述（不含主體，避免合成時重畫產品）；含已選背景名（潤色會讀背景）。
   function buildSceneBrief(): string {
@@ -351,33 +343,22 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
     if (notes.trim()) lines.push(`其他要求：${notes.trim()}`);
     return lines.join("\n");
   }
-  // 潤色來源：合成→場景 brief；文字→完整 brief（補上背景名，令潤色會讀背景文字）。
-  function buildPolishSource(): string {
-    if (composite) return buildSceneBrief();
-    // 文字模式：背景文字已由 buildChineseBrief 併入 effectiveBrief（作文字參考時），毋須再補。
-    return effectiveBrief;
-  }
-
-  // #2 潤色寫手：擴寫目前 brief → 可編輯覆寫。
-  async function polishBrief() {
-    const source = buildPolishSource();
-    if (!source.trim()) return;
+  // [UX] AI 幫我優化提示詞：把「產品圖描述」(subject) 擴寫優化，結果寫回描述欄（可再編輯）。
+  async function optimizeSubject() {
+    const source = subject.trim();
+    if (!source) return;
     setPolishing(true);
     setGenError(null);
     try {
       const res = await fetch("/api/library/polish", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brief: source,
-          clientId,
-          ...(productUrls.length > 0 ? { productImageUrls: productUrls } : {}),
-        }),
+        body: JSON.stringify({ brief: source, clientId, ...(productUrls.length > 0 ? { productImageUrls: productUrls } : {}) }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "潤色失敗");
-      setPolishedBrief(data.brief ?? source);
+      if (!res.ok) throw new Error(data.error ?? "優化失敗");
+      setSubject(data.brief ?? source);
     } catch (e: unknown) {
-      setGenError(e instanceof Error ? e.message : "潤色失敗");
+      setGenError(e instanceof Error ? e.message : "優化失敗");
     } finally {
       setPolishing(false);
     }
@@ -666,12 +647,27 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
             </button>
           </div>
 
-          {/* Text input — disabled when in image mode */}
-          <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)}
-            disabled={inputMode !== "text"}
-            placeholder="輸入產品或活動主題…"
-            className={`w-full rounded-lg border px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 transition ${
-              inputMode === "text" ? "border-gray-200" : "border-gray-100 bg-gray-100 text-gray-400 cursor-not-allowed"}`} />
+          {/* 產品圖描述（兩種模式都可編輯）+ AI 幫改 / AI 優化提示詞 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-semibold text-gray-600">產品圖描述</label>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button type="button" onClick={describeProduct} disabled={describing || productUrls.length === 0}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:border-gray-400 transition-colors disabled:opacity-40"
+                  title={productUrls.length === 0 ? "先上傳產品圖，AI 讀圖幫你寫描述" : "AI 讀首張產品圖，幫你把描述寫出來"}>
+                  {describing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Pencil className="h-3 w-3" />}AI 幫改
+                </button>
+                <button type="button" onClick={optimizeSubject} disabled={polishing || !subject.trim()}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors disabled:opacity-40"
+                  title="AI 把描述擴寫優化成更完整的提示詞（可再編輯）">
+                  {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}AI 幫我優化提示詞
+                </button>
+              </div>
+            </div>
+            <textarea value={subject} onChange={(e) => setSubject(e.target.value)} rows={3}
+              placeholder="描述你想要的產品圖，例：舒適牌女刀｜夏日除毛必備，清新日系、乾淨明亮的生活情境"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm resize-y placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 transition leading-relaxed" />
+          </div>
 
           {/* 文字模式提示：人像 / 插畫 已移至「素材生成」 */}
           {inputMode === "text" && (
@@ -798,96 +794,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
 
         {/* ── 右欄：輸出預覽 + 設定 + 生成（sticky，永遠見到生成鍵）── */}
         <div className="space-y-4 min-w-0 lg:sticky lg:top-0 lg:border-l lg:border-gray-100 lg:pl-6">
-        <SectionLabel step="" title="風格與輸出預覽" hint="設計描述 · 尺寸 · 引擎 · 數量" />
-        {/* 已選積木：點左邊風格積木後即時反映 */}
-        <div className="text-xs">
-          <div className="font-semibold text-gray-500 mb-1.5">已選積木</div>
-          {(slots.layout || slots.color || slots.background) ? (
-            <div className="flex flex-wrap gap-1.5">
-              {slots.layout && <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200 text-[11px]">構圖：{slots.layout.name}</span>}
-              {slots.color && <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 text-[11px]">配色：{slots.color.name}</span>}
-              {slots.background && <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px]">背景：{slots.background.name}</span>}
-            </div>
-          ) : (
-            <div className="text-gray-400 text-[11px]">尚未選擇（點左邊風格積木後會顯示）</div>
-          )}
-        </div>
-        {/* Compiled prompt — 唯讀預覽，或潤色後可編輯 */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-              {polishedBrief !== null
-                ? <><Wand2 className="h-3 w-3 text-violet-500" />已潤色設計描述（可直接編輯，生成時會存入結果 AI Prompt）</>
-                : <><Lock className="h-3 w-3" />設計描述預覽（唯讀 · 自動產生，請在上方欄位修改）</>}
-            </span>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {/* ✨潤色：手寫指令 → 擴寫成更豐富嘅中文 brief。合成模式潤色「場景描述」（含背景），文字模式潤色整段 brief。 */}
-              {(() => {
-                const canPolish = (composite ? buildSceneBrief().trim() : effectiveBrief.trim()).length > 0;
-                return (
-                  <button onClick={polishBrief} disabled={!canPolish || polishing}
-                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                      canPolish && !polishing ? "bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100"
-                      : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
-                    title={composite ? "把場景描述擴寫成更完整的中文 brief（不含產品，可再編輯）" : "把目前描述擴寫成更完整的中文設計 brief（可再編輯）"}>
-                    {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                    {polishing ? "潤色中…" : "✨潤色"}
-                  </button>
-                );
-              })()}
-              {polishedBrief !== null && (
-                <button onClick={() => setPolishedBrief(null)}
-                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:text-red-500 hover:border-red-200 transition-all"
-                  title="還原成自動產生的描述">
-                  <RotateCcw className="h-3 w-3" />還原
-                </button>
-              )}
-              <button onClick={copyPrompt} disabled={!hasAnyContent}
-                className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                  hasAnyContent ? (copied ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "bg-white border-gray-200 text-gray-600 hover:border-gray-400")
-                  : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}>
-                {copied ? <><Check className="h-3 w-3" />已複製</> : <><Copy className="h-3 w-3" />複製</>}
-              </button>
-            </div>
-          </div>
-          {polishedBrief !== null ? (
-            // 潤色後：可編輯 textarea，用戶可微調再生圖
-            <textarea value={polishedBrief} onChange={(e) => setPolishedBrief(e.target.value)} rows={6}
-              className="w-full rounded-lg border border-violet-200 bg-violet-50/40 px-3 py-2.5 text-[12px] text-gray-700 leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-violet-300 whitespace-pre-wrap" />
-          ) : showBriefPreview ? (
-            // Read-only display (NOT an input) — muted, caption-like so it never looks editable
-            <div className="w-full rounded-lg bg-gray-100/70 px-3 py-2.5 text-[11px] text-gray-500 leading-relaxed whitespace-pre-wrap select-text">
-              {compiledPrompt || (
-                <span className="text-gray-400">選取積木或輸入主體後，這裡會自動組裝繁中設計描述；生成時自動翻譯成英文 prompt 餵圖像模型。也可手寫描述後按「✨潤色」擴寫。</span>
-              )}
-            </div>
-          ) : (
-            // [UX 精簡] 預設收合這段技術性描述，不一次攤開，降低壓迫感（生成時仍照常自動組裝）
-            <button type="button" onClick={() => setShowBriefPreview(true)}
-              className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 transition-colors">
-              <ChevronDown className="h-3.5 w-3.5 -rotate-90" />展開查看自動組裝的設計描述
-            </button>
-          )}
-          {/* Composite info — NOT part of the brief / not translated, just explains what will happen */}
-          {(composite || (slots.background && (slots.background.data?.imageUrl || slots.background.previewUrl))) && (
-            <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 space-y-0.5">
-              {composite && (
-                <div className="text-[11px] text-violet-700 flex items-center gap-1.5">
-                  <ImageIcon className="h-3 w-3 shrink-0" />合成模式：AI 自動去背 {productUrls.length} 件產品、打光並擺入場景
-                </div>
-              )}
-              {slots.background && (slots.background.data?.imageUrl || slots.background.previewUrl) && (
-                <div className="text-[11px] text-violet-700 flex items-center gap-1.5">
-                  <ImageIcon className="h-3 w-3 shrink-0" />{!bgAsImage
-                    ? `背景「${slots.background!.name}」作文字參考（AI 依描述生成場景，不直接用圖）`
-                    : productUrls.length >= 3
-                      ? `背景：3 件產品時，背景「${slots.background!.name}」只作文字參考（不直接合成）`
-                      : `背景：合成時將產品擺入背景「${slots.background!.name}」`}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        {/* 風格與輸出預覽已依需求移除（太雜亂）；設計描述改由左欄「產品圖描述」直接編輯。 */}
 
         {/* ── 04 輸出設定 ── */}
         <SectionLabel step="04" title="輸出設定" hint="尺寸 · 引擎 · 數量" />
