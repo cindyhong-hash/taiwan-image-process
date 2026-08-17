@@ -133,10 +133,10 @@ function SlotCard({
   return (
     <div
       onClick={!filled ? onPick : undefined}
-      className={`rounded-xl border p-3 transition-all ${filled ? `${meta.bg} ${meta.border}` : "border-dashed border-gray-200 bg-gray-50 hover:border-gray-300 cursor-pointer hover:shadow-sm"}`}>
+      className={`rounded-xl border p-3 transition-all ${filled ? `${meta.bg} ${meta.border}` : "border-dashed border-violet-300 bg-white hover:border-violet-500 hover:bg-violet-50/50 cursor-pointer hover:shadow-sm"}`}>
       {/* Header — click to (re)pick the source material */}
       <div className="flex items-center justify-between">
-        <div className={`flex items-center gap-1.5 text-xs font-semibold cursor-pointer ${filled ? meta.color : "text-gray-400"}`} onClick={onPick}>
+        <div className={`flex items-center gap-1.5 text-xs font-semibold cursor-pointer ${filled ? meta.color : "text-violet-600"}`} onClick={onPick}>
           {icon}
           {labelOverride ?? meta.label}
           {filled && <span className="text-[10px] font-normal text-gray-400">（點此更換素材）</span>}
@@ -183,7 +183,7 @@ function SlotCard({
           )}
         </div>
       ) : (
-        <div onClick={onPick} className="text-xs text-gray-400 italic mt-2 cursor-pointer">{emptyLabel}</div>
+        <div onClick={onPick} className="flex items-center gap-1 text-xs text-violet-500 mt-2 cursor-pointer"><Plus className="h-3.5 w-3.5" />{emptyLabel}</div>
       )}
     </div>
   );
