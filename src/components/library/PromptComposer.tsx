@@ -618,7 +618,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
 
   return (
     <div>
-      <div className="space-y-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
         {/* 套用行業範本：暫隱藏（hide · no use now）— 內部 header 已移除（modal 標題已表示） */}
         {false && (
         <div>
@@ -644,6 +644,9 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
           </div>
         </div>
         )}
+
+        {/* ── 左欄：輸入（主體 / 積木 / 注意事項）── */}
+        <div className="space-y-5 min-w-0">
 
         {/* ── 01 主體物件 ── */}
         <SectionLabel step="01" title="主體物件" hint="產品圖 或 文字，二選一" />
@@ -793,9 +796,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
           )}
         </div>
 
-        {/* ── 03 設計描述 ── */}
-        <SectionLabel step="03" title="設計描述" hint="注意事項 · 自動組裝 · 可 AI 潤色" />
-        {/* 其他注意事項（選填）— 放喺 03、潤色之前 */}
+        {/* ── 03（左欄尾）其他注意事項（選填）── */}
         <div className="space-y-1.5">
           <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
             <StickyNote className="h-3.5 w-3.5 text-amber-500" />其他注意事項（選填）
@@ -804,6 +805,12 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
             placeholder="例：不要加入紅色、營造溫暖放鬆感、避免文字、產品要清晰…"
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm resize-none placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 transition" />
         </div>
+
+        </div>{/* ── /左欄 ── */}
+
+        {/* ── 右欄：輸出預覽 + 設定 + 生成（sticky，永遠見到生成鍵）── */}
+        <div className="space-y-4 min-w-0 lg:sticky lg:top-0 lg:border-l lg:border-gray-100 lg:pl-6">
+        <SectionLabel step="" title="風格與輸出預覽" hint="設計描述 · 尺寸 · 引擎 · 數量" />
         {/* Compiled prompt — 唯讀預覽，或潤色後可編輯 */}
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -1025,9 +1032,11 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
           <div className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">⚠️ {genError}</div>
         )}
 
-        {/* 多張 draft：揀邊張保留（單張亦行此 path → 確認後先入庫，唔自動落 gallery）*/}
+        </div>{/* ── /右欄 ── */}
+
+        {/* 多張 draft：揀邊張保留（單張亦行此 path → 確認後先入庫，唔自動落 gallery）；兩欄下方全寬 */}
         {drafts && (
-          <div ref={resultRef} className="scroll-mt-2 rounded-xl border border-violet-200 bg-violet-50/40 p-3 space-y-3">
+          <div ref={resultRef} className="lg:col-span-2 scroll-mt-2 rounded-xl border border-violet-200 bg-violet-50/40 p-3 space-y-3">
             <div className="text-xs font-semibold text-violet-700">
               點擊選取要保留的圖（已選 {drafts.filter((d) => d.selected).length}/{drafts.length}）
             </div>

@@ -37,7 +37,7 @@ export function ProductComposeModal({
   return (
     // 同 GenerateAssetModal 一致：flex-col + max-height + body 內捲（修破版；body 先係 scroll 容器）
     <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 overflow-y-auto p-4" onClick={onClose}>
-      <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-xl my-6 flex flex-col max-h-[calc(100vh-3rem)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-xl my-6 flex flex-col max-h-[calc(100vh-3rem)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between px-6 py-4 border-b shrink-0">
           <div>
             <h2 className="text-lg font-semibold">產品圖生成</h2>
