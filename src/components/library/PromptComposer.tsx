@@ -236,7 +236,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
   // Editable compiled prompt override
   const [activePreset, setActivePreset] = useState<string | null>(null);
   // [UX 精簡] 純顯示用折疊狀態（不影響生成）：進階設定(引擎/系列) 與 自動組裝設計描述 預設收合
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(true);  // 依 mockup 預設展開 Model
   const [showBriefPreview, setShowBriefPreview] = useState(false);
 
   // Subject input mode — 二選一: "image" (上傳產品圖 → 合成，預設主選) or "text" (純 AI 生成，次選)
