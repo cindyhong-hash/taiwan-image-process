@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import {
   X, Copy, Check, Sparkles, LayoutTemplate, Palette,
-  Image as ImageIcon, StickyNote, Loader2, Upload, Plus, Trash2, Type, Lock, Wand2, RotateCcw,
+  Image as ImageIcon, StickyNote, Loader2, Upload, Plus, Trash2, Type, Lock, Wand2, RotateCcw, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PromptSlots, StyleComponent, ComponentCategory, PaletteColor, PaletteRole } from "@/types/library";
@@ -235,6 +235,9 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
   const [polishing, setPolishing] = useState(false);
   // Editable compiled prompt override
   const [activePreset, setActivePreset] = useState<string | null>(null);
+  // [UX 精簡] 純顯示用折疊狀態（不影響生成）：進階設定(引擎/系列) 與 自動組裝設計描述 預設收合
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showBriefPreview, setShowBriefPreview] = useState(false);
 
   // Subject input mode — 二選一: "image" (上傳產品圖 → 合成，預設主選) or "text" (純 AI 生成，次選)
   const [inputMode, setInputMode] = useState<"text" | "image">("image");
@@ -674,9 +677,9 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
             </p>
           )}
 
-          {/* Product image area (1–3 photos) — full-width card (like a slot block); greyed in text mode */}
-          <div className={`rounded-xl border p-3 transition-all ${
-            inputMode === "image" ? "border-violet-200 bg-violet-50/30" : "border-dashed border-gray-200 bg-gray-50 opacity-40 pointer-events-none select-none"}`}>
+          {/* Product image area (1–3 photos) — 文字主題時整塊收起（收合上傳區，減少壓迫感） */}
+          {inputMode === "image" && (
+          <div className="rounded-xl border border-violet-200 bg-violet-50/30 p-3 transition-all">
             <input id="composer-product" type="file" accept="image/*" className="hidden"
               onChange={(e) => { if (e.target.files?.[0]) uploadProduct(e.target.files[0]); e.currentTarget.value = ""; }} />
             {productUrls.length === 0 ? (
@@ -719,6 +722,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
               可加最多 3 件產品，AI 會自動去背、打光並擺入所選背景（無需事先去背）。多件產品會一齊合成入同一場景。
             </p>
           </div>
+          )}
         </div>
 
         {/* ── 02 風格積木 ── */}
@@ -842,13 +846,19 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
             // 潤色後：可編輯 textarea，用戶可微調再生圖
             <textarea value={polishedBrief} onChange={(e) => setPolishedBrief(e.target.value)} rows={6}
               className="w-full rounded-lg border border-violet-200 bg-violet-50/40 px-3 py-2.5 text-[12px] text-gray-700 leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-violet-300 whitespace-pre-wrap" />
-          ) : (
+          ) : showBriefPreview ? (
             // Read-only display (NOT an input) — muted, caption-like so it never looks editable
             <div className="w-full rounded-lg bg-gray-100/70 px-3 py-2.5 text-[11px] text-gray-500 leading-relaxed whitespace-pre-wrap select-text">
               {compiledPrompt || (
                 <span className="text-gray-400">選取積木或輸入主體後，這裡會自動組裝繁中設計描述；生成時自動翻譯成英文 prompt 餵圖像模型。也可手寫描述後按「✨潤色」擴寫。</span>
               )}
             </div>
+          ) : (
+            // [UX 精簡] 預設收合這段技術性描述，不一次攤開，降低壓迫感（生成時仍照常自動組裝）
+            <button type="button" onClick={() => setShowBriefPreview(true)}
+              className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 transition-colors">
+              <ChevronDown className="h-3.5 w-3.5 -rotate-90" />展開查看自動組裝的設計描述
+            </button>
           )}
           {/* Composite info — NOT part of the brief / not translated, just explains what will happen */}
           {(composite || (slots.background && (slots.background.data?.imageUrl || slots.background.previewUrl))) && (
@@ -873,9 +883,16 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
 
         {/* ── 04 輸出設定 ── */}
         <SectionLabel step="04" title="輸出設定" hint="尺寸 · 引擎 · 數量" />
-        {/* Composite engine — only in composite (產品圖) mode */}
+        {/* Composite engine + 系列 — 收進「進階設定」預設收合（UX 精簡；預設 FLUX.2 edit 不變） */}
         {inputMode === "image" && (
           <div className="space-y-2">
+            <button type="button" onClick={() => setShowAdvanced((v) => !v)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700 transition-colors">
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAdvanced ? "" : "-rotate-90"}`} />
+              進階設定
+              <span className="font-normal text-gray-400">合成引擎：{effEngine === "flux2edit" ? "FLUX.2 edit · 主力" : effEngine === "nano" ? "nano-banana" : effEngine === "seedream" ? "Seedream 4.5" : "自動"}</span>
+            </button>
+            {showAdvanced && (<>
             <label className="text-xs font-semibold text-gray-500">合成方式</label>
             <div className="flex gap-1.5 flex-wrap">
               {([
@@ -948,6 +965,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
                 )}
               </>
             )}
+            </>)}
 
           </div>
         )}
