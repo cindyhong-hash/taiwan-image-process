@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import {
   X, Copy, Check, Sparkles, LayoutTemplate, Palette,
-  Image as ImageIcon, StickyNote, Loader2, Upload, Plus, Trash2, Type, Lock, Wand2, RotateCcw, ChevronDown,
+  Image as ImageIcon, Loader2, Upload, Plus, Trash2, Type, Lock, Wand2, RotateCcw, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PromptSlots, StyleComponent, ComponentCategory, PaletteColor, PaletteRole } from "@/types/library";
@@ -669,7 +669,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
           {/* Text input — disabled when in image mode */}
           <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)}
             disabled={inputMode !== "text"}
-            placeholder="例：冬季除毛、夏日防曬面膜、復古腳踏車…"
+            placeholder="輸入產品或活動主題…"
             className={`w-full rounded-lg border px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 transition ${
               inputMode === "text" ? "border-gray-200" : "border-gray-100 bg-gray-100 text-gray-400 cursor-not-allowed"}`} />
 
@@ -728,89 +728,90 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
           )}
         </div>
 
-        {/* ── 02 風格積木 ── */}
-        <SectionLabel step="02" title="風格積木" hint="可選 · 點卡片選取素材，右上 ✕ 移除" />
-        <div className="space-y-2.5">
-
-          <SlotCard category="COMPOSITION" icon={<LayoutTemplate className="h-4 w-4" />} emptyLabel="點擊選取構圖"
+        {/* ── 02 風格積木（三欄並排）── */}
+        <SectionLabel step="02" title="風格積木" hint="選填 · 套用會加入 AI Prompt 做生成參考" />
+        <div className="grid grid-cols-3 gap-3 items-start">
+          <SlotCard category="COMPOSITION" icon={<LayoutTemplate className="h-4 w-4" />} emptyLabel="點擊選取"
             component={slots.layout} onClear={() => onClearSlot("layout")} onPick={() => setPickerCategory("COMPOSITION")}
             descValue={effLayoutDesc} onDescChange={setLayoutDescOv} />
 
-          <SlotCard category="COLOR_SCHEME" icon={<Palette className="h-4 w-4" />} emptyLabel="點擊選取配色"
+          <SlotCard category="COLOR_SCHEME" icon={<Palette className="h-4 w-4" />} emptyLabel="點擊選取"
             component={slots.color} onClear={() => onClearSlot("color")} onPick={() => setPickerCategory("COLOR_SCHEME")}
-            colorsDisplay={enabledColors}
-            footer={
-              <div className="mt-3 pt-3 border-t border-rose-200/60" onClick={(e) => e.stopPropagation()}>
-                <div className="text-[11px] font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
-                  <Palette className="h-3.5 w-3.5 text-rose-500" />配色使用（主色必用，其餘勾選啟用 · 可改色）
-                </div>
-                <div className="space-y-1.5">
-                  {effRows.map((r) => {
-                    const locked = r.role === "primary";
-                    const hint = PALETTE_ROLES.find((x) => x.role === r.role)?.hint ?? "";
-                    return (
-                      <div key={r.role} className={`flex items-center gap-2 ${r.enabled ? "" : "opacity-45"}`}>
-                        <button type="button" disabled={locked} onClick={() => updateRow(r.role, { enabled: !r.enabled })}
-                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${r.enabled ? "bg-rose-500 border-rose-500" : "border-gray-300 bg-white"} ${locked ? "cursor-default" : ""}`}
-                          title={locked ? "主色必用" : "啟用 / 停用"}>
-                          {r.enabled && <Check className="h-3 w-3 text-white" />}
-                        </button>
-                        <input type="color" value={r.hex} onChange={(e) => updateRow(r.role, { hex: e.target.value })}
-                          className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer p-0.5 shrink-0" />
-                        <input value={r.hex} onChange={(e) => { const v = e.target.value.trim(); if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) updateRow(r.role, { hex: v }); }}
-                          className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-rose-400 shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-medium text-gray-700 leading-none">{r.label}</div>
-                          <div className="text-[11px] text-gray-400 leading-none mt-0.5 truncate">{hint}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            }
-          />
+            colorsDisplay={enabledColors} />
 
-          {/* 語氣積木已移除（合成唔需要）。語氣仍可由「風格組件」帶入影響文案。 */}
-
-          <SlotCard category="BACKGROUND" icon={<ImageIcon className="h-4 w-4" />} labelOverride="背景"
-            emptyLabel="點擊選擇背景"
+          <SlotCard category="BACKGROUND" icon={<ImageIcon className="h-4 w-4" />} labelOverride="背景" emptyLabel="點擊選取"
             component={slots.background} onClear={() => onClearSlot("background")} onPick={() => setPickerCategory("BACKGROUND")} />
-          {/* 背景用法：作文字參考（預設，拉背景描述入設計描述、AI 生成場景）／ 直接用背景圖（合成落張圖）*/}
-          {slots.background && (
-            <div className="space-y-1">
-              <div className="flex gap-1.5">
-                <button type="button" onClick={() => setBgAsImage(false)}
-                  className={`flex-1 text-[11px] px-2 py-1.5 rounded-lg border transition-colors ${!bgAsImage ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
-                  作文字參考（預設）
-                </button>
-                <button type="button" onClick={() => setBgAsImage(true)}
-                  className={`flex-1 text-[11px] px-2 py-1.5 rounded-lg border transition-colors ${bgAsImage ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
-                  直接用背景圖
-                </button>
-              </div>
-              <p className="text-[11px] text-gray-400 leading-snug">
-                {bgAsImage ? "合成時把產品擺入呢張背景圖。" : "把背景嘅描述拉入下面「設計描述」，AI 依文字生成場景（可再改／潤色）；唔會直接用張圖。"}
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* ── 03（左欄尾）其他注意事項（選填）── */}
-        <div className="space-y-1.5">
-          <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
-            <StickyNote className="h-3.5 w-3.5 text-amber-500" />其他注意事項（選填）
-          </label>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
-            placeholder="例：不要加入紅色、營造溫暖放鬆感、避免文字、產品要清晰…"
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm resize-none placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 transition" />
-        </div>
+        {/* 配色使用（選了配色才出現，三欄下方全寬）*/}
+        {slots.color && (
+          <div className="rounded-xl border border-rose-200/60 bg-rose-50/30 p-3">
+            <div className="text-[11px] font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
+              <Palette className="h-3.5 w-3.5 text-rose-500" />配色使用（主色必用，其餘勾選啟用 · 可改色）
+            </div>
+            <div className="space-y-1.5">
+              {effRows.map((r) => {
+                const locked = r.role === "primary";
+                const hint = PALETTE_ROLES.find((x) => x.role === r.role)?.hint ?? "";
+                return (
+                  <div key={r.role} className={`flex items-center gap-2 ${r.enabled ? "" : "opacity-45"}`}>
+                    <button type="button" disabled={locked} onClick={() => updateRow(r.role, { enabled: !r.enabled })}
+                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${r.enabled ? "bg-rose-500 border-rose-500" : "border-gray-300 bg-white"} ${locked ? "cursor-default" : ""}`}
+                      title={locked ? "主色必用" : "啟用 / 停用"}>
+                      {r.enabled && <Check className="h-3 w-3 text-white" />}
+                    </button>
+                    <input type="color" value={r.hex} onChange={(e) => updateRow(r.role, { hex: e.target.value })}
+                      className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer p-0.5 shrink-0" />
+                    <input value={r.hex} onChange={(e) => { const v = e.target.value.trim(); if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) updateRow(r.role, { hex: v }); }}
+                      className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-rose-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium text-gray-700 leading-none">{r.label}</div>
+                      <div className="text-[11px] text-gray-400 leading-none mt-0.5 truncate">{hint}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 背景用法（選了背景才出現）：作文字參考（預設）／ 直接用背景圖 */}
+        {slots.background && (
+          <div className="space-y-1">
+            <div className="flex gap-1.5">
+              <button type="button" onClick={() => setBgAsImage(false)}
+                className={`flex-1 text-[11px] px-2 py-1.5 rounded-lg border transition-colors ${!bgAsImage ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                作文字參考（預設）
+              </button>
+              <button type="button" onClick={() => setBgAsImage(true)}
+                className={`flex-1 text-[11px] px-2 py-1.5 rounded-lg border transition-colors ${bgAsImage ? "bg-violet-600 text-white border-violet-600" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300"}`}>
+                直接用背景圖
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-400 leading-snug">
+              {bgAsImage ? "合成時把產品擺入呢張背景圖。" : "把背景嘅描述拉入右邊「設計描述」，AI 依文字生成場景（可再改／潤色）；唔會直接用張圖。"}
+            </p>
+          </div>
+        )}
 
         </div>{/* ── /左欄 ── */}
 
         {/* ── 右欄：輸出預覽 + 設定 + 生成（sticky，永遠見到生成鍵）── */}
         <div className="space-y-4 min-w-0 lg:sticky lg:top-0 lg:border-l lg:border-gray-100 lg:pl-6">
         <SectionLabel step="" title="風格與輸出預覽" hint="設計描述 · 尺寸 · 引擎 · 數量" />
+        {/* 已選積木：點左邊風格積木後即時反映 */}
+        <div className="text-xs">
+          <div className="font-semibold text-gray-500 mb-1.5">已選積木</div>
+          {(slots.layout || slots.color || slots.background) ? (
+            <div className="flex flex-wrap gap-1.5">
+              {slots.layout && <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200 text-[11px]">構圖：{slots.layout.name}</span>}
+              {slots.color && <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 text-[11px]">配色：{slots.color.name}</span>}
+              {slots.background && <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px]">背景：{slots.background.name}</span>}
+            </div>
+          ) : (
+            <div className="text-gray-400 text-[11px]">尚未選擇（點左邊風格積木後會顯示）</div>
+          )}
+        </div>
         {/* Compiled prompt — 唯讀預覽，或潤色後可編輯 */}
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
