@@ -11,6 +11,7 @@ import { generateGlobalDesignSpec, designSpecPromptBlock, type GlobalDesignSpec 
 import { generateFramePlans, type FramePlan } from "@/lib/multi/frame-planner";
 import { buildMultiImagePrompt, type LockBlocks } from "@/lib/multi/prompt-builder";
 import { VARIANT_STYLE } from "@/lib/multi/variant-style";
+import { pickVisualTemplate, visualTemplatePromptBlock } from "@/lib/multi/visual-template-selector";
 
 // 各圖獨立模式 B 組：內容＋色調＋人物都相同，只換「文字排版/底框/構圖角度」（附加在每格圖片 prompt 末尾）
 const VARIANT_B_STYLE_SUFFIX =
@@ -271,7 +272,8 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
       description: string; mustText: string; assetUrls: string[];
       subtitle?: string; container_style?: string; composition_hint?: string; tag?: string;
     };
-    type GenSet = { cellData: CellIn[]; label: string; stylePromptSuffix?: string; globalSpec?: GlobalDesignSpec; framePlans?: FramePlan[] };
+    type GenSet = { cellData: CellIn[]; label: string; stylePromptSuffix?: string; globalSpec?: GlobalDesignSpec; framePlans?: FramePlan[];
+      visualTemplateBlock?: string; visualTemplateCard?: SubCardVariant; visualTemplateName?: string; visualTemplateFullBleed?: boolean };
     const stored: CellIn[] = activity.cells ? JSON.parse(activity.cells) : [];
     const userMustText = (activity.titleText || activity.focusPoint || "").trim();
     const count = ml?.count ?? 1;
@@ -352,6 +354,18 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
         toneLabels,
         variant,
       });
+      // [VISUAL TEMPLATE] 每組(＝一次生成)挑「一個」整組視覺設計；同組所有 frame 共用。
+      // seedKey 帶時間 → 每次重新生成會換一種設計（符合「大資料庫挑不同設計」）。
+      const vt = pickVisualTemplate(
+        { theme: activity.imagePrompt || activity.theme, focusPoint: activity.focusPoint,
+          requiredText: userMustText || undefined, hasProduct: productImageUrls.length > 0 },
+        `${activityId}-${s.label || "A"}-${Date.now()}`,
+      );
+      s.visualTemplateBlock = visualTemplatePromptBlock(vt);
+      s.visualTemplateCard = vt.textTreatment.cardVariant;
+      s.visualTemplateName = vt.name;
+      s.visualTemplateFullBleed = vt.fullBleed;
+      console.log(`[generate][multi] visual template = ${vt.name} (card: ${vt.textTreatment.cardVariant})`);
     }
 
     // 2. 產生「一組」拼版（逐格生成→拼版→存一筆 GeneratedLayout）
@@ -369,7 +383,9 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
       // 副圖版型：依活動＋組別在「安全版型池」中輪換（不同活動/組別分散到不同版型）。
       // 要鎖死單一種：把 FORCE_SUB_VARIANT 設成某個版型字串。
       const FORCE_SUB_VARIANT = null as SubCardVariant | null;
+      // [VISUAL TEMPLATE] 整組共用 template 指定的卡片語言；沒有才 fallback 到舊的 hash 挑選。
       const chosenVariant: SubCardVariant = FORCE_SUB_VARIANT
+        ?? set.visualTemplateCard
         ?? ALL_SUB_VARIANTS[hashStr(`${activityId}-${seedKey}`) % ALL_SUB_VARIANTS.length];
 
       // 產品識別鎖（比照單圖 productPrefix）：只在有「交給 AI 畫的產品圖」時啟用
@@ -505,6 +521,7 @@ If the style reference images show a product that looks slightly different from 
               framePlan: set.framePlans[i],
               variantStyle: VARIANT_STYLE[variant],
               i, n, lockBlocks,
+              artDirectionBlock: set.visualTemplateBlock,
             })
           : `${TYPOGRAPHY_LOCK}${fontReferenceNote}${layoutReferenceNote}
 
@@ -616,8 +633,12 @@ ${cellNoProduct}${cellProductFreeNote}${razorExclusionNote}${subImageNoText}`;
       // corner-label / diagonal-ribbon 會疊在照片角落 → 若任一副圖對應角落太忙(可能有主體)，整組退回安全版型
       let effVariant: SubCardVariant = chosenVariant;
       const BUSY_THRESHOLD = 0.4;
+      // [FULL-BLEED] 滿版 template：保持文字壓照片、不退回白卡（否則會變回圓角白卡＋留白）
+      if (set.visualTemplateFullBleed) {
+        // 不做 busy→白卡 fallback；直接用 template 指定的 text-over-photo 版型
+      }
       // 角標型（角落偵測）
-      if (chosenVariant === "corner-label-card" || chosenVariant === "diagonal-ribbon-card") {
+      else if (chosenVariant === "corner-label-card" || chosenVariant === "diagonal-ribbon-card") {
         const side = chosenVariant === "diagonal-ribbon-card" ? "right" : "left";
         for (const p of subPending) {
           const busy = await sampleCornerBusyness(p.url, side).catch(() => 0);
@@ -685,7 +706,9 @@ ${cellNoProduct}${cellProductFreeNote}${razorExclusionNote}${subImageNoText}`;
         cellUrls, rects: cellRects, canvasWidth: COLLAGE_PX, canvasHeight: COLLAGE_PX,
         seed: `${activityId}-${seedKey}`,
         plusOverlayText: plusBadge,
-        accentColor: heroAccentColor,  // 拼版底色＝主色淡底（與副卡外緣一致，延伸主題）
+        // [FULL-BLEED] 滿版 template：gap=0 無格縫、無灰底；否則維持淡底＋格縫
+        gap: set.visualTemplateFullBleed ? 0 : undefined,
+        accentColor: set.visualTemplateFullBleed ? undefined : heroAccentColor,
       });
       void cell0StyleUrl;
       const copyText = (set.label ? `【${set.label}】` : "")
