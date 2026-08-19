@@ -30,7 +30,8 @@ export type VisualTemplateCategory =
 export type ContentSignal =
   | "product" | "lifestyle" | "promotion" | "tutorial" | "before_after"
   | "testimonial" | "editorial" | "beauty" | "travel" | "medical"
-  | "launch" | "seasonal" | "wellness" | "food" | "fashion";
+  | "launch" | "seasonal" | "wellness" | "food" | "fashion"
+  | "announcement" | "story" | "cta";
 
 export type VisualTemplate = {
   id: string;
@@ -98,6 +99,9 @@ export type VisualTemplate = {
 
   recommendedFor: ContentSignal[];
   avoid: string[];
+
+  /** 滿版：拼版無格縫(gap=0)、無灰底、副圖不套白卡（文字直接壓在照片上）。預設 false=圓角白卡＋淡底。 */
+  fullBleed?: boolean;
 
   /** 各 frame 角色的視覺處理提示（hero / secondary / supporting / closing）。 */
   frameRoles: {

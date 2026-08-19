@@ -678,7 +678,8 @@ async function buildWhiteCard(
     const cardX = m, cardY = m, cardW = W - m * 2, cardH = H - m * 2;
     const cx = cardX + cardW / 2;
     const fsLabel = Math.round(W * 0.032);
-    const labelLine = fitAndWrap(labelText, cardW - Math.round(W * 0.12), fsLabel, 1).lines[0] ?? "";
+    // 收窄可用寬度（扣掉 letter-spacing 的額外寬度）＋硬截斷，避免頂標溢出
+    const labelLine = fitAndWrap(labelText, cardW - Math.round(W * 0.22), fsLabel, 1).lines[0] ?? "";
     const topPad = Math.round(H * 0.045);
     const ruleY = cardY + topPad + Math.round(fsLabel * 1.1);
     const headerH = topPad + Math.round(fsLabel * 1.1) + Math.round(H * 0.028);
@@ -696,7 +697,7 @@ async function buildWhiteCard(
     cardBgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs>${shadow}</defs>`
       + `<rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="${R}" fill="#ffffff" filter="url(#sh)"/></svg>`;
     textSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`
-      + `<text x="${cx}" y="${cardY + topPad + fsLabel * 0.9}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${fsLabel}" font-weight="600" letter-spacing="3" fill="${accent}">${labelLine}</text>`
+      + `<text x="${cx}" y="${cardY + topPad + fsLabel * 0.9}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${fsLabel}" font-weight="600" letter-spacing="1" fill="${accent}">${labelLine}</text>`
       + `<rect x="${cx - ruleW / 2}" y="${ruleY}" width="${ruleW}" height="${Math.max(2, Math.round(H * 0.004))}" rx="1" fill="${accent}"/>`
       + `${subPart}</svg>`;
   } else if (variant === "speech-bubble-price") {

@@ -81,6 +81,11 @@ function hashStr(s: string): number {
  * poolSize：從前幾名裡挑（保證仍是「適合」的，但有變化）。
  */
 export function pickVisualTemplate(input: SelectInput, seedKey: string, poolSize = 5): VisualTemplate {
+  // 開發測試用：FORCE_VT=<id> 可強制某個 template（正式環境不設此變數）。
+  if (process.env.FORCE_VT) {
+    const forced = getVisualTemplateById(process.env.FORCE_VT);
+    if (forced) return forced;
+  }
   const recs = recommendVisualTemplates(input, Math.max(poolSize, 1));
   const pool = recs.length ? recs : recommendVisualTemplates({}, poolSize);
   const idx = hashStr(seedKey) % pool.length;
@@ -107,6 +112,27 @@ export function visualTemplatePromptBlock(t: VisualTemplate): string {
 - DECORATION: ${t.decorativeElements.join(", ")}. SHAPE LANGUAGE: ${t.shapeLanguage}.
 - CONSISTENCY RULES (non-negotiable): ${t.consistencyRules.join("; ")}.
 - AVOID: ${t.avoid.join(", ")}.`;
+}
+
+export type HeroTitleStyle = "classic" | "brandGrad" | "shadow" | "outline";
+
+/** 依 Visual Template 的分類，決定主圖標題的燒字設計風格（讓燒字有設計、又對齊整組 DNA）。 */
+export function heroTitleStyleFor(t: VisualTemplate): HeroTitleStyle {
+  switch (t.category) {
+    case "clean_minimal": return "shadow";        // 乾淨無底板、細膩
+    case "editorial_magazine": return "outline";   // 雜誌大標描邊
+    case "gradient_overlay": return "brandGrad";    // 漸變壓底
+    case "cinematic_story": return "classic";       // 電影黑漸層字幕感
+    case "promotional_campaign": return "classic";  // 促銷高對比
+    case "special": return "classic";               // 精品黑金
+    case "lifestyle_human":
+    case "beauty_wellness":
+    case "product_ecom":
+    case "social_conversation":
+    case "collage_scrapbook":
+    case "info_educational":
+    default: return "brandGrad";                    // 品牌色漸層、融入相片、易讀
+  }
 }
 
 /** 取某個 frame 角色的視覺提示（hero/secondary/supporting/closing）。 */
