@@ -134,7 +134,7 @@ function fitAndWrap(
   maxLines = 2,
   minSize?: number,
 ): { size: number; lines: string[] } {
-  const t = (text || "").trim();
+  const t = stripEmoji(text || "");
   const lo = minSize ?? Math.max(12, Math.round(maxSize * 0.55));
   if (!t) return { size: maxSize, lines: [] };
   let size = maxSize;
@@ -222,7 +222,7 @@ export async function overlaySubImageCard(opts: {
     H = meta.height ?? 800;
   }
   const accent = opts.accentColor || "#4A90D9";
-  const badgeRaw = (opts.badgeText || "").trim().slice(0, 8);
+  const badgeRaw = stripEmoji(opts.badgeText || "").slice(0, 8);
   const badge = esc(badgeRaw);
   const priceText = esc((opts.priceText || "").trim());
   const originalPriceText = esc((opts.originalPriceText || "").trim());
@@ -245,7 +245,7 @@ export async function overlaySubImageCard(opts: {
   }
 
   // ═══════ 文字疊照片（原 4 種，補上動態縮字/防溢出）═══════
-  const sub = esc((opts.subtitle || "").trim());
+  const sub = esc(stripEmoji(opts.subtitle || ""));
   let svgInner = "";
 
   if (opts.variant === "badge-top-left" || opts.variant === "side-accent") {
@@ -355,7 +355,7 @@ async function buildWhiteCard(
 ): Promise<Buffer> {
   const { W, H, accent, badge, headline, subtitle, priceText, originalPriceText, variant } = o;
   // 標籤型版型：有 AI 短標(tag)時 → 標籤放短標、主標題移到卡片下方；沒短標 → 標籤退回用主標題、下方放副標
-  const tagText = (o.tagText || "").trim();
+  const tagText = stripEmoji(o.tagText || "");
   const labelText = tagText || headline;
   const bottomText = tagText ? headline : subtitle;
   const R = Math.round(W * 0.035);
@@ -856,6 +856,15 @@ async function buildWhiteCard(
 
 function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * 移除彩色 emoji（headless 環境無 emoji 字型 → librsvg/Pango 會直接 crash）。
+ * 只移除圖形 emoji，保留箭頭(→)等一般符號（一般字型可渲染）。
+ */
+const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}\u{20E3}]/gu;
+export function stripEmoji(s: string): string {
+  return (s || "").replace(EMOJI_RE, "").replace(/\s{2,}/g, " ").trim();
 }
 
 /** 把 hex 顏色調亮或調深。factor ∈ [-1,1]：負值往黑靠（調深，如 -0.55 當標題色），正值往白靠（調亮，如 0.86 當淡底色）。 */
