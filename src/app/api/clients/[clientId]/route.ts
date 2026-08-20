@@ -7,6 +7,7 @@ function parseClient(client: Record<string, unknown>) {
     toneLabels: JSON.parse(client.toneLabels as string),
     taboos: JSON.parse(client.taboos as string),
     pastPostImageUrls: JSON.parse((client.pastPostImageUrls as string) ?? "[]"),
+    logoUrls: JSON.parse((client.logoUrls as string) ?? "[]"),
   };
 }
 
@@ -28,6 +29,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
   if (body.taboos) updateData.taboos = JSON.stringify(body.taboos);                        // [WIP/素材庫]
   if (body.paletteColors) updateData.paletteColors = JSON.stringify(body.paletteColors);   // [WIP/素材庫] 防呆：array→string
   if (body.pastPostImageUrls) updateData.pastPostImageUrls = JSON.stringify(body.pastPostImageUrls);
+  if (body.logoUrls) updateData.logoUrls = JSON.stringify(body.logoUrls);   // 多版本 logo
 
   const client = await db.client.update({
     where: { id: clientId },
