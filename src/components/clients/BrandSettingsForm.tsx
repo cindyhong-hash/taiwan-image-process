@@ -7,11 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { X, Upload, Loader2 } from "lucide-react";
 
 // [MERGED] union of WIP(素材庫: taboos) + COLLEAGUE(clients: logoUrl/commonText)
+export type LogoVersion = { url: string; label: string };
+
 export type BrandFormValues = {
   name: string;
   primaryColor: string;
   secondaryColor: string;
-  logoUrl: string;
+  logoUrl: string;             // 主要 logo（向後相容；= logoUrls[0]）
+  logoUrls: LogoVersion[];     // 多版本 logo（放置標誌時可選）
   toneLabels: string[];
   taboos: string[];      // [WIP/素材庫] 禁忌事項（negative prompts）
   commonText: string;    // [COLLEAGUE] 常用字體
@@ -30,6 +33,10 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
     primaryColor: initialValues?.primaryColor ?? "#000000",
     secondaryColor: initialValues?.secondaryColor ?? "",
     logoUrl: initialValues?.logoUrl ?? "",
+    // 遷移：舊資料只有單一 logoUrl → 轉成一個版本
+    logoUrls: initialValues?.logoUrls?.length
+      ? initialValues.logoUrls
+      : (initialValues?.logoUrl ? [{ url: initialValues.logoUrl, label: "主要" }] : []),
     toneLabels: initialValues?.toneLabels ?? [],
     taboos: initialValues?.taboos ?? [],
     commonText: initialValues?.commonText ?? "",
@@ -65,15 +72,30 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
     return data.url;
   };
 
+  // 上傳一或多個 logo 版本（可多選）。每個版本可自訂標籤（如 橫式 / 完整版 / 圖騰）。
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
     setUploadingLogo(true);
-    const url = await uploadImage(file);
-    setValues((v) => ({ ...v, logoUrl: url }));
+    const urls = await Promise.all(files.map(uploadImage));
+    setValues((v) => {
+      const start = v.logoUrls.length;
+      const added = urls.map((url, i) => ({ url, label: `版本 ${start + i + 1}` }));
+      const logoUrls = [...v.logoUrls, ...added];
+      return { ...v, logoUrls, logoUrl: logoUrls[0]?.url ?? "" };
+    });
     setUploadingLogo(false);
     e.target.value = "";
   };
+
+  const removeLogo = (idx: number) =>
+    setValues((v) => {
+      const logoUrls = v.logoUrls.filter((_, i) => i !== idx);
+      return { ...v, logoUrls, logoUrl: logoUrls[0]?.url ?? "" };
+    });
+
+  const renameLogo = (idx: number, label: string) =>
+    setValues((v) => ({ ...v, logoUrls: v.logoUrls.map((l, i) => (i === idx ? { ...l, label } : l)) }));
 
   const handlePastPostUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []).slice(0, 5 - values.pastPostImageUrls.length);
@@ -144,39 +166,49 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
         </div>
       </div>
 
-      {/* 品牌 Logo — [COLLEAGUE] */}
+      {/* 品牌 Logo（多版本）— [COLLEAGUE] */}
       <div className="space-y-2">
         <Label>品牌 Logo</Label>
-        <p className="text-xs text-gray-400">上傳品牌標誌（建議去背 PNG），可用於合成與識別</p>
-        <div className="flex items-center gap-3">
-          {values.logoUrl ? (
-            <div className="relative w-24 h-24">
-              <img
-                src={values.logoUrl}
-                alt="logo"
-                className="w-24 h-24 object-contain rounded-lg border bg-gray-50 p-1"
+        <p className="text-xs text-gray-400">上傳一個或多個 logo 版本（建議去背 PNG），例如 橫式 / 完整版 / 圖騰。放置標誌時可選要用哪一個。</p>
+        <div className="flex gap-3 flex-wrap">
+          {values.logoUrls.map((lg, i) => (
+            <div key={i} className="w-28 space-y-1">
+              <div className="relative w-28 h-24">
+                <img
+                  src={lg.url}
+                  alt={lg.label}
+                  className="w-28 h-24 object-contain rounded-lg border bg-gray-50 p-1"
+                />
+                <button
+                  type="button"
+                  className="absolute -top-1 -right-1 bg-white rounded-full border p-0.5 shadow"
+                  onClick={() => removeLogo(i)}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+                {i === 0 && (
+                  <span className="absolute bottom-1 left-1 text-[9px] font-medium bg-black/60 text-white px-1 py-0.5 rounded">主要</span>
+                )}
+              </div>
+              <Input
+                value={lg.label}
+                onChange={(e) => renameLogo(i, e.target.value)}
+                placeholder="版本名稱"
+                className="h-7 text-xs px-2"
               />
-              <button
-                type="button"
-                className="absolute -top-1 -right-1 bg-white rounded-full border p-0.5 shadow"
-                onClick={() => setValues((v) => ({ ...v, logoUrl: "" }))}
-              >
-                <X className="h-3 w-3" />
-              </button>
             </div>
-          ) : (
-            <label className="flex flex-col items-center justify-center w-24 h-24 border-2 border-dashed rounded-lg cursor-pointer hover:bg-gray-50">
-              {uploadingLogo ? (
-                <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
-              ) : (
-                <>
-                  <Upload className="h-6 w-6 text-gray-400" />
-                  <span className="text-xs text-gray-400 mt-1 text-center px-1">上傳 Logo</span>
-                </>
-              )}
-              <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-            </label>
-          )}
+          ))}
+          <label className="flex flex-col items-center justify-center w-28 h-24 border-2 border-dashed rounded-lg cursor-pointer hover:bg-gray-50 self-start">
+            {uploadingLogo ? (
+              <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+            ) : (
+              <>
+                <Upload className="h-6 w-6 text-gray-400" />
+                <span className="text-xs text-gray-400 mt-1 text-center px-1">上傳 Logo</span>
+              </>
+            )}
+            <input type="file" accept="image/*" multiple className="hidden" onChange={handleLogoUpload} />
+          </label>
         </div>
       </div>
 

@@ -22,6 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ activit
     client: {
       ...activity.client,
       toneLabels: JSON.parse(activity.client.toneLabels),
+      logoUrls: JSON.parse((activity.client.logoUrls as string) ?? "[]"),
     },
   });
 }

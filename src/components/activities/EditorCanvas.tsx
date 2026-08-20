@@ -1,12 +1,14 @@
 "use client";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, Sparkles, Wand2, RotateCcw, CheckCircle2, ImagePlus, X } from "lucide-react";
+import { Download, Loader2, Sparkles, Wand2, RotateCcw, CheckCircle2, ImagePlus, X, Stamp } from "lucide-react";
 import { MaskCanvas, type SelectionBounds } from "@/components/activities/MaskCanvas";
+import LogoPlacerModal, { type LogoVersion } from "@/components/activities/LogoPlacerModal";
 
 type Props = {
   layout: { id: string; imageUrl: string; copyText: string; layoutType: string };
   brandLogoUrl?: string;
+  logoVersions?: LogoVersion[];
 };
 
 const COPY_TRANSFORMS = [
@@ -16,7 +18,8 @@ const COPY_TRANSFORMS = [
   { label: "換諧音梗",   instruction: "請在這段文案中加入一個有趣的諧音梗或雙關語" },
 ];
 
-export function EditorCanvas({ layout, brandLogoUrl }: Props) {
+export function EditorCanvas({ layout, brandLogoUrl, logoVersions = [] }: Props) {
+  const [showLogo,    setShowLogo]    = useState(false);
   const [copyText,    setCopyText]    = useState(layout.copyText);
   const [transforming, setTransforming] = useState(false);
   const [exporting,   setExporting]   = useState(false);
@@ -162,6 +165,15 @@ export function EditorCanvas({ layout, brandLogoUrl }: Props) {
               <span className="text-xs text-blue-500 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
                 遮罩已就緒
               </span>
+            )}
+            {!inpainting && (
+              <button
+                onClick={() => setShowLogo(true)}
+                className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 border border-violet-200 hover:border-violet-400 rounded-lg px-2 py-1 transition-all"
+              >
+                <Stamp className="h-3.5 w-3.5" />
+                放置標誌
+              </button>
             )}
             {canUndo && !inpainting && (
               <button
@@ -338,6 +350,20 @@ export function EditorCanvas({ layout, brandLogoUrl }: Props) {
           </div>
         </div>
       </div>
+
+      {/* 放置標誌 modal —— 合成後推入歷史堆疊，走既有「完成此版本」儲存流程 */}
+      {showLogo && (
+        <LogoPlacerModal
+          imageUrl={currentImage}
+          logoVersions={logoVersions.length ? logoVersions : (brandLogoUrl ? [{ url: brandLogoUrl, label: "品牌 Logo" }] : [])}
+          onConfirm={(url) => {
+            setImageHistory((h) => [...h, url]);
+            setSaved(false);
+            setShowLogo(false);
+          }}
+          onClose={() => setShowLogo(false)}
+        />
+      )}
 
     </div>
   );

@@ -12,6 +12,7 @@ model Client {
   primaryColor   String
   secondaryColor String?
   logoUrl        String?
+  logoUrls           String     @default("[]")  // 多版本品牌 logo：JSON [{url,label}]，放置標誌時可選版本
   toneLabels         String     @default("[]")
   taboos             String     @default("[]")  // [WIP/素材庫] 保留
   commonText         String     @default("")    // [COLLEAGUE] 合併新增

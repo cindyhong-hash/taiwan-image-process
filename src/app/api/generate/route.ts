@@ -33,7 +33,7 @@ async function generateBackground(opts: {
     // Fal 的文字燒入由任務四處理，這裡不需額外參數
   });
 }
-import { compositeImage, overlayLogo } from "@/lib/composite";
+import { compositeImage } from "@/lib/composite";
 import { generateTypographyImage } from "@/lib/typography";
 import { buildCopyPrompt, buildImagePrompt } from "@/lib/prompts";
 import { extractStyleComponents, buildAiPromptText } from "@/lib/extract-components";
@@ -250,9 +250,7 @@ export async function POST(request: Request) {
                 seed: `${activityId}-${v.type}`,
               });
               burnedIn = true;
-              if (client.logoUrl && finalUrl !== baseUrl) {
-                finalUrl = await overlayLogo({ imageUrl: finalUrl, logoUrl: client.logoUrl, textZone: "top-left", seed: `${activityId}-${v.type}-logo` });
-              }
+              // [logo] 生圖階段不再自動燒 logo；改由微調畫布「放置標誌」手動放置。
             } catch (e) {
               console.warn(`[generate] 底圖 fallback 疊字失敗(${v.type}):`, e);
               finalUrl = baseUrl; burnedIn = false;
@@ -539,20 +537,9 @@ export async function POST(request: Request) {
         }
       }
 
-      // ── 3.5 品牌 Logo 合成（像素級精準，疊在右下角）────────────────────────
-      if (client.logoUrl && !imageUrl.includes("picsum")) {
-        try {
-          imageUrl = await overlayLogo({
-            imageUrl,
-            logoUrl: client.logoUrl,
-            textZone: layoutConfig.textZone,
-            seed: `${activityId}-${layoutConfig.type}-logo`,
-          });
-          console.log(`[generate] ✅ Logo overlaid: ${imageUrl.slice(0, 55)}`);
-        } catch (e) {
-          console.warn("[generate] logo overlay failed:", e);
-        }
-      }
+      // ── 3.5 品牌 Logo ────────────────────────────────────────────────────
+      // [logo] 生圖階段不再自動燒 logo；改由微調畫布「放置標誌」手動放置
+      // （自由拖放定位 + 可選品牌 logo 版本）。原自動疊右下角邏輯已移除。
 
       // ── 4. 存 DB ────────────────────────────────────────────────────────────
       const styleComponents = extractStyleComponents({

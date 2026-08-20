@@ -6,7 +6,8 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 
 type Layout = { id: string; imageUrl: string; copyText: string; layoutType: string; isSelected: boolean; cellImageUrls?: string };
-type Activity = { id: string; theme: string; imageRatio?: string; logoMode?: string; generatedLayouts: Layout[]; client?: { logoUrl?: string | null } };
+type LogoVersion = { url: string; label: string };
+type Activity = { id: string; theme: string; imageRatio?: string; logoMode?: string; generatedLayouts: Layout[]; client?: { logoUrl?: string | null; logoUrls?: LogoVersion[] } };
 
 export default function EditorPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
   const [clientId, setClientId] = useState<string>("");
@@ -49,9 +50,14 @@ export default function EditorPage({ params }: { params: Promise<{ clientId: str
           ratio={activity.imageRatio ?? "1:1"}
           brandLogoUrl={activity.client?.logoUrl ?? undefined}
           logoMode={activity.logoMode}
+          logoVersions={activity.client?.logoUrls ?? []}
         />
       ) : (
-        <EditorCanvas layout={selectedLayout} brandLogoUrl={activity.client?.logoUrl ?? undefined} />
+        <EditorCanvas
+          layout={selectedLayout}
+          brandLogoUrl={activity.client?.logoUrl ?? undefined}
+          logoVersions={activity.client?.logoUrls ?? []}
+        />
       )}
     </div>
   );
