@@ -191,9 +191,13 @@ export async function POST(request: Request) {
       //      索性清空，靠 ③ 產品 + 品牌調性寫文案（唔追住中/英 keyword 去 strip）。
       const copyTheme = activity.titleText?.trim() ? cleanCampaignTheme(activity.theme) : "";
 
+      // 有填必放文字 → 3 款主標都鎖定用戶那段文字（只差視覺處理），AI 只負責補副標；
+      // 冇填 → 3 款文字全部由 AI 自由發揮。（避免「填咗但只有一款用到」令使用者困惑）
+      const hasRequired = !!activity.titleText?.trim();
+
       const saved: Awaited<ReturnType<typeof db.generatedLayout.create>>[] = [];
       for (const v of VARIANTS) {
-        // ── 每款各自生文案（A 鎖定使用者文字；B/C 自由發揮 → 3 款文字唔同）──
+        // ── 每款各自生文案 ──
         const copyPrompt = buildCopyPrompt({
           theme:      copyTheme,
           focusPoint: activity.focusPoint ?? "",
@@ -201,16 +205,17 @@ export async function POST(request: Request) {
           toneLabels: tones,
           layoutType: v.copyLayout,
           taboos:     [],
-          forceTitle: v.copyLayout === "A",
+          forceTitle: false, // 一律讓 AI 寫（有必放文字時只取佢嘅副標，主標用戶鎖定）
           productContext: productDesc ?? undefined,
         });
         const rawCopy = (await chatTextOpenRouter(copyPrompt, 500)) ?? "";
         const { title: aiTitle, imageSubtitle: aiSub } = parseImageText(rawCopy);
-        // 款1（copyLayout A）鎖用戶必放文字：直接 parse 用戶輸入（主標題/副標題），唔俾 AI 改；款2/3 用 AI
+        // 有必放文字：3 款主標都鎖用戶文字（用戶有寫副標就用佢嘅，冇寫 → AI 補，3 款各異）；
+        // 冇必放文字：主副標全部 AI 自由發揮。
         let headline: string, subtitle: string;
-        if (v.copyLayout === "A") {
+        if (hasRequired) {
           const u = parseUserTitle(activity.titleText ?? "");
-          headline = u.title || aiTitle;
+          headline = u.title || activity.titleText!.trim();
           subtitle = u.sub || aiSub;
         } else {
           headline = aiTitle;
@@ -335,9 +340,8 @@ export async function POST(request: Request) {
       console.log(`[generate] Starting layout ${layoutConfig.type}`);
 
       // ── 1. Claude 文案 ──────────────────────────────────────────────────────
-      const requiredText = activity.titleText ?? activity.focusPoint ?? "";
-      // Layout A 鎖定使用者填入的文字；B、C 讓 AI 自由發揮
-      const isLockedLayout = layoutConfig.type === "A";
+      // 有填必放文字 → 三款主標都鎖定用戶那段文字（AI 只補副標）；冇填 → 三款全部 AI 自由發揮。
+      const hasRequired = !!activity.titleText?.trim();
       const copyPrompt = buildCopyPrompt({
         theme:      activity.theme,
         focusPoint: activity.focusPoint ?? "",
@@ -345,18 +349,18 @@ export async function POST(request: Request) {
         toneLabels,
         layoutType: layoutConfig.type,
         taboos,
-        forceTitle: isLockedLayout,
+        forceTitle: false, // 一律讓 AI 寫（有必放文字時只取佢嘅副標，主標用戶鎖定）
       });
       const rawCopy = (await chatTextOpenRouter(copyPrompt, 500)) ?? "";
 
       // 圖上文字（短版）：主標題 + 圖上副標
       const { title: aiTitle, imageSubtitle: aiImageSubtitle } = parseImageText(rawCopy);
 
-      // Layout A（鎖定）：prompt 已要求 AI 把使用者指定文字「不增刪改字」拆成主標+副標並做層次
-      //                  → 直接採用 AI 拆分結果，保留設計感；AI 萬一沒給才降級用原文
-      // Layout B/C：完全採用 AI 發想結果
-      const finalTitle = aiTitle || (isLockedLayout ? (activity.titleText?.trim() ?? "") : "");
-      const finalImageSubtitle = aiImageSubtitle;
+      // 有必放文字：三款主標都鎖用戶文字（用戶有寫副標就用佢嘅，冇寫 → AI 補，三款各異）；
+      // 冇必放文字：主副標全部 AI 自由發揮。
+      const uReq = hasRequired ? parseUserTitle(activity.titleText ?? "") : { title: "", sub: "" };
+      const finalTitle = hasRequired ? (uReq.title || activity.titleText!.trim()) : aiTitle;
+      const finalImageSubtitle = hasRequired ? (uReq.sub || aiImageSubtitle) : aiImageSubtitle;
       // 發文文案（長版）
       const postCopy = parsePostCopy(rawCopy) || rawCopy;
       console.log(`[generate] ✅ Copy | title="${finalTitle}" imgSub="${finalImageSubtitle}" post="${postCopy.slice(0, 40)}…"`);
