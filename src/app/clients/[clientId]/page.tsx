@@ -71,7 +71,7 @@ function ActivityRow({
           ? <img src={thumb} alt="" className="h-full w-full object-cover" loading="lazy" />
           : <ImageIcon className="h-5 w-5 text-gray-300" />}
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="font-medium truncate">{act.theme}</div>
         {/* [UX] 副標和標題常一樣 → 只在真的不同時才顯示，去重複、降列高 */}
         {act.focusPoint && act.focusPoint !== act.theme && (
