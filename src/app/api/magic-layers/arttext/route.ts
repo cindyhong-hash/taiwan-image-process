@@ -19,14 +19,17 @@ export const maxDuration = 120;
 const OR = "https://openrouter.ai/api/v1/chat/completions";
 const IMG_MODEL = "google/gemini-3-pro-image-preview";
 
-/** 直接叫 Gemini 圖片編輯：喺白底畫布上照 prompt 畫，回 Buffer（png）。 */
-async function geminiRender(dataUrl: string, prompt: string): Promise<Buffer | null> {
+/** 直接叫 Gemini 圖片編輯：喺白底畫布上照 prompt 畫，回 Buffer（png）。
+    refUrl 有值時當作「風格參考圖」一齊餵入（第二張圖），提升風格保真度。 */
+async function geminiRender(dataUrl: string, prompt: string, refUrl?: string | null): Promise<Buffer | null> {
+  const content: Array<Record<string, unknown>> = [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl } }];
+  if (refUrl) content.push({ type: "image_url", image_url: { url: refUrl } });
   const res = await fetch(OR, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` },
     body: JSON.stringify({
       model: IMG_MODEL,
-      messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl } }] }],
+      messages: [{ role: "user", content }],
       modalities: ["image", "text"],
     }),
   });
@@ -101,14 +104,27 @@ export async function POST(request: Request) {
         if (desc && desc.trim()) styleHint = desc.trim();
       }
 
-      prompt =
-        `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), horizontally centered, large and readable but leaving clear empty margins around it (do NOT fill the frame edge-to-edge). ` +
-        `The text to render (delimited by <<< >>>, the delimiters are NOT part of the text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
-        `Apply this visual style to the lettering: ${styleHint}.${toneHint} ` +
-        commonRules;
+      if (hasRef) {
+        // 有參考圖：第一張=白底畫布（畫呢度）、第二張=風格參考圖。同時附上文字風格描述做強化。
+        // 直接俾模型睇參考圖 → 風格保真；明確叫佢忽略參考圖上嘅字、只寫目標字 → 防抄；
+        // 明令不得加參考圖冇嘅裝飾 → 防止亂加翅膀/彩帶/星星。
+        prompt =
+          `You are given TWO images. The FIRST is a blank white canvas — draw on it. The SECOND is a STYLE REFERENCE. ` +
+          `Reproduce the SECOND image's exact typography style — same font shape/weight, colours, gradient, outline, shadow, texture and finish (${styleHint}) — but with COMPLETELY DIFFERENT words. ` +
+          `The text to render (delimited by <<< >>>, delimiters not part of text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
+          `⚠️ The reference image contains different words — you MUST NOT copy, read or reuse any of its characters, words or numbers; render ONLY <<<${target}>>>. ` +
+          `⚠️ Do NOT invent or add any decorative elements that are not part of the reference's lettering style — no extra wings, ribbons, confetti, sparkles, stars, banners, mascots or background shapes unless the reference clearly has them. Match the reference's level of decoration, no more. ${toneHint} ` +
+          commonRules;
+      } else {
+        prompt =
+          `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), horizontally centered, large and readable but leaving clear empty margins around it (do NOT fill the frame edge-to-edge). ` +
+          `The text to render (delimited by <<< >>>, the delimiters are NOT part of the text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
+          `Apply this visual style to the lettering: ${styleHint}.${toneHint} ` +
+          commonRules;
+      }
     }
 
-    const genBuf = await geminiRender(baseUrl, prompt);
+    const genBuf = await geminiRender(baseUrl, prompt, isEdit ? null : (hasRef ? refImageUrl : null));
     if (!genBuf) return NextResponse.json({ error: "特效字生成失敗，請重試" }, { status: 500 });
     const genUrl = await saveBuffer(genBuf, "png", "ml-arttext-src-");
 
