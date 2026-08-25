@@ -2,12 +2,15 @@
    POST /api/magic-layers/arttext
    AI 特效字：把一段文字生成成藝術字圖（立體/漸層/書法…）。
    作法：純白底 → Gemini 只畫「隔離的藝術字」→ 去背成透明 PNG → 疊在版面上。
-   Body: { text, subtitle?, width?, height?, style?, brandTones? }
+   有參考圖時：先用視覺模型「只描述風格（不讀內容文字）」→ 再拿描述去生字，
+   圖像模型完全睇唔到參考圖，避免抄到參考圖上原本嘅字。
+   Body: { text, subtitle?, width?, height?, style?, brandTones?, refImageUrl? }
    Returns: { url, transparent } | { error }
    需要 OPENROUTER_API_KEY（生字）＋ FAL_KEY（去背，選用；失敗退回不透明）。
    ============================================================ */
 import { NextResponse } from "next/server";
 import { removeBackground } from "@/lib/fal";
+import { describeImageOpenRouter } from "@/lib/openrouter";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 import sharp from "sharp";
 
@@ -16,17 +19,14 @@ export const maxDuration = 120;
 const OR = "https://openrouter.ai/api/v1/chat/completions";
 const IMG_MODEL = "google/gemini-3-pro-image-preview";
 
-/** 直接叫 Gemini 圖片編輯：喺底圖上照 prompt 畫，回 Buffer（png）。
-    refUrl 有值時當作「風格參考圖」一齊餵入（第二張圖）。 */
-async function geminiRender(dataUrl: string, prompt: string, refUrl?: string | null): Promise<Buffer | null> {
-  const content: Array<Record<string, unknown>> = [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl } }];
-  if (refUrl) content.push({ type: "image_url", image_url: { url: refUrl } });
+/** 直接叫 Gemini 圖片編輯：喺白底畫布上照 prompt 畫，回 Buffer（png）。 */
+async function geminiRender(dataUrl: string, prompt: string): Promise<Buffer | null> {
   const res = await fetch(OR, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` },
     body: JSON.stringify({
       model: IMG_MODEL,
-      messages: [{ role: "user", content }],
+      messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl } }] }],
       modalities: ["image", "text"],
     }),
   });
@@ -65,27 +65,32 @@ export async function POST(request: Request) {
     const whiteBuf = await sharp({ create: { width: genW, height: genH, channels: 3, background: "#ffffff" } }).png().toBuffer();
     const baseUrl = `data:image/png;base64,${whiteBuf.toString("base64")}`;
 
-    const styleHint = STYLE_HINTS[String(style)] || STYLE_HINTS.gradient;
     const toneHint = Array.isArray(brandTones) && brandTones.length ? ` Prefer these brand colours: ${brandTones.slice(0, 3).join(", ")}.` : "";
     const subLine = subtitle && String(subtitle).trim() ? ` Below it, in a much smaller matching style, render the subtitle text "${String(subtitle).trim()}".` : "";
-
-    const commonRules =
-      `CRITICAL RULES: pure flat solid WHITE (#FFFFFF) background, absolutely nothing else in the image — no product, no photo, no scene, no people, no objects, no borders, no frame, no decorative background patterns. ` +
-      `Keep the exact characters and spelling of the text unchanged (it may be Traditional Chinese). Make the lettering large, clean, high-contrast and well-readable. Just the stylized text on white.`;
-
-    // 有參考圖：第一張係白底畫布、第二張係風格參考圖 → 只借風格，唔可以抄參考圖上嘅字
     const target = String(text).trim();
-    const prompt = hasRef
-      ? `You are given two images. The FIRST is a blank white canvas — draw on it. The SECOND image is ONLY a VISUAL STYLE REFERENCE. ` +
-        `The text I want you to render is EXACTLY and ONLY: 「${target}」.${subLine} ` +
-        `⚠️ VERY IMPORTANT: The style-reference image probably contains DIFFERENT words — you must completely IGNORE and NOT copy any characters, words, numbers or wording from the reference image. Do NOT read its text. Copy only its visual TREATMENT: the lettering style, colour palette, gradient, texture, material, outline and shadow effects. ` +
-        `Then, on the white canvas, render the target text 「${target}」 (and nothing else) in that borrowed visual style — the characters must be EXACTLY 「${target}」, same order and spelling.${toneHint} ` +
-        commonRules
-      : `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), centered and filling most of the frame: "${String(text).trim()}".${subLine} ` +
-        `Style: ${styleHint}.${toneHint} ` +
-        commonRules;
 
-    const genBuf = await geminiRender(baseUrl, prompt, hasRef ? refImageUrl : null);
+    // 有參考圖 → 先用視覺模型「只描述風格（唔講內容文字）」，再拿呢段描述去生字。
+    // 咁圖像模型完全睇唔到參考圖，就唔可能抄到參考圖上嘅字。
+    let styleHint = STYLE_HINTS[String(style)] || STYLE_HINTS.gradient;
+    if (hasRef) {
+      const desc = await describeImageOpenRouter(
+        refImageUrl,
+        `Describe ONLY the visual TYPOGRAPHY STYLE of the lettering/word-art in this image, so it can be reproduced with different words. ` +
+          `Cover: font style/weight, colour palette and gradients (name hex-ish colours), outline/stroke, drop shadow or glow, 3D/bevel/texture/material, and any decorative flourishes. ` +
+          `⚠️ Do NOT transcribe, quote or mention the ACTUAL words, characters or numbers shown — describe style only, in one compact English sentence.`,
+        180,
+      );
+      if (desc && desc.trim()) styleHint = desc.trim();
+    }
+
+    const prompt =
+      `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), centered and filling most of the frame. ` +
+      `The text to render (delimited by <<< >>>, the delimiters are NOT part of the text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
+      `Apply this visual style to the lettering: ${styleHint}.${toneHint} ` +
+      `CRITICAL RULES: pure flat solid WHITE (#FFFFFF) background, absolutely nothing else in the image — no product, no photo, no scene, no people, no objects, no borders, no frame, no decorative background patterns. ` +
+      `Do NOT draw any quotation marks, brackets, guillemets or delimiter symbols — only the actual characters ${target}. Make the lettering large, clean, high-contrast and well-readable. Just the stylized text on white.`;
+
+    const genBuf = await geminiRender(baseUrl, prompt);
     if (!genBuf) return NextResponse.json({ error: "特效字生成失敗，請重試" }, { status: 500 });
     const genUrl = await saveBuffer(genBuf, "png", "ml-arttext-src-");
 
