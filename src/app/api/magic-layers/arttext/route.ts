@@ -97,9 +97,10 @@ export async function POST(request: Request) {
         const desc = await describeImageOpenRouter(
           refImageUrl,
           `Describe ONLY the visual TYPOGRAPHY STYLE of the lettering/word-art in this image, so it can be reproduced with different words. ` +
-            `Cover: font style/weight, colour palette and gradients (name hex-ish colours), outline/stroke, drop shadow or glow, 3D/bevel/texture/material, and any decorative flourishes. ` +
-            `⚠️ Do NOT transcribe, quote or mention the ACTUAL words, characters or numbers shown — describe style only, in one compact English sentence.`,
-          180,
+            `Focus above all on the COLOUR OF THE GLYPHS THEMSELVES (the fill colour of the letter strokes) — give the closest hex code(s); if it is a gradient, name the from→to hex. This is the letters' OWN colour, which is usually DIFFERENT from the image's background colour — describe ONLY the letter fill, and separately note the background colour just so it is not confused with the text. ` +
+            `Also cover: font style/weight (e.g. rounded bold sans, brush script, serif), outline/stroke colour+thickness, drop shadow or glow, 3D/bevel/texture/material, and any decorative flourishes. ` +
+            `⚠️ Do NOT transcribe, quote or mention the ACTUAL words, characters or numbers shown — describe style only, in 1-2 compact English sentences.`,
+          220,
         );
         if (desc && desc.trim()) styleHint = desc.trim();
       }
@@ -110,7 +111,8 @@ export async function POST(request: Request) {
         // 明令不得加參考圖冇嘅裝飾 → 防止亂加翅膀/彩帶/星星。
         prompt =
           `You are given TWO images. The FIRST is a blank white canvas — draw on it. The SECOND is a STYLE REFERENCE. ` +
-          `Reproduce the SECOND image's exact typography style — same font shape/weight, colours, gradient, outline, shadow, texture and finish (${styleHint}) — but with COMPLETELY DIFFERENT words. ` +
+          `Reproduce the SECOND image's exact typography style — same font shape/weight, outline, shadow, texture and finish (${styleHint}) — but with COMPLETELY DIFFERENT words. ` +
+          `Match the GLYPH FILL COLOUR of the reference letters precisely (the colour of the letter strokes themselves, NOT the reference's background colour — ignore/discard the reference background entirely and put the new text on plain white). ` +
           `The text to render (delimited by <<< >>>, delimiters not part of text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
           `⚠️ The reference image contains different words — you MUST NOT copy, read or reuse any of its characters, words or numbers; render ONLY <<<${target}>>>. ` +
           `⚠️ Do NOT invent or add any decorative elements that are not part of the reference's lettering style — no extra wings, ribbons, confetti, sparkles, stars, banners, mascots or background shapes unless the reference clearly has them. Match the reference's level of decoration, no more. ${toneHint} ` +
