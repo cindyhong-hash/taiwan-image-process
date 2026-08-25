@@ -2,9 +2,12 @@
    POST /api/magic-layers/arttext
    AI 特效字：把一段文字生成成藝術字圖（立體/漸層/書法…）。
    作法：純白底 → Gemini 只畫「隔離的藝術字」→ 去背成透明 PNG → 疊在版面上。
-   有參考圖時：先用視覺模型「只描述風格（不讀內容文字）」→ 再拿描述去生字，
-   圖像模型完全睇唔到參考圖，避免抄到參考圖上原本嘅字。
-   Body: { text, subtitle?, width?, height?, style?, brandTones?, refImageUrl? }
+   內容鎖定（Content Lock）：最終只顯示 CONTENT 的文字，一字不差；參考圖只當
+   風格來源，其文字內容一律忽略。可選傳入 guideImageUrl（前端用真字體把目標文字
+   畫成引導圖）→ AI 只上風格、不重畫字形，大幅降低破字/改字。
+   Body: { text, subtitle?, width?, height?, style?, brandTones?,
+           refImageUrl?（風格參考）, guideImageUrl?（字形引導）,
+           editImageUrl?+instruction?（AI 微調 image-to-image） }
    Returns: { url, transparent } | { error }
    需要 OPENROUTER_API_KEY（生字）＋ FAL_KEY（去背，選用；失敗退回不透明）。
    ============================================================ */
@@ -54,79 +57,79 @@ const STYLE_HINTS: Record<string, string> = {
 export async function POST(request: Request) {
   try {
     if (!process.env.OPENROUTER_API_KEY) return NextResponse.json({ error: "缺少 OPENROUTER_API_KEY（生成特效字需要）" }, { status: 400 });
-    const { text, subtitle, width, height, style, brandTones, refImageUrl, editImageUrl, instruction } = await request.json();
+    const { text, subtitle, width, height, style, brandTones, refImageUrl, guideImageUrl, editImageUrl, instruction } = await request.json();
     if (!text || !String(text).trim()) return NextResponse.json({ error: "缺少文字" }, { status: 400 });
-    const hasRef = typeof refImageUrl === "string" && /^(data:image\/|https?:\/\/|\/)/.test(refImageUrl);
-    const isEdit = typeof editImageUrl === "string" && !!editImageUrl && typeof instruction === "string" && !!instruction.trim();
+    const isImgUrl = (v: unknown): v is string => typeof v === "string" && /^(data:image\/|https?:\/\/|\/)/.test(v);
+    const hasRef = isImgUrl(refImageUrl);
+    const hasGuide = isImgUrl(guideImageUrl);
+    const isEdit = isImgUrl(editImageUrl) && typeof instruction === "string" && !!instruction.trim();
 
     const target = String(text).trim();
     const toneHint = Array.isArray(brandTones) && brandTones.length ? ` Prefer these brand colours: ${brandTones.slice(0, 3).join(", ")}.` : "";
     const subLine = subtitle && String(subtitle).trim() ? ` Below it, in a much smaller matching style, render the subtitle text "${String(subtitle).trim()}".` : "";
-    const commonRules =
-      `CRITICAL RULES: pure flat solid WHITE (#FFFFFF) background, absolutely nothing else in the image — no product, no photo, no scene, no people, no objects, no borders, no frame, no decorative background patterns. ` +
-      `Do NOT draw any quotation marks, brackets, guillemets or delimiter symbols — only the actual characters ${target}. ` +
-      `FRAMING (extremely important): the ENTIRE text block must occupy only the central ~65% width and ~55% height of the image, surrounded by a big empty white margin on all four sides. Every part — each character AND every decorative flourish, swirl, tail, serif, outline, glow and drop shadow — must stay well inside, never touching or crossing any edge (top, bottom, left, right). When unsure, make the lettering SMALLER; excess empty margin is fine and preferred, clipping is unacceptable. ` +
-      `Make the lettering clean, high-contrast and well-readable. Just the stylized text on white.`;
+
+    // 內容鎖定：最終作品必須「一字不差」顯示 CONTENT，且忽略參考圖上的任何文字
+    const contentLock =
+      `STRICT CONTENT LOCK — the artwork MUST display EXACTLY this text, once:\nCONTENT: <<<${target}>>>\n` +
+      `- Preserve every character, number, punctuation and spacing exactly. Do NOT replace / remove / add / reorder any character. Numbers stay identical (e.g. "88" must remain "88", never a symbol). ` +
+      `- Any text visible inside the STYLE_REFERENCE must be IGNORED as content — never copy its words, sentences, logos or numbers. The output shows <<<${target}>>> and nothing else textual.${subLine} ` +
+      `- Do NOT draw the <<< >>> delimiters or any quotation marks/brackets — only the actual characters ${target}.`;
+    // 構圖：完整、不裁切、四周留白（之後還會用 alpha bounding box 再裁一次）
+    const composition =
+      `COMPOSITION: solid flat WHITE (#FFFFFF) background, nothing else besides the styled text — no product/photo/scene/border/background pattern. ` +
+      `Keep the COMPLETE artwork inside the canvas with generous empty margin (>=12–15% on every side). Never crop any character, outline, stroke, shadow, glow or decorative element; nothing may touch or cross any edge. When unsure, scale the lettering DOWN — excess margin is preferred, clipping is unacceptable.`;
 
     let baseUrl: string;
     let prompt: string;
+    let refForModel: string | null = hasRef ? refImageUrl : null;
+
+    // 參考圖 → 先用視覺模型只描述「字本身」的視覺風格（不讀內容文字），強化風格保真
+    let styleHint = STYLE_HINTS[String(style)] || STYLE_HINTS.gradient;
+    if (hasRef && !isEdit) {
+      const desc = await describeImageOpenRouter(
+        refImageUrl,
+        `Describe ONLY the visual TYPOGRAPHY STYLE of the lettering/word-art in this image, so it can be reproduced with different words. ` +
+          `Focus above all on the COLOUR OF THE GLYPHS THEMSELVES (the fill colour of the letter strokes) — give the closest hex code(s); if it is a gradient, name the from→to hex. This is the letters' OWN colour, usually DIFFERENT from the background colour — describe ONLY the letter fill, and note the background colour separately just so it is not confused with the text. ` +
+          `Also cover: font style/weight, outline/stroke colour+thickness, drop shadow or glow, 3D/bevel/texture/material, decorative flourishes. ` +
+          `⚠️ Do NOT transcribe, quote or mention the ACTUAL words, characters or numbers shown — describe style only, in 1-2 compact English sentences.`,
+        220,
+      );
+      if (desc && desc.trim()) styleHint = desc.trim();
+    }
+    const styleClause = hasRef
+      ? `STYLE_REFERENCE (the second image) provides the visual style ONLY: ${styleHint}. Transfer only its visual characteristics — typography style, stroke thickness, glyph FILL colour (match it precisely; ignore the reference's background colour), gradient, outline, shadow, depth, texture, decoration, spacing and mood. Do NOT add decorative elements the reference does not have (no extra wings/ribbons/confetti/stars/banners/mascots).`
+      : `Target visual style: ${styleHint}.`;
 
     if (isEdit) {
-      // AI 微調：拿現有藝術字（可能已透明）壓平到白底做底圖，照指令改，字元不變
+      // AI 微調：image-to-image，拿現有藝術字壓平到白底做底圖，只改風格、內容鎖定
       const cur = await loadBuffer(editImageUrl);
       const flat = await sharp(Buffer.from(cur)).flatten({ background: "#ffffff" }).png().toBuffer();
       baseUrl = `data:image/png;base64,${flat.toString("base64")}`;
       prompt =
-        `This image is an existing piece of word-art (藝術字) on a white background. Modify it according to this instruction: 「${String(instruction).trim()}」. ` +
-        `Keep the EXACT same text — the characters must stay <<<${target}>>> (delimiters not part of text), same wording, order and spelling; do not add or remove any characters. Only change the requested visual aspect and keep everything else consistent. ` +
-        commonRules;
+        `You are editing an EXISTING typography artwork (shown on the canvas). Apply ONLY this visual change requested by the user: 「${String(instruction).trim()}」. ` +
+        `Keep the existing composition, layout and glyph shapes; change only the requested visual aspect and keep everything else consistent.${hasRef ? " The second image is the original STYLE_REFERENCE for guidance." : ""} ` +
+        contentLock + " " + composition;
+    } else if (hasGuide) {
+      // 字形 guide：底圖已用真字體畫好目標文字 → AI 只上風格、不可重畫字形（大幅降低破字/改字）
+      baseUrl = guideImageUrl;
+      prompt =
+        `You are creating a standalone typography artwork. The canvas ALREADY shows the exact target text drawn in a plain reference font. ` +
+        `Treat those glyph shapes and their positions as a FIXED skeleton: RESTYLE them (colour, gradient, stroke, outline, shadow, depth, texture, decoration, weight) into the target style, but do NOT change, re-shape into different characters, add or remove any glyph. Keep the same characters, order and layout as drawn. ` +
+        styleClause + " " + contentLock + " " + composition;
     } else {
-      // 生成尺寸：夾在 768–1280、保留圖層框長寬比（太小 Gemini 畫唔清楚）
+      // 後備：無 guide → 白底從零生成
       const boxW = Math.round(width) > 0 ? Math.round(width) : 1008;
       const boxH = Math.round(height) > 0 ? Math.round(height) : 256;
       const genW = Math.min(1280, Math.max(768, boxW));
-      // 多給 ~35% 垂直空間 + 至少 42% 高的比例，讓高字（含外框/陰影）有留白不被切
       const genH = Math.min(1280, Math.max(Math.round(genW * 0.42), Math.round(genW * (boxH / boxW) * 1.35)));
       const whiteBuf = await sharp({ create: { width: genW, height: genH, channels: 3, background: "#ffffff" } }).png().toBuffer();
       baseUrl = `data:image/png;base64,${whiteBuf.toString("base64")}`;
-
-      // 有參考圖 → 先用視覺模型「只描述風格（唔講內容文字）」，再拿呢段描述去生字。
-      // 咁圖像模型完全睇唔到參考圖，就唔可能抄到參考圖上嘅字。
-      let styleHint = STYLE_HINTS[String(style)] || STYLE_HINTS.gradient;
-      if (hasRef) {
-        const desc = await describeImageOpenRouter(
-          refImageUrl,
-          `Describe ONLY the visual TYPOGRAPHY STYLE of the lettering/word-art in this image, so it can be reproduced with different words. ` +
-            `Focus above all on the COLOUR OF THE GLYPHS THEMSELVES (the fill colour of the letter strokes) — give the closest hex code(s); if it is a gradient, name the from→to hex. This is the letters' OWN colour, which is usually DIFFERENT from the image's background colour — describe ONLY the letter fill, and separately note the background colour just so it is not confused with the text. ` +
-            `Also cover: font style/weight (e.g. rounded bold sans, brush script, serif), outline/stroke colour+thickness, drop shadow or glow, 3D/bevel/texture/material, and any decorative flourishes. ` +
-            `⚠️ Do NOT transcribe, quote or mention the ACTUAL words, characters or numbers shown — describe style only, in 1-2 compact English sentences.`,
-          220,
-        );
-        if (desc && desc.trim()) styleHint = desc.trim();
-      }
-
-      if (hasRef) {
-        // 有參考圖：第一張=白底畫布（畫呢度）、第二張=風格參考圖。同時附上文字風格描述做強化。
-        // 直接俾模型睇參考圖 → 風格保真；明確叫佢忽略參考圖上嘅字、只寫目標字 → 防抄；
-        // 明令不得加參考圖冇嘅裝飾 → 防止亂加翅膀/彩帶/星星。
-        prompt =
-          `You are given TWO images. The FIRST is a blank white canvas — draw on it. The SECOND is a STYLE REFERENCE. ` +
-          `Reproduce the SECOND image's exact typography style — same font shape/weight, outline, shadow, texture and finish (${styleHint}) — but with COMPLETELY DIFFERENT words. ` +
-          `Match the GLYPH FILL COLOUR of the reference letters precisely (the colour of the letter strokes themselves, NOT the reference's background colour — ignore/discard the reference background entirely and put the new text on plain white). ` +
-          `The text to render (delimited by <<< >>>, delimiters not part of text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
-          `⚠️ The reference image contains different words — you MUST NOT copy, read or reuse any of its characters, words or numbers; render ONLY <<<${target}>>>. ` +
-          `⚠️ Do NOT invent or add any decorative elements that are not part of the reference's lettering style — no extra wings, ribbons, confetti, sparkles, stars, banners, mascots or background shapes unless the reference clearly has them. Match the reference's level of decoration, no more. ${toneHint} ` +
-          commonRules;
-      } else {
-        prompt =
-          `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), horizontally centered, large and readable but leaving clear empty margins around it (do NOT fill the frame edge-to-edge). ` +
-          `The text to render (delimited by <<< >>>, the delimiters are NOT part of the text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
-          `Apply this visual style to the lettering: ${styleHint}.${toneHint} ` +
-          commonRules;
-      }
+      prompt =
+        `You are creating a standalone typography artwork (word art / 藝術字) on the blank white canvas, horizontally centered. ` +
+        styleClause + " " + toneHint + " " + contentLock + " " + composition;
     }
 
-    const genBuf = await geminiRender(baseUrl, prompt, isEdit ? null : (hasRef ? refImageUrl : null));
+    const genBuf = await geminiRender(baseUrl, prompt, refForModel);
     if (!genBuf) return NextResponse.json({ error: "特效字生成失敗，請重試" }, { status: 500 });
     const genUrl = await saveBuffer(genBuf, "png", "ml-arttext-src-");
 
