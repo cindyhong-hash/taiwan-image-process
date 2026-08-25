@@ -59,6 +59,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
   const [renaming, setRenaming] = useState(false);            // 重新命名這個設計
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);   // 短暫顯示「✓ 已儲存」回饋
+  const [artBusy, setArtBusy] = useState(false);   // AI 特效字生成中
   // 復原/重做歷史 refs（實作在 render 定義之後，避免 TDZ）
   const history = useRef<EL[][]>([]);
   const histIdx = useRef(0);
@@ -525,6 +526,27 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
     if (!selEl) return; selEl.fx = patch === null ? null : { ...(selEl.fx ?? {}), ...patch }; selEl.thumb = makeThumb(selEl); markDirty(); render(); refresh();
   };
   const applyFxPreset = (fx: TextFx | null, color?: string) => { if (!selEl) return; if (color) selEl.color = color; selEl.fx = fx; selEl.thumb = makeThumb(selEl); markDirty(); render(); refresh(); };
+  // AI 特效字：把選中的文字生成藝術字圖 → 就地變成圖片圖層（可拖曳，但不再是可編輯文字）
+  const applyArtText = async () => {
+    if (!selEl || !selEl.isText || artBusy) return;
+    const target = selEl;
+    setArtBusy(true);
+    try {
+      const r = await fetch("/api/magic-layers/arttext", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: target.text, width: Math.round(target.w), height: Math.round(target.h) }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? r.statusText);
+      const canvas = await loadToCanvas(d.url);
+      if (!canvas) throw new Error("讀取特效字失敗");
+      const ar = canvas.width / (canvas.height || 1);
+      target.canvas = canvas; target.src = d.url; target.isText = false; target.fx = null; target.shape = null;
+      target.naturalW = canvas.width; target.naturalH = canvas.height;
+      target.h = target.w / ar;   // 保留寬、依比例定高；中心不變
+      target.name = "特效字：" + (target.text || "").slice(0, 8);
+      target.thumb = makeThumb(target);
+      markDirty(); render(); refresh();
+    } catch (err) { alert("AI 特效字失敗：" + (err instanceof Error ? err.message : String(err))); }
+    finally { setArtBusy(false); }
+  };
 
   /* ---------- panel (top layer first) ---------- */
   const panel = [...layersRef.current].reverse();
@@ -683,6 +705,11 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
                         <input type="color" value={toHex(selEl.fx.strokeColor || "#ffffff")} onChange={(e) => updateFx({ strokeColor: e.target.value })} style={{ width: 40, height: 34, border: "1px solid #e5e7eb", borderRadius: 8, padding: 0, cursor: "pointer" }} />
                       </>
                     ) : null}
+                    <button onClick={applyArtText} disabled={artBusy}
+                      style={{ width: "100%", marginTop: 14, height: 38, borderRadius: 10, border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: artBusy ? "default" : "pointer", background: artBusy ? "#a78bfa" : "linear-gradient(135deg,#8b5cf6,#7c3aed)" }}>
+                      {artBusy ? "生成藝術字中…（約 15–30 秒）" : "✨ AI 特效字（生成藝術字）"}
+                    </button>
+                    <p style={{ margin: "6px 0 0", fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>把這段文字生成成藝術字圖，變成可拖曳圖層（之後不能再改字；可用復原還原）。</p>
                     <div style={{ height: 1, background: "#e5e7eb", margin: "18px 0" }} />
                   </>
                 )}
