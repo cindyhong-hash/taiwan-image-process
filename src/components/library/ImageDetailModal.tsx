@@ -47,6 +47,8 @@ type Props = {
   onRefresh?: () => void;
   /** 帶入此圖去「新增活動」（經 sessionStorage 傳 URL + AI prompt，唔會喺網址外露）。 */
   onUseAsActivityRef?: (imageUrl: string, prompt?: string) => void;
+  /** 用此圖做 Magic Layers 分層排版的背景（經 sessionStorage 傳去 /magic-layers/compose）。 */
+  onUseAsComposeBg?: (imageUrl: string) => void;
   onClose: () => void;
 };
 
@@ -102,6 +104,7 @@ export function ImageDetailModal({
   onRefresh,
   onOpenGenerateAsset,
   onUseAsActivityRef,
+  onUseAsComposeBg,
   onClose,
 }: Props) {
   const [confirmDel, setConfirmDel] = useState(false);
@@ -258,7 +261,7 @@ export function ImageDetailModal({
             )}
           </div>
           {/* 固定 footer：帶入掣永遠可見（唔會被高圖 push 走）；兩條統一 outline 風格 */}
-          {!loading && imageUrl && (onUseAsActivityRef || bgComp) && (
+          {!loading && imageUrl && (onUseAsActivityRef || onUseAsComposeBg || bgComp) && (
             <div className="px-5 py-3 border-t shrink-0 space-y-2">
               {bgComp && (
                 <button onClick={() => onInject(bgComp)} disabled={injectedIds?.has(bgComp.id)}
@@ -271,6 +274,13 @@ export function ImageDetailModal({
                 <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
                   className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
                   <Target className="h-3.5 w-3.5" />帶入活動圖生成
+                </button>
+              )}
+              {onUseAsComposeBg && (
+                <button onClick={() => onUseAsComposeBg(imageUrl)}
+                  title="用這張當背景，加去背產品＋可編輯文字，進 Magic Layers 自由排版"
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+                  🧩 用這張做背景排版
                 </button>
               )}
             </div>
@@ -349,12 +359,21 @@ export function ImageDetailModal({
               </div>
             )}
           </div>
-          {onUseAsActivityRef && imageUrl && (
-            <div className="px-5 py-3 border-t shrink-0">
-              <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
-                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
-                <Target className="h-3.5 w-3.5" />帶入活動圖生成
-              </button>
+          {(onUseAsActivityRef || onUseAsComposeBg) && imageUrl && (
+            <div className="px-5 py-3 border-t shrink-0 space-y-2">
+              {onUseAsActivityRef && (
+                <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                  <Target className="h-3.5 w-3.5" />帶入活動圖生成
+                </button>
+              )}
+              {onUseAsComposeBg && (
+                <button onClick={() => onUseAsComposeBg(imageUrl)}
+                  title="用這張當背景，加去背產品＋可編輯文字，進 Magic Layers 自由排版"
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+                  🧩 用這張做背景排版
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -514,12 +533,21 @@ export function ImageDetailModal({
             )}
           </div>
         </div>
-        {onUseAsActivityRef && imageUrl && (
-          <div className="px-5 py-3 border-t shrink-0">
-            <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
-              className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
-              <Target className="h-3.5 w-3.5" />帶入活動圖生成
-            </button>
+        {(onUseAsActivityRef || onUseAsComposeBg) && imageUrl && (
+          <div className="px-5 py-3 border-t shrink-0 space-y-2">
+            {onUseAsActivityRef && (
+              <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
+                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                <Target className="h-3.5 w-3.5" />帶入活動圖生成
+              </button>
+            )}
+            {onUseAsComposeBg && (
+              <button onClick={() => onUseAsComposeBg(imageUrl)}
+                title="用這張當背景，加去背產品＋可編輯文字，進 Magic Layers 自由排版"
+                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+                🧩 用這張做背景排版
+              </button>
+            )}
           </div>
         )}
       </div>

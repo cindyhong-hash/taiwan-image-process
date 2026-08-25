@@ -250,12 +250,19 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
           : item.kind === "material"
             ? (item.mode ? (engineLabel(JSON.stringify({ mode: item.mode })) ?? "AI生成") : "AI生成")
             : null;
+        // Magic Layers 排版：可續編的分層作品，用專屬標籤區隔。
+        let isLayout = false;
+        if (item.kind === "generated") { try { isLayout = JSON.parse(item.paramsJson || "{}").kind === "magicLayout"; } catch { /* ignore */ } }
         return (
           <div className="absolute top-2 left-2 flex items-center gap-1 pointer-events-none">
+            {isLayout ? (
+              <span className="flex items-center gap-1 text-[10px] font-semibold bg-violet-600 text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap">🧩 排版</span>
+            ) : (
             <span className={`flex items-center gap-1 text-[10px] font-semibold ${meta.cls} text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap`}>
               <Icon className="h-2.5 w-2.5" />{meta.label}
             </span>
-            {model && (
+            )}
+            {!isLayout && model && (
               <span className="flex items-center gap-0.5 text-[10px] font-medium bg-black/55 text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap">
                 <Sparkles className="h-2.5 w-2.5" />{model}
               </span>

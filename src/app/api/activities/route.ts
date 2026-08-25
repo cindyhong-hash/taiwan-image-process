@@ -10,6 +10,7 @@ export async function POST(request: Request) {
       productImageUrls, referenceImageUrls, selectedComponentIds,
       baseImageUrl, typographyMood,
       layoutId, genMode, cells, logoMode, variantCount, variantChoice,  // [MULTI] 多圖欄位
+      status,  // 草稿：DRAFT（寫一半離開存起來，不觸發生成）
     } = body;
 
     if (!clientId) {
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
         logoMode:             logoMode ?? "first",
         variantCount:         Number(variantCount) === 2 ? 2 : 1,
         variantChoice:        variantChoice === "B" ? "B" : "A",
-        status: "PENDING",
+        status:               status === "DRAFT" ? "DRAFT" : "PENDING",
       },
     });
 

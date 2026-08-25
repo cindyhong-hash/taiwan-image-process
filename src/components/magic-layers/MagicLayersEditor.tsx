@@ -1,0 +1,976 @@
+"use client";
+/* ============================================================
+   Magic Layers — React editor
+   Canvas layer editor: select / move / scale / rotate / z-order / show / lock /
+   delete / duplicate, zoom + pan. Consumes LayerData[] from the analysis
+   pipeline; extracts each layer along its contour (no rectangle crops).
+   Ported from the verified vanilla engine.
+   ============================================================ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronUp, ChevronDown, Eye, EyeOff, Lock, Unlock, Copy, Trash2, ArrowLeft, Plus, Save, Download, Check, Image as ImageIcon, Upload, Type, BadgeCheck, Square, Star, Minus, Pencil, Undo2, Redo2 } from "lucide-react";
+import type { LayerData, FragmentationReport } from "@/lib/magic-layers/types.ts";
+import { extractLayer } from "@/lib/magic-layers/extract-browser.ts";
+import { alphaHit } from "@/lib/magic-layers/alpha-hit-test.ts";
+import { useUnsavedGuard } from "@/components/common/UnsavedGuard";
+
+/** Vector layer (形狀 / 圖標 / 線條) — drawn on canvas, recolourable (not baked to bitmap). */
+type ShapeSpec = { kind: "rect" | "ellipse" | "line" | "icon"; fill: string; stroke: string; strokeWidth: number; radius?: number; icon?: string };
+
+/** 文字特效（設計感）— 全部在 canvas 即時渲染，文字保持可編輯／可拖曳／可存。
+ *  strokeW = 佔字級的比例（隨字放大縮小），letterSpacing = px。 */
+type TextFx = { gradient?: [string, string] | null; strokeColor?: string; strokeW?: number; shadow?: boolean; italic?: boolean; letterSpacing?: number };
+
+type EL = {
+  id: string; name: string; type: LayerData["type"]; semanticId: string; instanceId: string | null;
+  confidence: number; editable: boolean; source: string;
+  isText: boolean; text: string; color: string; fontSize: number; fontFamily: string; fontWeight: number; align: "left" | "center" | "right";
+  fx?: TextFx | null;        // 文字特效（選用；null/undefined = 純文字）
+  shape: ShapeSpec | null;   // vector layer spec; null for image/text layers
+  canvas: HTMLCanvasElement | null; naturalW: number; naturalH: number;
+  src: string | null;   // persistent image URL (for save/serialize); null for pure-generated canvases
+  cx: number; cy: number; w: number; h: number; rotation: number;
+  visible: boolean; locked: boolean; opacity: number;
+  embeddedText: { text: string }[]; thumb: string | null;
+};
+
+const TYPE_LABEL: Record<string, string> = { background: "背景", product: "產品", person: "人物", object: "物件", decoration: "裝飾", independent_text: "文字" };
+
+/** One serialized layer in a saved 排版 (stored in LibraryImage.paramsJson). */
+export type SavedLayer = {
+  id: string; name: string; type: LayerData["type"]; zIndex: number;
+  x: number; y: number; w: number; h: number; rotation: number; visible: boolean; opacity: number; locked: boolean;
+  image?: string;                     // image layers: persistent URL (or data: fallback)
+  isText?: boolean; text?: string; color?: string; fontSize?: number; fontFamily?: string; fontWeight?: number; align?: "left" | "center" | "right";
+  fx?: { gradient?: [string, string] | null; strokeColor?: string; strokeW?: number; shadow?: boolean; italic?: boolean; letterSpacing?: number } | null;
+  shape?: { kind: "rect" | "ellipse" | "line" | "icon"; fill: string; stroke: string; strokeWidth: number; radius?: number; icon?: string };
+};
+
+export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, logos, name, onRename, onBack, onSave }: { image: HTMLImageElement; layers: LayerData[]; fragmentation?: FragmentationReport; backgrounds?: { url: string; label?: string }[]; logos?: string[]; name?: string; onRename?: (name: string) => void; onBack?: () => void; onSave?: (payload: { docW: number; docH: number; layers: SavedLayer[]; imageDataUrl: string; finalize: boolean }) => Promise<void> }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const addProdRef = useRef<HTMLInputElement>(null);
+  const uploadImgRef = useRef<HTMLInputElement>(null);
+  const uploadLogoRef = useRef<HTMLInputElement>(null);
+  const [adding, setAdding] = useState(false);
+  const [showInsert, setShowInsert] = useState(false);        // 素材庫插入圖片挑選器
+  const [showLogo, setShowLogo] = useState(false);            // Logo 選擇器（多版本挑一個）
+  const [showIcon, setShowIcon] = useState(false);            // 圖標選擇器
+  const [panelTab, setPanelTab] = useState<"design" | "settings">("design");
+  const [renaming, setRenaming] = useState(false);            // 重新命名這個設計
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);   // 短暫顯示「✓ 已儲存」回饋
+  // 復原/重做歷史 refs（實作在 render 定義之後，避免 TDZ）
+  const history = useRef<EL[][]>([]);
+  const histIdx = useRef(0);
+  const savedIdx = useRef(0);
+  const [, bumpHv] = useState(0);
+  const bump = useCallback(() => bumpHv((n) => n + 1), []);
+  const doc = useMemo(() => ({ w: image.naturalWidth, h: image.naturalHeight }), [image]);
+
+  const layersRef = useRef<EL[]>([]);
+  const view = useRef({ zoom: 1, panX: 0, panY: 0 });
+  const drag = useRef<any>(null);
+  const space = useRef(false);
+  const dpr = useRef(1);
+
+  const [, force] = useState(0);
+  const refresh = useCallback(() => force((n) => n + 1), []);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [zoomPct, setZoomPct] = useState(100);
+
+  /* ---------- build editor layers from analysis output ---------- */
+  useEffect(() => {
+    let cancelled = false;
+    const src = document.createElement("canvas");
+    src.width = doc.w; src.height = doc.h;
+    const sctx = src.getContext("2d", { willReadFrequently: true })!;
+    sctx.drawImage(image, 0, 0);
+
+    (async () => {
+      const els: EL[] = await Promise.all(layers.map(async (l) => {
+        const isText = l.type === "independent_text";
+        const st = (l.meta?.style ?? null) as { text?: string; fontSizePx?: number; fontWeight?: number; color?: string; align?: "left" | "center" | "right"; fontFamily?: string; fx?: TextFx | null } | null;
+        // Bitmaps come from the ORIGINAL/generated pixels:
+        //  - objects & background: server cut-out / image (l.image), else client extract
+        //  - matted text (decompose flow): l.image
+        //  - generated/editable text (compose flow): NO image -> rendered as TEXT
+        const shape = (l.meta?.shape as ShapeSpec | undefined) ?? null;   // 向量圖層
+        let canvas: HTMLCanvasElement | null = null;
+        if (l.image) canvas = await loadToCanvas(l.image);
+        else if (!isText && !shape) canvas = extractLayer(image, l, doc.w, doc.h)?.canvas ?? null;
+        const el: EL = {
+          id: l.id, name: l.name, type: l.type, semanticId: l.semanticId, instanceId: l.instanceId,
+          confidence: l.confidence, editable: l.editable, source: l.source, shape, fx: st?.fx ?? null,
+          isText, text: isText ? String(st?.text ?? (l.meta?.textObject as { text?: string } | undefined)?.text ?? l.name) : "",
+          color: st?.color ?? "#241f47", fontSize: st?.fontSizePx ?? Math.max(10, Math.round(l.height * 0.8)),
+          fontFamily: st?.fontFamily ?? "'Noto Sans TC',system-ui,sans-serif", fontWeight: st?.fontWeight ?? 700, align: st?.align ?? "center",
+          canvas, naturalW: canvas?.width || l.width, naturalH: canvas?.height || l.height,
+          src: l.image ?? null,
+          cx: l.x + l.width / 2, cy: l.y + l.height / 2, w: l.width, h: l.height, rotation: l.rotation ?? 0,
+          // runtime flags restored from a saved 排版 (meta), else defaults
+          visible: (l.meta?.visible as boolean | undefined) ?? true,
+          locked: (l.meta?.locked as boolean | undefined) ?? false,
+          opacity: (l.meta?.opacity as number | undefined) ?? 1,
+          embeddedText: l.embeddedText.map((t) => ({ text: t.text })), thumb: null,
+        };
+        if (isText && !st && !canvas) el.color = sampleColor(sctx, l.x, l.y, l.width, l.height);
+        el.thumb = makeThumb(el);
+        return el;
+      }));
+      if (cancelled) return;
+      layersRef.current = els;
+      setSelectedId(null);
+      seedHistory();   // 剛載入（合成/續編）→ 歷史基準、乾淨狀態
+      requestAnimationFrame(() => { fit(); refresh(); });
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [image, layers, doc.w, doc.h]);
+
+  /* ---------- geometry ---------- */
+  const s2d = (sx: number, sy: number) => ({ x: (sx - view.current.panX) / view.current.zoom, y: (sy - view.current.panY) / view.current.zoom });
+  const d2s = (dx: number, dy: number) => ({ x: dx * view.current.zoom + view.current.panX, y: dy * view.current.zoom + view.current.panY });
+  const evPt = (e: PointerEvent | WheelEvent) => { const r = canvasRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const corners = (l: EL) => {
+    const hw = l.w / 2, hh = l.h / 2, cos = Math.cos(l.rotation), sin = Math.sin(l.rotation);
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([px, py]) => ({ x: l.cx + px * cos - py * sin, y: l.cy + px * sin + py * cos }));
+  };
+  const rotHandle = (l: EL) => { const gap = 26 / view.current.zoom, dy = -(l.h / 2 + gap), cos = Math.cos(l.rotation), sin = Math.sin(l.rotation); return { x: l.cx - dy * sin, y: l.cy + dy * cos }; };
+  const toLocal = (l: EL, dx: number, dy: number) => { const ox = dx - l.cx, oy = dy - l.cy, cos = Math.cos(-l.rotation), sin = Math.sin(-l.rotation); return { x: ox * cos - oy * sin, y: ox * sin + oy * cos }; };
+  const sel = () => layersRef.current.find((l) => l.id === selectedId) ?? null;
+  const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
+
+  /* ---------- render ---------- */
+  const render = useCallback(() => {
+    const cv = canvasRef.current, wrap = wrapRef.current;
+    if (!cv || !wrap) return;
+    const ctx = cv.getContext("2d")!;
+    ctx.setTransform(dpr.current, 0, 0, dpr.current, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+
+    ctx.save();
+    ctx.translate(view.current.panX, view.current.panY);
+    ctx.scale(view.current.zoom, view.current.zoom);
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, doc.w, doc.h);
+    ctx.strokeStyle = "rgba(0,0,0,.15)"; ctx.lineWidth = 1 / view.current.zoom; ctx.strokeRect(0, 0, doc.w, doc.h);
+
+    for (const l of layersRef.current) {
+      if (!l.visible) continue;
+      ctx.save();
+      ctx.translate(l.cx, l.cy); ctx.rotate(l.rotation); ctx.globalAlpha = l.opacity;
+      if (l.canvas) {
+        // real original pixels (objects, cropped text, background)
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(l.canvas, -l.w / 2, -l.h / 2, l.w, l.h);
+      } else if (l.isText) {
+        drawTextEl(ctx, l);
+      } else if (l.shape) {
+        drawShapeEl(ctx, l.w, l.h, l.shape);
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+
+    const s = sel();
+    if (s && s.visible) drawSelection(ctx, s);
+  }, [doc.w, doc.h, selectedId]);
+
+  /* ---------- undo / redo history (defined after render to avoid TDZ) ---------- */
+  const seedHistory = useCallback(() => { history.current = [layersRef.current.map(cloneEL)]; histIdx.current = 0; savedIdx.current = 0; bump(); }, [bump]);
+  // markDirty：改動後 push 快照（截掉 redo 分支）→ 離開攔截 + 復原/重做的單一來源
+  const markDirty = useCallback(() => {
+    const h = history.current.slice(0, histIdx.current + 1);
+    h.push(layersRef.current.map(cloneEL));
+    if (h.length > 60) h.shift();
+    history.current = h; histIdx.current = h.length - 1; bump();
+  }, [bump]);
+  const restoreHist = useCallback((idx: number) => {
+    const snap = history.current[idx]; if (!snap) return;
+    layersRef.current = snap.map(cloneEL);
+    histIdx.current = idx;
+    setSelectedId((cur) => (cur && layersRef.current.some((l) => l.id === cur) ? cur : null));
+    bump(); refresh(); render();
+  }, [bump, refresh, render]);
+  const undo = useCallback(() => { if (histIdx.current > 0) restoreHist(histIdx.current - 1); }, [restoreHist]);
+  const redo = useCallback(() => { if (histIdx.current < history.current.length - 1) restoreHist(histIdx.current + 1); }, [restoreHist]);
+  const dirty = histIdx.current !== savedIdx.current;
+  const canUndo = histIdx.current > 0;
+  const canRedo = histIdx.current < history.current.length - 1;
+
+  function drawSelection(ctx: CanvasRenderingContext2D, l: EL) {
+    const cs = corners(l).map((p) => d2s(p.x, p.y));
+    const accent = "#7c3aed";
+    ctx.save(); ctx.lineWidth = 1.5; ctx.strokeStyle = accent;
+    ctx.beginPath(); ctx.moveTo(cs[0].x, cs[0].y); for (let i = 1; i < 4; i++) ctx.lineTo(cs[i].x, cs[i].y); ctx.closePath(); ctx.stroke();
+    if (!l.locked) {
+      const rp = rotHandle(l), rs = d2s(rp.x, rp.y), tm = { x: (cs[0].x + cs[1].x) / 2, y: (cs[0].y + cs[1].y) / 2 };
+      ctx.beginPath(); ctx.moveTo(tm.x, tm.y); ctx.lineTo(rs.x, rs.y); ctx.stroke();
+      dot(ctx, rs.x, rs.y, accent, true);
+      cs.forEach((p) => dot(ctx, p.x, p.y, accent, false));
+    }
+    ctx.restore();
+  }
+  function dot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, round: boolean) {
+    ctx.beginPath(); if (round) ctx.arc(x, y, 6, 0, Math.PI * 2); else ctx.rect(x - 5, y - 5, 10, 10);
+    ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = color; ctx.stroke();
+  }
+
+  /* ---------- hit testing ---------- */
+  function hitHandle(sx: number, sy: number) {
+    const l = sel(); if (!l || l.locked || !l.visible) return null;
+    const cs = corners(l).map((p) => d2s(p.x, p.y));
+    for (let i = 0; i < 4; i++) if (dist(sx, sy, cs[i].x, cs[i].y) <= 10) return { type: "scale" as const };
+    const rp = rotHandle(l), rs = d2s(rp.x, rp.y);
+    if (dist(sx, sy, rs.x, rs.y) <= 10) return { type: "rotate" as const };
+    return null;
+  }
+  function hitLayer(dx: number, dy: number) {
+    const ls = layersRef.current;
+    for (let i = ls.length - 1; i >= 0; i--) {
+      const l = ls[i]; if (!l.visible || l.locked) continue;
+      const lp = toLocal(l, dx, dy);
+      if (Math.abs(lp.x) > l.w / 2 || Math.abs(lp.y) > l.h / 2) continue;   // outside bbox
+      // pixel-perfect: image layers only hit where the cut-out is opaque
+      if (l.canvas && !l.isText) {
+        const u = (lp.x + l.w / 2) / l.w * l.canvas.width;
+        const v = (lp.y + l.h / 2) / l.h * l.canvas.height;
+        if (!alphaHit(l.canvas, u, v)) continue;   // transparent pixel -> fall through
+      }
+      return l;
+    }
+    return null;
+  }
+
+  /* ---------- pointer interaction ---------- */
+  useEffect(() => {
+    const cv = canvasRef.current!; if (!cv) return;
+    const down = (e: PointerEvent) => {
+      cv.setPointerCapture(e.pointerId);
+      const s = evPt(e), d = s2d(s.x, s.y);
+      const wantPan = e.button === 1 || space.current;
+      if (!wantPan) {
+        const h = hitHandle(s.x, s.y);
+        if (h) { const l = sel()!; drag.current = h.type === "scale" ? { mode: "scale", l, ow: l.w, oh: l.h } : { mode: "rotate", l, orot: l.rotation, grab: Math.atan2(d.y - l.cy, d.x - l.cx) }; return; }
+        const l = hitLayer(d.x, d.y);
+        if (l) { if (selectedId !== l.id) setSelectedId(l.id); drag.current = { mode: "move", l, sx: d.x, sy: d.y, ocx: l.cx, ocy: l.cy }; render(); return; }
+      }
+      drag.current = { mode: "pan", sx: s.x, sy: s.y, opx: view.current.panX, opy: view.current.panY };
+      if (!wantPan && selectedId) setSelectedId(null);
+    };
+    const move = (e: PointerEvent) => {
+      const g = drag.current; if (!g) { hover(evPt(e)); return; }
+      const s = evPt(e), d = s2d(s.x, s.y);
+      if (g.mode === "move") { g.l.cx = g.ocx + (d.x - g.sx); g.l.cy = g.ocy + (d.y - g.sy); render(); }
+      else if (g.mode === "scale") { const lp = toLocal(g.l, d.x, d.y); const f = Math.max(Math.abs(lp.x) / (g.ow / 2 || 1), Math.abs(lp.y) / (g.oh / 2 || 1), 0.02); g.l.w = g.ow * f; g.l.h = g.oh * f; render(); }
+      else if (g.mode === "rotate") { const now = Math.atan2(d.y - g.l.cy, d.x - g.l.cx); let r = g.orot + (now - g.grab); if (e.shiftKey) r = Math.round(r / (Math.PI / 12)) * (Math.PI / 12); g.l.rotation = r; render(); }
+      else if (g.mode === "pan") { view.current.panX = g.opx + (s.x - g.sx); view.current.panY = g.opy + (s.y - g.sy); render(); }
+    };
+    const up = () => { if (drag.current && drag.current.l) { drag.current.l.thumb = makeThumb(drag.current.l); if (drag.current.mode !== "pan") markDirty(); } drag.current = null; refresh(); };
+    const hover = (s: { x: number; y: number }) => {
+      if (space.current) { cv.style.cursor = "grab"; return; }
+      const h = hitHandle(s.x, s.y); if (h) { cv.style.cursor = h.type === "rotate" ? "crosshair" : "nwse-resize"; return; }
+      const d = s2d(s.x, s.y); cv.style.cursor = hitLayer(d.x, d.y) ? "move" : "default";
+    };
+    const wheel = (e: WheelEvent) => { e.preventDefault(); const s = evPt(e); setZoom(view.current.zoom * Math.pow(1.0015, -e.deltaY), s); };
+    cv.addEventListener("pointerdown", down); cv.addEventListener("pointermove", move);
+    cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+    cv.addEventListener("wheel", wheel, { passive: false });
+    return () => { cv.removeEventListener("pointerdown", down); cv.removeEventListener("pointermove", move); cv.removeEventListener("pointerup", up); cv.removeEventListener("pointercancel", up); cv.removeEventListener("wheel", wheel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, render]);
+
+  /* ---------- keyboard (space to pan, delete) ---------- */
+  useEffect(() => {
+    const kd = (e: KeyboardEvent) => {
+      const typing = /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName);
+      if (e.code === "Space" && !typing) { space.current = true; if (canvasRef.current) canvasRef.current.style.cursor = "grab"; e.preventDefault(); }
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedId && !typing) { del(selectedId); }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z") && !typing) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "y" || e.key === "Y") && !typing) { e.preventDefault(); redo(); }
+    };
+    const ku = (e: KeyboardEvent) => { if (e.code === "Space") { space.current = false; if (canvasRef.current) canvasRef.current.style.cursor = "default"; } };
+    window.addEventListener("keydown", kd); window.addEventListener("keyup", ku);
+    return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  /* ---------- zoom / fit / resize ---------- */
+  const setZoom = useCallback((z: number, centerScreen?: { x: number; y: number }) => {
+    z = Math.min(32, Math.max(0.02, z));
+    const wrap = wrapRef.current!; const c = centerScreen ?? { x: wrap.clientWidth / 2, y: wrap.clientHeight / 2 };
+    const before = s2d(c.x, c.y); view.current.zoom = z; view.current.panX = c.x - before.x * z; view.current.panY = c.y - before.y * z;
+    setZoomPct(Math.round(z * 100)); render();
+  }, [render]);
+  const fit = useCallback(() => {
+    const wrap = wrapRef.current; if (!wrap || !doc.w) return;
+    const pad = 48, z = Math.min((wrap.clientWidth - pad) / doc.w, (wrap.clientHeight - pad) / doc.h);
+    view.current.zoom = Math.min(32, Math.max(0.02, z));
+    view.current.panX = (wrap.clientWidth - doc.w * view.current.zoom) / 2;
+    view.current.panY = (wrap.clientHeight - doc.h * view.current.zoom) / 2;
+    setZoomPct(Math.round(view.current.zoom * 100)); render();
+  }, [doc.w, doc.h, render]);
+
+  useEffect(() => {
+    const wrap = wrapRef.current, cv = canvasRef.current; if (!wrap || !cv) return;
+    const resize = () => { dpr.current = window.devicePixelRatio || 1; cv.width = Math.round(wrap.clientWidth * dpr.current); cv.height = Math.round(wrap.clientHeight * dpr.current); cv.style.width = wrap.clientWidth + "px"; cv.style.height = wrap.clientHeight + "px"; render(); };
+    resize(); const ro = new ResizeObserver(resize); ro.observe(wrap); return () => ro.disconnect();
+  }, [render]);
+
+  useEffect(() => { render(); }, [render]);
+
+  /* ---------- layer ops ---------- */
+  const idx = (id: string) => layersRef.current.findIndex((l) => l.id === id);
+  const del = (id: string) => { const i = idx(id); if (i < 0) return; layersRef.current.splice(i, 1); if (selectedId === id) setSelectedId(null); markDirty(); refresh(); render(); };
+  const move = (id: string, dir: -1 | 1) => { const i = idx(id); const j = i + dir; if (i < 0 || j < 0 || j >= layersRef.current.length) return; const a = layersRef.current; [a[i], a[j]] = [a[j], a[i]]; markDirty(); refresh(); render(); };
+  const toggleVis = (id: string) => { const l = layersRef.current[idx(id)]; if (l) { l.visible = !l.visible; markDirty(); refresh(); render(); } };
+  const toggleLock = (id: string) => { const l = layersRef.current[idx(id)]; if (l) { l.locked = !l.locked; markDirty(); refresh(); render(); } };
+  const duplicate = (id: string) => { const l = layersRef.current[idx(id)]; if (!l) return; const c: EL = { ...l, id: l.id + "_copy" + Math.floor(view.current.panX + Math.abs(l.cx)), name: l.name + " 複本", cx: l.cx + 24, cy: l.cy + 24 }; layersRef.current.splice(idx(id) + 1, 0, c); setSelectedId(c.id); markDirty(); refresh(); render(); };
+
+  /* ---------- background replacement (pick from library) ---------- */
+  const replaceBackground = useCallback(async (url: string) => {
+    const bg = layersRef.current.find((l) => l.type === "background"); if (!bg) return;
+    const im = await new Promise<HTMLImageElement | null>((res) => { const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = () => res(null); i.src = url; });
+    if (!im) return;
+    const c = document.createElement("canvas"); c.width = doc.w; c.height = doc.h;
+    const ctx = c.getContext("2d", { willReadFrequently: true })!;
+    const s = Math.max(doc.w / im.naturalWidth, doc.h / im.naturalHeight); // cover
+    const w = im.naturalWidth * s, h = im.naturalHeight * s;
+    ctx.drawImage(im, (doc.w - w) / 2, (doc.h - h) / 2, w, h);
+    bg.canvas = c; bg.src = url; bg.naturalW = doc.w; bg.naturalH = doc.h; bg.w = doc.w; bg.h = doc.h; bg.cx = doc.w / 2; bg.cy = doc.h / 2; bg.thumb = makeThumb(bg);
+    markDirty(); render(); refresh();
+  }, [doc.w, doc.h, render, refresh]);
+
+  /* ---------- add a product (upload -> cut out -> new layer) ---------- */
+  const addProduct = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; e.target.value = "";
+    if (!f || adding) return;
+    setAdding(true);
+    try {
+      const dataUrl = await new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(f); });
+      const resp = await fetch("/api/magic-layers/cutout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageDataUrl: dataUrl }) });
+      const d = await resp.json();
+      if (!resp.ok) throw new Error(d.error ?? resp.statusText);
+      const canvas = await loadToCanvas(d.url);
+      if (!canvas) throw new Error("讀取去背圖失敗");
+      // fit the cut-out into ~45% of the canvas, centred
+      const ar = canvas.width / canvas.height;
+      let w = doc.w * 0.45, h = w / ar;
+      if (h > doc.h * 0.55) { h = doc.h * 0.55; w = h * ar; }
+      const el: EL = {
+        id: "product_add_" + Math.floor(view.current.panX + layersRef.current.length + doc.w),
+        name: "產品 " + (layersRef.current.filter((l) => l.type === "product").length + 1),
+        type: "product", semanticId: "product", instanceId: null,
+        confidence: 1, editable: true, source: "segmented",
+        isText: false, text: "", color: "#241f47", fontSize: 24, fontFamily: "'Noto Sans TC',system-ui,sans-serif", fontWeight: 700, align: "center",
+        shape: null, canvas, naturalW: canvas.width, naturalH: canvas.height, src: d.url,
+        cx: doc.w / 2, cy: doc.h / 2, w, h, rotation: 0,
+        visible: true, locked: false, opacity: 1,
+        embeddedText: [], thumb: null,
+      };
+      el.thumb = makeThumb(el);
+      layersRef.current.push(el);        // top of stack
+      setSelectedId(el.id); markDirty(); refresh(); render();
+    } catch (err) { alert("加入產品失敗：" + (err instanceof Error ? err.message : String(err))); }
+    finally { setAdding(false); }
+  }, [adding, doc.w, doc.h, refresh, render]);
+
+  /* ---------- insert tools: image / upload / text / logo ---------- */
+  const FONT = "'Noto Sans TC',system-ui,sans-serif";
+  // 插入一張圖片圖層（不去背）：素材庫 / 上傳圖片 / Logo 共用
+  const pushImageLayer = useCallback(async (url: string, nm: string, type: "object" | "product" = "object") => {
+    const canvas = await loadToCanvas(url);
+    if (!canvas) { alert("讀取圖片失敗"); return; }
+    const ar = canvas.width / (canvas.height || 1);
+    let w = doc.w * 0.4, h = w / ar;
+    if (h > doc.h * 0.5) { h = doc.h * 0.5; w = h * ar; }
+    const el: EL = {
+      id: "img_" + Math.floor(view.current.panX + layersRef.current.length + doc.w + Math.abs(canvas.width)),
+      name: nm, type, semanticId: type, instanceId: null, confidence: 1, editable: true, source: "generated",
+      isText: false, text: "", color: "#241f47", fontSize: 24, fontFamily: FONT, fontWeight: 700, align: "center",
+      shape: null, canvas, naturalW: canvas.width, naturalH: canvas.height, src: url,
+      cx: doc.w / 2, cy: doc.h / 2, w, h, rotation: 0, visible: true, locked: false, opacity: 1, embeddedText: [], thumb: null,
+    };
+    el.thumb = makeThumb(el); layersRef.current.push(el); setSelectedId(el.id); markDirty(); refresh(); render();
+  }, [doc.w, doc.h, markDirty, refresh, render]);
+
+  // 上傳圖片（不去背）→ 先存到 /uploads 拿持久 URL → 圖層
+  const onUploadImage = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; e.target.value = "";
+    if (!f) return;
+    try {
+      const fd = new FormData(); fd.append("file", f);
+      const r = await fetch("/api/upload", { method: "POST", body: fd });
+      const d = await r.json();
+      if (!r.ok || !d.url) throw new Error(d.error ?? "上傳失敗");
+      await pushImageLayer(d.url, "圖片");
+    } catch (err) { alert("上傳失敗：" + (err instanceof Error ? err.message : String(err))); }
+  }, [pushImageLayer]);
+
+  // 加一個文字圖層
+  const addTextLayer = useCallback(() => {
+    const w = Math.round(doc.w * 0.6), h = Math.round(doc.h * 0.09);
+    const el: EL = {
+      id: "text_" + Math.floor(view.current.panX + layersRef.current.length + doc.h),
+      name: "新文字", type: "independent_text", semanticId: "text", instanceId: null, confidence: 1, editable: true, source: "generated",
+      isText: true, text: "新文字", color: "#241f47", fontSize: Math.round(h * 0.7), fontFamily: FONT, fontWeight: 700, align: "center",
+      shape: null, canvas: null, naturalW: w, naturalH: h, src: null,
+      cx: doc.w / 2, cy: doc.h / 2, w, h, rotation: 0, visible: true, locked: false, opacity: 1, embeddedText: [], thumb: null,
+    };
+    el.thumb = makeThumb(el); layersRef.current.push(el); setSelectedId(el.id); markDirty(); refresh(); render();
+  }, [doc.w, doc.h, markDirty, refresh, render]);
+
+  // 向量圖層（形狀 / 線條 / 圖標）——畫在 canvas，可改色，不烤成點陣
+  const pushShapeLayer = useCallback((shape: ShapeSpec, nm: string, w: number, h: number) => {
+    const el: EL = {
+      id: "shape_" + Math.floor(view.current.panX + layersRef.current.length + doc.w + (shape.icon ? shape.icon.length : shape.kind.length)),
+      name: nm, type: "decoration", semanticId: "decoration", instanceId: null, confidence: 1, editable: true, source: "generated",
+      isText: false, text: "", color: "#241f47", fontSize: 24, fontFamily: FONT, fontWeight: 700, align: "center",
+      shape, canvas: null, naturalW: w, naturalH: h, src: null,
+      cx: doc.w / 2, cy: doc.h / 2, w, h, rotation: 0, visible: true, locked: false, opacity: 1, embeddedText: [], thumb: null,
+    };
+    el.thumb = makeThumb(el); layersRef.current.push(el); setSelectedId(el.id); markDirty(); refresh(); render();
+  }, [doc.w, doc.h, markDirty, refresh, render]);
+  const addShape = useCallback(() => {
+    const s = Math.round(Math.min(doc.w, doc.h) * 0.3);
+    pushShapeLayer({ kind: "rect", fill: "#7c3aed", stroke: "none", strokeWidth: 0, radius: 0 }, "形狀", s, s);
+  }, [doc.w, doc.h, pushShapeLayer]);
+  const addLine = useCallback(() => {
+    pushShapeLayer({ kind: "line", fill: "none", stroke: "#1f2937", strokeWidth: 6 }, "線條", Math.round(doc.w * 0.4), 24);
+  }, [doc.w, pushShapeLayer]);
+  const addIcon = useCallback((icon: string) => {
+    setShowIcon(false);
+    const s = Math.round(Math.min(doc.w, doc.h) * 0.16);
+    pushShapeLayer({ kind: "icon", icon, fill: "#1f2937", stroke: "none", strokeWidth: 0 }, "圖標", s, s);
+  }, [doc.w, doc.h, pushShapeLayer]);
+
+  // Logo：開選擇器（同微調畫布的放置標誌）——挑品牌 logo 版本，或直接上傳一個
+  const addLogo = useCallback(() => setShowLogo(true), []);
+  const onUploadLogo = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; e.target.value = "";
+    if (!f) return;
+    setShowLogo(false);
+    try {
+      const fd = new FormData(); fd.append("file", f);
+      const r = await fetch("/api/upload", { method: "POST", body: fd });
+      const d = await r.json();
+      if (!r.ok || !d.url) throw new Error(d.error ?? "上傳失敗");
+      await pushImageLayer(d.url, "Logo");
+    } catch (err) { alert("上傳失敗：" + (err instanceof Error ? err.message : String(err))); }
+  }, [pushImageLayer]);
+
+  /* ---------- save / export (flatten + serialize) ---------- */
+  // Flatten the doc to a full-res PNG (deliverable + 素材庫 image). Mirrors render()
+  // minus pan/zoom/selection, drawn at document coordinates.
+  const flattenToDataUrl = useCallback(() => {
+    const c = document.createElement("canvas");
+    c.width = doc.w; c.height = doc.h;
+    const ctx = c.getContext("2d")!;
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, doc.w, doc.h);
+    for (const l of layersRef.current) {
+      if (!l.visible) continue;
+      ctx.save();
+      ctx.translate(l.cx, l.cy); ctx.rotate(l.rotation); ctx.globalAlpha = l.opacity;
+      if (l.canvas) { ctx.imageSmoothingQuality = "high"; ctx.drawImage(l.canvas, -l.w / 2, -l.h / 2, l.w, l.h); }
+      else if (l.isText) {
+        drawTextEl(ctx, l);
+      } else if (l.shape) {
+        drawShapeEl(ctx, l.w, l.h, l.shape);
+      }
+      ctx.restore();
+    }
+    try { return c.toDataURL("image/png"); } catch { return ""; }
+  }, [doc.w, doc.h]);
+
+  const serializeLayers = useCallback((): SavedLayer[] => layersRef.current.map((l, i) => ({
+    id: l.id, name: l.name, type: l.type, zIndex: i,
+    x: l.cx - l.w / 2, y: l.cy - l.h / 2, w: l.w, h: l.h, rotation: l.rotation,
+    visible: l.visible, opacity: l.opacity, locked: l.locked,
+    ...(l.isText
+      ? { isText: true, text: l.text, color: l.color, fontSize: l.fontSize * (l.w / (l.naturalW || l.w)), fontFamily: l.fontFamily, fontWeight: l.fontWeight, align: l.align, ...(l.fx ? { fx: l.fx } : {}) }
+      : l.shape
+        ? { shape: { ...l.shape } }
+        : { image: l.src ?? (l.canvas ? (safeDataUrl(l.canvas) ?? undefined) : undefined) }),
+  })), []);
+
+  const doSave = useCallback(async (download: boolean) => {
+    if (!onSave || saving) return;
+    setSaving(true);
+    try {
+      const imageDataUrl = flattenToDataUrl();
+      await onSave({ docW: doc.w, docH: doc.h, layers: serializeLayers(), imageDataUrl, finalize: download });
+      setSaved(true); savedIdx.current = histIdx.current; bump(); setTimeout(() => setSaved(false), 2000);
+      if (download && imageDataUrl) {
+        const nameLayer = layersRef.current.find((l) => l.isText);
+        const a = document.createElement("a");
+        a.download = ((nameLayer?.text || "magic-layout").slice(0, 40)) + ".png";
+        a.href = imageDataUrl; document.body.appendChild(a); a.click(); a.remove();
+      }
+    } catch (err) { alert("儲存失敗：" + (err instanceof Error ? err.message : String(err))); }
+    finally { setSaving(false); }
+  }, [onSave, saving, doc.w, doc.h, flattenToDataUrl, serializeLayers]);
+
+  // 離開攔截：有 onSave 且有未存變更 → 攔截並問「儲存草稿／不儲存／取消」
+  const { guard, dialog: unsavedDialog } = useUnsavedGuard(!!onSave && dirty, () => doSave(false));
+
+  /* ---------- text editing (content / colour / size / font) ---------- */
+  const selEl = layersRef.current.find((l) => l.id === selectedId) ?? null;
+  const updateText = (patch: Partial<EL>) => {
+    if (!selEl) return; Object.assign(selEl, patch); selEl.thumb = makeThumb(selEl); markDirty(); render(); refresh();
+  };
+  const updateShape = (patch: Partial<ShapeSpec>) => {
+    if (!selEl || !selEl.shape) return; Object.assign(selEl.shape, patch); selEl.thumb = makeThumb(selEl); markDirty(); render(); refresh();
+  };
+  // 文字特效：patch=null 清除特效（回純文字）；否則合併
+  const updateFx = (patch: Partial<TextFx> | null) => {
+    if (!selEl) return; selEl.fx = patch === null ? null : { ...(selEl.fx ?? {}), ...patch }; selEl.thumb = makeThumb(selEl); markDirty(); render(); refresh();
+  };
+  const applyFxPreset = (fx: TextFx | null, color?: string) => { if (!selEl) return; if (color) selEl.color = color; selEl.fx = fx; selEl.thumb = makeThumb(selEl); markDirty(); render(); refresh(); };
+
+  /* ---------- panel (top layer first) ---------- */
+  const panel = [...layersRef.current].reverse();
+
+  return (
+    <div style={S.root}>
+      {unsavedDialog}
+      {fragmentation?.blocked && (
+        <div style={S.warn}>⚠︎ 偵測到碎片化：{fragmentation.warnings.join("；")}（已阻止直接套用，請人工確認）</div>
+      )}
+      <div style={S.toolbar}>
+        {onBack && <button style={S.tbtn} onClick={() => guard(onBack)} title="返回"><ArrowLeft size={15} />返回</button>}
+        <strong style={{ letterSpacing: ".02em" }}>Magic <span style={{ color: "#7c3aed" }}>Layers</span></strong>
+        {onRename && (renaming ? (
+          <input autoFocus defaultValue={name ?? ""} placeholder="設計名稱"
+            onBlur={(e) => { onRename(e.target.value.trim() || "未命名排版"); setRenaming(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setRenaming(false); }}
+            style={{ ...S.tbtn, width: 180, fontWeight: 500 }} />
+        ) : (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
+            {name ? <>· {name}</> : null}
+            <button style={{ ...S.icon, width: 24, height: 24 }} title="重新命名" onClick={() => setRenaming(true)}><Pencil size={14} /></button>
+          </span>
+        ))}
+        <span style={S.divider} />
+        <button style={{ ...S.tbtn, ...(canUndo ? {} : S.toolOff) }} onClick={undo} disabled={!canUndo} title="復原 (Ctrl+Z)"><Undo2 size={15} /></button>
+        <button style={{ ...S.tbtn, ...(canRedo ? {} : S.toolOff) }} onClick={redo} disabled={!canRedo} title="重做 (Ctrl+Shift+Z)"><Redo2 size={15} /></button>
+        <span style={S.divider} />
+        <button style={S.tbtn} onClick={() => setZoom(view.current.zoom / 1.2)}>−</button>
+        <span style={{ width: 52, textAlign: "center", color: "#9a9cab", fontVariantNumeric: "tabular-nums" }}>{zoomPct}%</span>
+        <button style={S.tbtn} onClick={() => setZoom(view.current.zoom * 1.2)}>＋</button>
+        <button style={S.tbtn} onClick={fit}>符合畫面</button>
+        <button style={S.tbtn} onClick={() => setZoom(1)}>1:1</button>
+        <span style={S.divider} />
+        <button style={{ ...S.tbtn, border: "1px solid #ddd6fe", color: "#7c3aed", background: "#f5f3ff" }} onClick={() => addProdRef.current?.click()} disabled={adding} title="上傳一張產品圖，自動去背後加入為新圖層">
+          {adding ? "去背中…" : <><Plus size={15} />加入產品</>}
+        </button>
+        <input ref={addProdRef} type="file" accept="image/*" onChange={addProduct} style={{ display: "none" }} />
+        {onSave && (
+          <>
+            <span style={S.divider} />
+            <button style={{ ...S.tbtn, ...(saved ? { border: "1px solid #16a34a", color: "#16a34a" } : {}) }} onClick={() => doSave(false)} disabled={saving} title="儲存到素材庫（可續編）">{saving ? "儲存中…" : saved ? <><Check size={15} />已儲存</> : <><Save size={15} />儲存</>}</button>
+            <button style={{ ...S.tbtn, border: "1px solid #7c3aed", background: "#7c3aed", color: "#fff" }} onClick={() => doSave(true)} disabled={saving} title="下載成 PNG，並存進素材庫"><Download size={15} />下載圖片</button>
+          </>
+        )}
+        <span style={{ flex: 1 }} />
+        <span style={{ color: "#9ca3af", fontSize: 12 }}>{layersRef.current.length} 圖層 · 文件 {doc.w}×{doc.h}</span>
+      </div>
+
+      <div style={S.body}>
+        <aside style={S.panel}>
+          {backgrounds && backgrounds.length > 0 && (
+            <div style={{ borderBottom: "1px solid #e5e7eb", padding: "10px 10px 12px" }}>
+              <div style={{ ...S.panelHead, height: "auto", padding: 0, marginBottom: 8, border: "none" }}>背景庫（點擊替換）</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, maxHeight: 168, overflowY: "auto" }}>
+                {backgrounds.map((b, i) => (
+                  <img key={i} src={b.url} alt={b.label ?? ""} title={b.label ?? ""} onClick={() => replaceBackground(b.url)}
+                       style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8, border: "1px solid #e5e7eb", cursor: "pointer" }} />
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{ borderBottom: "1px solid #e5e7eb", padding: "10px 6px 12px" }}>
+            <div style={{ ...S.panelHead, height: "auto", padding: "0 4px", marginBottom: 6, border: "none" }}>工具</div>
+            <button style={S.tool} onClick={() => setShowInsert(true)}><ImageIcon size={16} />素材庫</button>
+            <button style={S.tool} onClick={() => uploadImgRef.current?.click()}><Upload size={16} />上傳圖片</button>
+            <button style={S.tool} onClick={addTextLayer}><Type size={16} />文字</button>
+            <button style={S.tool} onClick={addLogo}><BadgeCheck size={16} />Logo</button>
+            <button style={S.tool} onClick={addShape}><Square size={16} />形狀</button>
+            <button style={S.tool} onClick={() => setShowIcon(true)}><Star size={16} />圖標</button>
+            <button style={S.tool} onClick={addLine}><Minus size={16} />線條</button>
+            <input ref={uploadImgRef} type="file" accept="image/*" onChange={onUploadImage} style={{ display: "none" }} />
+          </div>
+          <div style={S.panelHead}>圖層 Layers</div>
+          <div style={{ overflowY: "auto", padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+            {panel.map((l) => (
+              <div key={l.id} onClick={() => setSelectedId(l.id)}
+                   style={{ ...S.row, ...(l.id === selectedId ? S.rowSel : {}), opacity: l.visible ? 1 : 0.5 }}>
+                <div style={S.thumb}>{l.thumb ? <img src={l.thumb} alt="" style={{ maxWidth: "100%", maxHeight: "100%" }} /> : (l.isText ? "T" : "◇")}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span style={S.name}>{l.name}</span>
+                    {confBadge(l.confidence)}
+                  </div>
+                  <div style={S.sub}>
+                    {TYPE_LABEL[l.type] ?? l.type}{l.instanceId ? ` · ${l.instanceId}` : ""}
+                    {l.embeddedText.length ? ` · 內嵌: ${l.embeddedText.map((t) => t.text).join(", ")}` : ""}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 2 }}>
+                  <button title="上移" style={S.icon} onClick={(e) => { e.stopPropagation(); move(l.id, 1); }}><ChevronUp size={15} /></button>
+                  <button title="下移" style={S.icon} onClick={(e) => { e.stopPropagation(); move(l.id, -1); }}><ChevronDown size={15} /></button>
+                  <button title="顯示/隱藏" style={{ ...S.icon, ...(l.visible ? {} : { color: "#c4b5fd" }) }} onClick={(e) => { e.stopPropagation(); toggleVis(l.id); }}>{l.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+                  <button title="鎖定" style={{ ...S.icon, ...(l.locked ? { color: "#7c3aed" } : {}) }} onClick={(e) => { e.stopPropagation(); toggleLock(l.id); }}>{l.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
+                  <button title="複製" style={S.icon} onClick={(e) => { e.stopPropagation(); duplicate(l.id); }}><Copy size={14} /></button>
+                  <button title="刪除" style={{ ...S.icon, color: "#ef4444" }} onClick={(e) => { e.stopPropagation(); del(l.id); }}><Trash2 size={14} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </aside>
+
+        <div ref={wrapRef} style={S.stage}>
+          <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, touchAction: "none" }} />
+        </div>
+
+        {selEl && (
+          <aside style={S.rpanel}>
+            <div style={S.rtabs}>
+              <button style={{ ...S.rtab, ...(panelTab === "design" ? S.rtabOn : {}) }} onClick={() => setPanelTab("design")}>設計</button>
+              <button style={{ ...S.rtab, ...(panelTab === "settings" ? S.rtabOn : {}) }} onClick={() => setPanelTab("settings")}>設定</button>
+            </div>
+            {panelTab === "design" ? (
+              <div style={{ padding: 16, overflowY: "auto" }}>
+                {selEl.isText && (
+                  <>
+                    <div style={S.rhead}>文字設定</div>
+                    <label style={S.rlabel}>文字內容</label>
+                    <input value={selEl.text} onChange={(e) => updateText({ text: e.target.value })} style={S.rinput} />
+                    <label style={S.rlabel}>字體</label>
+                    <select value={selEl.fontFamily} onChange={(e) => updateText({ fontFamily: e.target.value })} style={S.rinput}>
+                      <option value="'Noto Sans TC',system-ui,sans-serif">Noto Sans TC</option>
+                      <option value="'Noto Serif TC',serif">Noto Serif TC</option>
+                      <option value="'Manrope','Noto Sans TC',sans-serif">Manrope</option>
+                    </select>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <div style={{ flex: 1 }}><label style={S.rlabel}>字型大小</label>
+                        <input type="number" value={Math.round(selEl.fontSize)} onChange={(e) => updateText({ fontSize: Math.max(8, Number(e.target.value) || 8) })} style={S.rinput} /></div>
+                      <div style={{ flex: 1 }}><label style={S.rlabel}>字重</label>
+                        <select value={selEl.fontWeight} onChange={(e) => updateText({ fontWeight: Number(e.target.value) })} style={S.rinput}>
+                          <option value={400}>Regular</option><option value={600}>Medium</option><option value={700}>Bold</option><option value={800}>Black</option>
+                        </select></div>
+                    </div>
+                    <label style={S.rlabel}>顏色</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input type="color" value={toHex(selEl.color)} onChange={(e) => updateText({ color: e.target.value })} style={{ width: 40, height: 34, border: "1px solid #e5e7eb", borderRadius: 8, padding: 0, cursor: "pointer" }} />
+                      <input value={selEl.color} onChange={(e) => updateText({ color: e.target.value })} style={{ ...S.rinput, flex: 1 }} />
+                    </div>
+                    <label style={S.rlabel}>文字特效（設計感）</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      <button style={{ ...S.fxChip, ...(!selEl.fx ? S.fxChipOn : {}) }} onClick={() => applyFxPreset(null)}>無</button>
+                      <button style={S.fxChip} onClick={() => applyFxPreset({ gradient: ["#fce38a", "#c8811f"] })}>漸層金</button>
+                      <button style={S.fxChip} onClick={() => applyFxPreset({ gradient: ["#c4b5fd", "#6d28d9"] })}>漸層紫</button>
+                      <button style={S.fxChip} onClick={() => applyFxPreset({ strokeColor: "#111827", strokeW: 0.08 }, "#ffffff")}>白字黑框</button>
+                      <button style={S.fxChip} onClick={() => applyFxPreset({ shadow: true })}>陰影</button>
+                      <button style={S.fxChip} onClick={() => applyFxPreset({ gradient: ["#a78bfa", "#7c3aed"], shadow: true })}>霓虹</button>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                      <button style={{ ...S.rbtn, flex: 1, ...(selEl.fx?.strokeW ? { border: "1px solid #7c3aed", color: "#7c3aed" } : {}) }} onClick={() => updateFx({ strokeW: selEl.fx?.strokeW ? 0 : 0.08, strokeColor: selEl.fx?.strokeColor || "#ffffff" })}>外框</button>
+                      <button style={{ ...S.rbtn, flex: 1, ...(selEl.fx?.shadow ? { border: "1px solid #7c3aed", color: "#7c3aed" } : {}) }} onClick={() => updateFx({ shadow: !selEl.fx?.shadow })}>陰影</button>
+                      <button style={{ ...S.rbtn, flex: 1, ...(selEl.fx?.italic ? { border: "1px solid #7c3aed", color: "#7c3aed" } : {}) }} onClick={() => updateFx({ italic: !selEl.fx?.italic })}>斜體</button>
+                    </div>
+                    {selEl.fx?.strokeW ? (
+                      <>
+                        <label style={S.rlabel}>外框顏色</label>
+                        <input type="color" value={toHex(selEl.fx.strokeColor || "#ffffff")} onChange={(e) => updateFx({ strokeColor: e.target.value })} style={{ width: 40, height: 34, border: "1px solid #e5e7eb", borderRadius: 8, padding: 0, cursor: "pointer" }} />
+                      </>
+                    ) : null}
+                    <div style={{ height: 1, background: "#e5e7eb", margin: "18px 0" }} />
+                  </>
+                )}
+                {selEl.shape && (
+                  <>
+                    <div style={S.rhead}>{selEl.shape.kind === "icon" ? "圖標設定" : selEl.shape.kind === "line" ? "線條設定" : "形狀設定"}</div>
+                    {(selEl.shape.kind === "rect" || selEl.shape.kind === "ellipse") && (<>
+                      <label style={S.rlabel}>類型</label>
+                      <select value={selEl.shape.kind} onChange={(e) => updateShape({ kind: e.target.value as ShapeSpec["kind"] })} style={S.rinput}>
+                        <option value="rect">矩形</option><option value="ellipse">橢圓</option>
+                      </select>
+                      <label style={S.rlabel}>填色</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input type="color" value={toHex(selEl.shape.fill === "none" ? "#7c3aed" : selEl.shape.fill)} onChange={(e) => updateShape({ fill: e.target.value })} style={{ width: 40, height: 34, border: "1px solid #e5e7eb", borderRadius: 8, padding: 0, cursor: "pointer" }} />
+                        <button style={{ ...S.rbtn, flex: 1 }} onClick={() => updateShape({ fill: "none" })}>無填色</button>
+                      </div>
+                      {selEl.shape.kind === "rect" && (<>
+                        <label style={S.rlabel}>圓角 <span style={{ float: "right", color: "#9ca3af" }}>{Math.round(selEl.shape.radius ?? 0)}</span></label>
+                        <input type="range" min={0} max={Math.round(Math.min(selEl.w, selEl.h) / 2)} value={Math.round(selEl.shape.radius ?? 0)} onChange={(e) => updateShape({ radius: Number(e.target.value) })} style={{ width: "100%", accentColor: "#7c3aed" }} />
+                      </>)}
+                      <label style={S.rlabel}>邊框（寬＞0 才顯示）</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input type="color" value={toHex(selEl.shape.stroke === "none" ? "#1f2937" : selEl.shape.stroke)} onChange={(e) => updateShape({ stroke: e.target.value })} style={{ width: 40, height: 34, border: "1px solid #e5e7eb", borderRadius: 8, padding: 0, cursor: "pointer" }} />
+                        <input type="number" value={selEl.shape.strokeWidth} onChange={(e) => updateShape({ strokeWidth: Math.max(0, Number(e.target.value) || 0) })} style={{ ...S.rinput, flex: 1 }} />
+                      </div>
+                    </>)}
+                    {selEl.shape.kind === "line" && (<>
+                      <label style={S.rlabel}>顏色</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input type="color" value={toHex(selEl.shape.stroke)} onChange={(e) => updateShape({ stroke: e.target.value })} style={{ width: 40, height: 34, border: "1px solid #e5e7eb", borderRadius: 8, padding: 0, cursor: "pointer" }} />
+                        <input value={selEl.shape.stroke} onChange={(e) => updateShape({ stroke: e.target.value })} style={{ ...S.rinput, flex: 1 }} />
+                      </div>
+                      <label style={S.rlabel}>粗細</label>
+                      <input type="number" value={selEl.shape.strokeWidth} onChange={(e) => updateShape({ strokeWidth: Math.max(1, Number(e.target.value) || 1) })} style={S.rinput} />
+                    </>)}
+                    {selEl.shape.kind === "icon" && (<>
+                      <label style={S.rlabel}>顏色</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input type="color" value={toHex(selEl.shape.fill)} onChange={(e) => updateShape({ fill: e.target.value })} style={{ width: 40, height: 34, border: "1px solid #e5e7eb", borderRadius: 8, padding: 0, cursor: "pointer" }} />
+                        <input value={selEl.shape.fill} onChange={(e) => updateShape({ fill: e.target.value })} style={{ ...S.rinput, flex: 1 }} />
+                      </div>
+                    </>)}
+                    <div style={{ height: 1, background: "#e5e7eb", margin: "18px 0" }} />
+                  </>
+                )}
+                <div style={S.rhead}>圖層設定</div>
+                <label style={S.rlabel}>透明度 <span style={{ float: "right", color: "#9ca3af" }}>{Math.round(selEl.opacity * 100)}%</span></label>
+                <input type="range" min={0} max={100} value={Math.round(selEl.opacity * 100)} onChange={(e) => updateText({ opacity: Number(e.target.value) / 100 })} style={{ width: "100%", accentColor: "#7c3aed" }} />
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button style={{ ...S.rbtn, flex: 1 }} onClick={() => move(selEl.id, 1)}><ChevronUp size={14} /> 上移一層</button>
+                  <button style={{ ...S.rbtn, flex: 1 }} onClick={() => move(selEl.id, -1)}><ChevronDown size={14} /> 下移一層</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: 16 }}>
+                <div style={S.rhead}>文件</div>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>尺寸：{doc.w} × {doc.h} px</div>
+                <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>圖層數：{layersRef.current.length}</div>
+              </div>
+            )}
+          </aside>
+        )}
+      </div>
+
+      {showInsert && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.4)" }} onClick={() => setShowInsert(false)} />
+          <div style={{ position: "relative", width: "min(560px,92%)", maxHeight: "80vh", background: "#fff", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#1f2937", marginBottom: 12 }}>從素材庫插入圖片</div>
+            {backgrounds && backgrounds.length > 0 ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, overflowY: "auto" }}>
+                {backgrounds.map((b, i) => (
+                  <img key={i} src={b.url} alt={b.label ?? ""} title={b.label ?? ""}
+                    onClick={() => { setShowInsert(false); pushImageLayer(b.url, b.label || "圖片"); }}
+                    style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 10, border: "1px solid #e5e7eb", cursor: "pointer" }} />
+                ))}
+              </div>
+            ) : <div style={{ color: "#9ca3af", fontSize: 13, padding: "20px 0" }}>此品牌素材庫還沒有圖。</div>}
+          </div>
+        </div>
+      )}
+
+      {showLogo && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.4)" }} onClick={() => setShowLogo(false)} />
+          <div style={{ position: "relative", width: "min(460px,92%)", maxHeight: "80vh", background: "#fff", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#1f2937", marginBottom: 12 }}>選擇 Logo</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, overflowY: "auto" }}>
+              {(logos ?? []).map((url, i) => (
+                <button key={i} onClick={() => { setShowLogo(false); pushImageLayer(url, "Logo"); }}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: 10, borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb", cursor: "pointer" }}>
+                  <img src={url} alt="" style={{ width: "100%", height: 56, objectFit: "contain" }} />
+                  <span style={{ fontSize: 10, color: "#9ca3af" }}>標誌 {i + 1}</span>
+                </button>
+              ))}
+              {/* 上傳一個 logo（同微調畫布：品牌版本 + 上傳） */}
+              <button onClick={() => uploadLogoRef.current?.click()}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 10, borderRadius: 10, border: "2px dashed #d1d5db", background: "#fff", color: "#7c3aed", cursor: "pointer", minHeight: 90 }}>
+                <Upload size={18} /><span style={{ fontSize: 11, fontWeight: 600 }}>上傳標誌</span>
+              </button>
+            </div>
+            {(logos ?? []).length === 0 && <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 10 }}>此品牌尚未設定 Logo，可直接上傳一個。</div>}
+            <input ref={uploadLogoRef} type="file" accept="image/*" onChange={onUploadLogo} style={{ display: "none" }} />
+          </div>
+        </div>
+      )}
+
+      {showIcon && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.4)" }} onClick={() => setShowIcon(false)} />
+          <div style={{ position: "relative", width: "min(420px,92%)", background: "#fff", borderRadius: 16, padding: 20 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#1f2937", marginBottom: 12 }}>選擇圖標</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+              {ICON_NAMES.map((nm) => (
+                <button key={nm} onClick={() => addIcon(nm)} title={nm}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 12, borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb", cursor: "pointer" }}>
+                  <img src={iconPreview(nm)} alt={nm} style={{ width: 30, height: 30 }} />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- helpers ---------- */
+function confBadge(c: number) {
+  if (c >= 0.85) return null;
+  const ai = c >= 0.6;
+  return <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20, background: ai ? "rgba(255,177,78,.16)" : "rgba(255,93,108,.16)", color: ai ? "#ffb14e" : "#ff5d6c" }}>{ai ? "AI 判斷" : "需確認"}</span>;
+}
+function makeThumb(l: EL): string | null {
+  const max = 76, c = document.createElement("canvas");
+  if (l.shape) {
+    const ar = l.w / (l.h || 1); let w = max, h = max / ar; if (h > max) { h = max; w = max * ar; }
+    c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h));
+    const g = c.getContext("2d")!;
+    g.save(); g.translate(c.width / 2, c.height / 2); drawShapeEl(g, c.width * 0.86, c.height * 0.86, l.shape); g.restore();
+    try { return c.toDataURL("image/png"); } catch { return null; }
+  }
+  if (l.isText) {
+    c.width = max; c.height = Math.round(max * 0.5); const g = c.getContext("2d")!;
+    g.fillStyle = "#f5f3ff"; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = "#7c3aed"; g.font = "600 20px 'Noto Sans TC',sans-serif"; g.textBaseline = "middle";
+    g.fillText((l.text || "T").slice(0, 7), 6, c.height / 2);
+    try { return c.toDataURL("image/png"); } catch { return null; }
+  }
+  if (!l.canvas) return null;
+  const w = l.canvas.width, h = l.canvas.height, s = Math.min(max / w, max / h, 1);
+  c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
+  try { c.getContext("2d")!.drawImage(l.canvas, 0, 0, c.width, c.height); return c.toDataURL("image/png"); } catch { return null; }
+}
+function sampleColor(sctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): string {
+  try {
+    const d = sctx.getImageData(Math.max(0, x), Math.max(0, y), Math.max(1, w), Math.max(1, h)).data;
+    const px: number[][] = []; const step = Math.max(4, Math.floor(d.length / 4 / 600) * 4);
+    for (let i = 0; i < d.length; i += step) px.push([d[i], d[i + 1], d[i + 2]]);
+    px.sort((a, b) => lum(a) - lum(b));
+    const half = px.slice(0, Math.max(1, Math.floor(px.length / 2)));
+    const s = half.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1], acc[2] + p[2]], [0, 0, 0]);
+    const n = half.length; return `rgb(${Math.round(s[0] / n)},${Math.round(s[1] / n)},${Math.round(s[2] / n)})`;
+  } catch { return "#222"; }
+}
+const lum = (p: number[]) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+function toHex(c: string): string {
+  if (!c) return "#241f47";
+  if (c[0] === "#") return c;
+  const m = c.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+  return m ? "#" + [1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, "0")).join("") : "#241f47";
+}
+/** Draw a vector layer. Assumes ctx is already translated to the layer centre + rotated. */
+function drawShapeEl(ctx: CanvasRenderingContext2D, w: number, h: number, sh: ShapeSpec) {
+  const x = -w / 2, y = -h / 2;
+  const doFill = sh.fill && sh.fill !== "none";
+  const doStroke = sh.stroke && sh.stroke !== "none" && sh.strokeWidth > 0;
+  if (sh.kind === "rect") {
+    ctx.beginPath();
+    const r = Math.min(sh.radius ?? 0, w / 2, h / 2);
+    if (r > 0 && typeof ctx.roundRect === "function") ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
+    if (doFill) { ctx.fillStyle = sh.fill; ctx.fill(); }
+    if (doStroke) { ctx.lineWidth = sh.strokeWidth; ctx.strokeStyle = sh.stroke; ctx.stroke(); }
+  } else if (sh.kind === "ellipse") {
+    ctx.beginPath(); ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+    if (doFill) { ctx.fillStyle = sh.fill; ctx.fill(); }
+    if (doStroke) { ctx.lineWidth = sh.strokeWidth; ctx.strokeStyle = sh.stroke; ctx.stroke(); }
+  } else if (sh.kind === "line") {
+    ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.lineTo(w / 2, 0);
+    ctx.lineWidth = Math.max(1, sh.strokeWidth); ctx.strokeStyle = sh.stroke || "#111"; ctx.lineCap = "round"; ctx.stroke();
+  } else if (sh.kind === "icon") {
+    drawIcon(ctx, Math.min(w, h), sh.icon || "star", sh.fill || "#111");
+  }
+}
+
+/** Draw a text layer (with optional 文字特效). ctx already translated to layer centre + rotated.
+ *  Per-layer save/restore in the caller resets shadow/letterSpacing state. */
+function drawTextEl(ctx: CanvasRenderingContext2D, l: EL) {
+  const fx = l.fx;
+  const fs = l.fontSize * (l.w / (l.naturalW || l.w));
+  ctx.font = `${fx?.italic ? "italic " : ""}${l.fontWeight} ${fs}px ${l.fontFamily}`;
+  ctx.textBaseline = "middle"; ctx.textAlign = l.align;
+  if (fx?.letterSpacing != null) { try { (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${fx.letterSpacing}px`; } catch { /* older canvas */ } }
+  const tx = l.align === "left" ? -l.w / 2 : l.align === "right" ? l.w / 2 : 0;
+  let fill: string | CanvasGradient = l.color;
+  if (fx?.gradient) { const g = ctx.createLinearGradient(0, -fs / 2, 0, fs / 2); g.addColorStop(0, fx.gradient[0]); g.addColorStop(1, fx.gradient[1]); fill = g; }
+  if (fx?.strokeW && fx.strokeW > 0) { ctx.lineWidth = fs * fx.strokeW; ctx.strokeStyle = fx.strokeColor || "#ffffff"; ctx.lineJoin = "round"; ctx.miterLimit = 2; ctx.strokeText(l.text, tx, 0); }
+  if (fx?.shadow) { ctx.shadowColor = "rgba(0,0,0,.4)"; ctx.shadowBlur = fs * 0.1; ctx.shadowOffsetX = fs * 0.03; ctx.shadowOffsetY = fs * 0.06; }
+  ctx.fillStyle = fill; ctx.fillText(l.text, tx, 0);
+}
+
+/** Programmatic icon set (24-unit space, centred at 0). Reliable + recolourable. */
+const ICON_NAMES = ["star", "heart", "circle", "triangle", "check", "arrow", "plus", "bolt"] as const;
+function drawIcon(ctx: CanvasRenderingContext2D, size: number, name: string, color: string) {
+  const s = size / 24;
+  ctx.save();
+  ctx.scale(s, s); ctx.translate(-12, -12);
+  ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.beginPath();
+  switch (name) {
+    case "heart": ctx.moveTo(12, 21); ctx.bezierCurveTo(12, 21, 3, 14.5, 3, 8.5); ctx.bezierCurveTo(3, 5.5, 5.5, 3, 8.5, 3); ctx.bezierCurveTo(10.5, 3, 12, 4.5, 12, 6); ctx.bezierCurveTo(12, 4.5, 13.5, 3, 15.5, 3); ctx.bezierCurveTo(18.5, 3, 21, 5.5, 21, 8.5); ctx.bezierCurveTo(21, 14.5, 12, 21, 12, 21); ctx.fill(); break;
+    case "circle": ctx.arc(12, 12, 9, 0, Math.PI * 2); ctx.fill(); break;
+    case "triangle": ctx.moveTo(12, 3); ctx.lineTo(21, 20); ctx.lineTo(3, 20); ctx.closePath(); ctx.fill(); break;
+    case "check": ctx.moveTo(5, 12.5); ctx.lineTo(10, 17.5); ctx.lineTo(19, 6.5); ctx.stroke(); break;
+    case "arrow": ctx.moveTo(4, 12); ctx.lineTo(20, 12); ctx.moveTo(14, 6); ctx.lineTo(20, 12); ctx.lineTo(14, 18); ctx.stroke(); break;
+    case "plus": ctx.moveTo(12, 4); ctx.lineTo(12, 20); ctx.moveTo(4, 12); ctx.lineTo(20, 12); ctx.stroke(); break;
+    case "bolt": ctx.moveTo(13, 2); ctx.lineTo(3, 14); ctx.lineTo(12, 14); ctx.lineTo(11, 22); ctx.lineTo(21, 10); ctx.lineTo(12, 10); ctx.closePath(); ctx.fill(); break;
+    default: { for (let i = 0; i < 10; i++) { const r = i % 2 === 0 ? 10 : 4.2; const a = -Math.PI / 2 + i * Math.PI / 5; const px = 12 + r * Math.cos(a), py = 12 + r * Math.sin(a); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); } ctx.closePath(); ctx.fill(); }
+  }
+  ctx.restore();
+}
+
+// 複製一個圖層（歷史快照用）：clone 可變欄位；canvas/thumb 以參照保留（它們整顆替換而非就地改）。
+function cloneEL(el: EL): EL {
+  return { ...el, shape: el.shape ? { ...el.shape } : null, fx: el.fx ? { ...el.fx } : el.fx, embeddedText: el.embeddedText.map((t) => ({ ...t })) };
+}
+function iconPreview(name: string): string {
+  const c = document.createElement("canvas"); c.width = 40; c.height = 40;
+  const g = c.getContext("2d")!; g.translate(20, 20); drawIcon(g, 30, name, "#374151");
+  try { return c.toDataURL("image/png"); } catch { return ""; }
+}
+function safeDataUrl(c: HTMLCanvasElement): string | undefined {
+  try { return c.toDataURL("image/png"); } catch { return undefined; }
+}
+function loadToCanvas(url: string): Promise<HTMLCanvasElement | null> {
+  return new Promise((resolve) => {
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => { const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext("2d", { willReadFrequently: true })!.drawImage(im, 0, 0); resolve(c); };
+    im.onerror = () => resolve(null);
+    im.src = url;
+  });
+}
+
+/* ---------- inline styles (self-contained; no CSS import needed) ---------- */
+const S: Record<string, React.CSSProperties> = {
+  root: { display: "flex", flexDirection: "column", height: "100%", background: "#ffffff", color: "#1f2937", fontFamily: "'Manrope','Noto Sans TC',system-ui,sans-serif" },
+  warn: { background: "#fffbeb", color: "#b45309", padding: "8px 14px", fontSize: 13, borderBottom: "1px solid #fde68a" },
+  toolbar: { height: 56, flex: "0 0 auto", display: "flex", alignItems: "center", gap: 10, padding: "0 16px", background: "#ffffff", borderBottom: "1px solid #e5e7eb" },
+  divider: { width: 1, height: 24, background: "#e5e7eb" },
+  tbtn: { height: 34, padding: "0 12px", border: "1px solid #e5e7eb", background: "#ffffff", color: "#374151", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 },
+  body: { flex: 1, display: "flex", minHeight: 0 },
+  panel: { width: 288, flex: "0 0 auto", background: "#ffffff", borderRight: "1px solid #e5e7eb", display: "flex", flexDirection: "column", minHeight: 0 },
+  panelHead: { height: 44, display: "flex", alignItems: "center", padding: "0 14px", borderBottom: "1px solid #e5e7eb", fontSize: 12, letterSpacing: ".06em", textTransform: "uppercase", color: "#9ca3af", fontWeight: 700 },
+  row: { display: "flex", alignItems: "center", gap: 9, padding: "8px 9px", borderRadius: 12, background: "#f9fafb", border: "1px solid transparent", cursor: "pointer" },
+  rowSel: { border: "1px solid #7c3aed", background: "#f5f3ff" },
+  thumb: { width: 38, height: 38, flex: "0 0 auto", borderRadius: 8, background: "#f3f4f6", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 14, color: "#9ca3af" },
+  name: { fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#1f2937" },
+  sub: { fontSize: 11, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 },
+  icon: { width: 26, height: 26, border: "none", background: "transparent", color: "#9ca3af", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  stage: { flex: 1, position: "relative", minWidth: 0, overflow: "hidden", background: "#f3f4f6" },
+  textPanel: { position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 20, display: "flex", gap: 6, alignItems: "center", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "6px 8px", boxShadow: "0 8px 24px rgba(0,0,0,.12)" },
+  tpInput: { width: 170, background: "#ffffff", border: "1px solid #e5e7eb", color: "#1f2937", borderRadius: 8, padding: "6px 8px", fontSize: 13 },
+  tpColor: { width: 30, height: 30, padding: 0, border: "1px solid #e5e7eb", borderRadius: 8, background: "transparent", cursor: "pointer" },
+  tpBtn: { height: 30, padding: "0 8px", border: "1px solid #e5e7eb", background: "#ffffff", color: "#374151", borderRadius: 8, fontSize: 13, cursor: "pointer" },
+  tpSel: { height: 30, background: "#ffffff", border: "1px solid #e5e7eb", color: "#374151", borderRadius: 8, fontSize: 12 },
+  // left tools palette
+  tool: { display: "flex", alignItems: "center", gap: 10, width: "100%", height: 36, padding: "0 10px", border: "none", background: "transparent", color: "#374151", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left" },
+  toolOff: { color: "#c4c8d0", cursor: "not-allowed" },
+  // right properties panel
+  rpanel: { width: 264, flex: "0 0 auto", background: "#ffffff", borderLeft: "1px solid #e5e7eb", display: "flex", flexDirection: "column", minHeight: 0 },
+  rtabs: { display: "flex", gap: 18, padding: "0 16px", borderBottom: "1px solid #e5e7eb", flex: "0 0 auto" },
+  rtab: { height: 44, border: "none", background: "transparent", color: "#9ca3af", fontSize: 14, fontWeight: 700, cursor: "pointer", borderBottom: "2px solid transparent" },
+  rtabOn: { color: "#7c3aed", borderBottom: "2px solid #7c3aed" },
+  rhead: { fontSize: 14, fontWeight: 800, color: "#1f2937", margin: "0 0 12px" },
+  rlabel: { display: "block", fontSize: 12, color: "#6b7280", margin: "12px 0 4px", fontWeight: 600 },
+  rinput: { width: "100%", height: 34, background: "#fff", border: "1px solid #e5e7eb", color: "#1f2937", borderRadius: 8, padding: "0 10px", fontSize: 13, boxSizing: "border-box", fontFamily: "inherit" },
+  rbtn: { height: 34, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, border: "1px solid #e5e7eb", background: "#fff", color: "#374151", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" },
+  fxChip: { height: 30, padding: "0 12px", border: "1px solid #e5e7eb", background: "#fff", color: "#374151", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer" },
+  fxChipOn: { borderColor: "#7c3aed", color: "#7c3aed", background: "#f5f3ff" },
+};

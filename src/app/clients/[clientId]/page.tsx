@@ -17,6 +17,7 @@ type ClientOption = { id: string; name: string };
 
 // 狀態標籤：按狀態上色（補返 FAILED；唔好再用黑色 default badge）。
 const STATUS_META: Record<string, { label: string; cls: string }> = {
+  DRAFT:      { label: "草稿", cls: "bg-slate-100 text-slate-600 border-slate-200" },
   PENDING:    { label: "待生成", cls: "bg-gray-100 text-gray-600 border-gray-200" },
   GENERATING: { label: "生成中", cls: "bg-amber-50 text-amber-700 border-amber-200" },
   DONE:       { label: "已完成", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
@@ -212,7 +213,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
             </div>
             <div className="flex gap-1.5 flex-wrap">
               {/* 揀中時用返狀態 tag 嘅顏色（同列表 badge 一致）；全部=黑；未揀=白 */}
-              {[{ k: "ALL", label: "全部" }, { k: "DONE", label: "已完成" }, { k: "GENERATING", label: "生成中" }, { k: "FAILED", label: "生成失敗" }, { k: "PENDING", label: "待生成" }].map((f) => {
+              {[{ k: "ALL", label: "全部" }, { k: "DRAFT", label: "草稿" }, { k: "DONE", label: "已完成" }, { k: "GENERATING", label: "生成中" }, { k: "FAILED", label: "生成失敗" }, { k: "PENDING", label: "待生成" }].map((f) => {
                 const selected = actStatus === f.k;
                 const selCls = f.k === "ALL" ? "bg-violet-600 text-white border-violet-600" : (STATUS_META[f.k]?.cls ?? "bg-violet-600 text-white border-violet-600");
                 return (
@@ -279,7 +280,10 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
                     selectMode={selectMode}
                     selected={selectedIds.has(act.id)}
                     deletingId={deletingId}
-                    onOpen={() => router.push(`/clients/${clientId}/activities/${act.id}`)}
+                    onOpen={() => router.push(
+                      act.layoutId === "magic-layers" ? `/clients/${clientId}/magic-layers/compose?activity=${act.id}`
+                      : act.status === "DRAFT" ? `/clients/${clientId}/activities/${act.id}/edit`
+                      : `/clients/${clientId}/activities/${act.id}`)}
                     onToggleSelect={() => toggleSelect(act.id)}
                     onLongPress={() => { setSelectMode(true); setSelectedIds((prev) => new Set(prev).add(act.id)); }}
                     onDelete={(e) => handleDelete(e, act.id)}

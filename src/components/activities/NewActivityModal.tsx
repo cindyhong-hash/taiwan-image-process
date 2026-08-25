@@ -11,7 +11,7 @@
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, ImageDown, X } from "lucide-react";
+import { Sparkles, ImageDown, Layers, X } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
 import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
@@ -24,6 +24,7 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
   const [step, setStep] = useState<Step>("choose");
 
   const gotoNew = () => router.push(`/clients/${clientId}/activities/new`);
+  const gotoCompose = () => router.push(`/clients/${clientId}/magic-layers/compose`);
   // [MULTI] 版型選擇：single → 他的單圖頁；其餘 → 多圖頁並帶 layout 參數
   const handleLayout = (id: string) => {
     if (id === "single") gotoNew();
@@ -90,6 +91,17 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
             <span>
               <span className="block text-sm font-semibold text-gray-800">② 用素材庫圖片 · 作活動圖底圖</span>
               <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">揀一張現有素材做背景，AI幫手加文字。</span>
+            </span>
+          </button>
+          {/* ③ 自由排版（Magic Layers）— 分層合成後自由拖拉排版，可存續編 */}
+          <button type="button" onClick={gotoCompose}
+            className="w-full flex items-start gap-3 text-left rounded-xl border border-gray-200 p-3.5 hover:border-emerald-400 hover:bg-emerald-50/40 transition-colors">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+              <Layers className="h-4.5 w-4.5" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-800">③ 自由排版 · Magic Layers</span>
+              <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">背景＋去背產品＋可編輯文字分層，自由拖拉排版，可存續編。</span>
             </span>
           </button>
         </div>

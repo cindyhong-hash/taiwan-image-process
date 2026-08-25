@@ -16,7 +16,7 @@ import { QuickAddModal } from "@/components/library/QuickAddModal";
 import { GenerateAssetModal } from "@/components/library/GenerateAssetModal";
 import { AddAssetModal, type AddAssetType } from "@/components/library/AddAssetModal";
 import { ImageDetailModal } from "@/components/library/ImageDetailModal";
-import { RolePickerModal, ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, type ActivityImageRole } from "@/components/activities/RolePickerModal";
+import { RolePickerModal, ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, ML_COMPOSE_BG_KEY, type ActivityImageRole } from "@/components/activities/RolePickerModal";
 import type { StyleComponent, PromptSlots, ImageDetail } from "@/types/library";
 import { CATEGORY_META } from "@/types/library";
 
@@ -89,6 +89,24 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
     setRolePickImage(imageUrl); // → RolePickerModal
     setRolePickPrompt(prompt ?? "");
   }, []);
+  // 素材 popup →「用這張做背景排版」：URL 經 sessionStorage 傳去 Magic Layers 分層合成頁。
+  // 點素材時攔截：若是 Magic Layers 排版 → 開回編輯器續編，否則照常開圖片詳情。
+  const handleOpenImage = useCallback((d: ImageDetail) => {
+    try {
+      if (d.libraryImageId && JSON.parse(d.regenerateParams || "{}").kind === "magicLayout") {
+        router.push(`/clients/${clientId}/magic-layers/compose?layout=${d.libraryImageId}`);
+        return;
+      }
+    } catch { /* ignore → fall through to detail */ }
+    setDetail(d);
+  }, [router, clientId]);
+
+  const handleUseAsComposeBg = useCallback((imageUrl: string) => {
+    setDetail(null);
+    try { sessionStorage.setItem(ML_COMPOSE_BG_KEY, imageUrl); } catch { /* ignore */ }
+    // 走品牌路由：app 外殼保留品牌側邊欄並高亮此品牌；clientId 由網址帶入（背景庫連動素材庫）。
+    router.push(`/clients/${clientId}/magic-layers/compose`);
+  }, [router, clientId]);
   // 揀完角色：URL + AI prompt 經 sessionStorage 傳（唔喺網址外露）→ 跳新增活動頁。
   const handlePickActivityRole = useCallback((role: ActivityImageRole) => {
     if (!rolePickImage) return;
@@ -220,7 +238,7 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
         onInject={handleInject}
         onOpenQuickAdd={() => { setEditComponent(null); setQuickAddImageUrl(null); setShowQuickAdd(true); }}
         onOpenGenerateAsset={() => setShowAddPicker(true)}
-        onOpenImage={setDetail}
+        onOpenImage={handleOpenImage}
         reloadKey={componentReloadKey}
         clients={clients}
         paused={showCompose || showGenerateAsset}
@@ -256,6 +274,7 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
           sourceImages={(() => { try { const p = JSON.parse(detail.regenerateParams || "{}"); const arr = (Array.isArray(p.productImageUrls) && p.productImageUrls.length ? p.productImageUrls : (p.productImageUrl ? [p.productImageUrl] : [])) as string[]; return arr.filter(Boolean); } catch { return []; } })()}
           onOpenGenerateAsset={handleOpenGenerateAsset}
           onUseAsActivityRef={handleUseAsActivityRef}
+          onUseAsComposeBg={handleUseAsComposeBg}
           injectedIds={injectedIds}
           onInject={handleInject}
           onInjectAll={handleInjectAll}

@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 import { ActivityForm, type ActivityFormValues } from "@/components/activities/ActivityForm";
 import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
+import { useUnsavedGuard } from "@/components/common/UnsavedGuard";
 
 export default function NewActivityPage({ params }: { params: Promise<{ clientId: string }> }) {
   const [clientId, setClientId] = useState("");
@@ -17,6 +18,8 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   // （多圖頁完全冇 baseImageUrl 呢個概念）。跟 ActivityForm 嘅 live 狀態（唔淨係
   // 初始值）：用戶喺表單入面撳「移除底圖」跌返做一般生成模式時，切換器要即刻再顯示。
   const [isBaseMode, setIsBaseMode] = useState(false);
+  const [dirty, setDirty] = useState(false);       // 表單有改動 → 離開時攔截
+  const seenChange = useRef(false);                // 略過 mount 時的第一次 onValuesChange
 
   // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
   // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
@@ -69,6 +72,7 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   };
 
   const handleSubmit = async (values: ActivityFormValues) => {
+    setDirty(false);   // 正式送出 → 解除離開攔截
     const res = await fetch("/api/activities", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -79,12 +83,25 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   };
 
   // [UX] 穩定的 callback，避免每次 render 都重觸發 ActivityForm 的 onValuesChange effect
-  const captureValues = useCallback((v: ActivityFormValues) => { latestValues.current = v; }, []);
+  const captureValues = useCallback((v: ActivityFormValues) => {
+    latestValues.current = v;
+    if (seenChange.current) setDirty(true); else seenChange.current = true;  // 第一次是 mount 初始值，略過
+  }, []);
+
+  // 寫一半離開 → 存成草稿活動（status=DRAFT，不觸發生成）
+  const saveDraft = useCallback(async () => {
+    await fetch("/api/activities", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...latestValues.current, clientId, status: "DRAFT" }),
+    });
+  }, [clientId]);
+  const { dialog } = useUnsavedGuard(dirty, saveDraft);
 
   if (!clientId) return null;
 
   return (
     <div className="max-w-xl">
+      {dialog}
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-xl font-semibold">新增活動</h1>
         {/* [MULTI] 版型下拉：可從單圖切換到多圖版型（底圖模式唔支援，隱藏） */}

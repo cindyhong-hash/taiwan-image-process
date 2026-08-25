@@ -16,6 +16,10 @@ export const ACTIVITY_IMAGE_PROMPT_KEY = "activityImagePrompt"; // 帶入圖嘅 
 // [UX] 單圖↔多圖切版型時，共用欄位的交接：JSON {imagePrompt, requiredText, productImageUrls}
 // 切版型前寫入、到另一頁 init 時讀入並清掉，令使用者唔會因為換版型而要重打。
 export const ACTIVITY_HANDOFF_KEY = "activityFormHandoff";
+// [Magic Layers] 素材庫「用這張做背景排版」→ 經 sessionStorage 傳圖 URL 去 /magic-layers/compose。
+export const ML_COMPOSE_BG_KEY = "mlComposeBg";
+// 同時帶 clientId，令 compose 頁的背景庫連動「該品牌素材庫」的內容。
+export const ML_COMPOSE_CLIENT_KEY = "mlComposeClient";
 
 export function RolePickerModal({
   imageUrl,
