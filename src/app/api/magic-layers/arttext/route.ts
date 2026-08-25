@@ -16,14 +16,17 @@ export const maxDuration = 120;
 const OR = "https://openrouter.ai/api/v1/chat/completions";
 const IMG_MODEL = "google/gemini-3-pro-image-preview";
 
-/** 直接叫 Gemini 圖片編輯：喺底圖上照 prompt 畫，回 Buffer（png）。 */
-async function geminiRender(dataUrl: string, prompt: string): Promise<Buffer | null> {
+/** 直接叫 Gemini 圖片編輯：喺底圖上照 prompt 畫，回 Buffer（png）。
+    refUrl 有值時當作「風格參考圖」一齊餵入（第二張圖）。 */
+async function geminiRender(dataUrl: string, prompt: string, refUrl?: string | null): Promise<Buffer | null> {
+  const content: Array<Record<string, unknown>> = [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl } }];
+  if (refUrl) content.push({ type: "image_url", image_url: { url: refUrl } });
   const res = await fetch(OR, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` },
     body: JSON.stringify({
       model: IMG_MODEL,
-      messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl } }] }],
+      messages: [{ role: "user", content }],
       modalities: ["image", "text"],
     }),
   });
@@ -48,8 +51,9 @@ const STYLE_HINTS: Record<string, string> = {
 export async function POST(request: Request) {
   try {
     if (!process.env.OPENROUTER_API_KEY) return NextResponse.json({ error: "缺少 OPENROUTER_API_KEY（生成特效字需要）" }, { status: 400 });
-    const { text, subtitle, width, height, style, brandTones } = await request.json();
+    const { text, subtitle, width, height, style, brandTones, refImageUrl } = await request.json();
     if (!text || !String(text).trim()) return NextResponse.json({ error: "缺少文字" }, { status: 400 });
+    const hasRef = typeof refImageUrl === "string" && /^(data:image\/|https?:\/\/)/.test(refImageUrl);
 
     // 生成尺寸：夾在 768–1280、保留圖層框長寬比（太小 Gemini 畫唔清楚）
     const boxW = Math.round(width) > 0 ? Math.round(width) : 1008;
@@ -65,13 +69,20 @@ export async function POST(request: Request) {
     const toneHint = Array.isArray(brandTones) && brandTones.length ? ` Prefer these brand colours: ${brandTones.slice(0, 3).join(", ")}.` : "";
     const subLine = subtitle && String(subtitle).trim() ? ` Below it, in a much smaller matching style, render the subtitle text "${String(subtitle).trim()}".` : "";
 
-    const prompt =
-      `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), centered and filling most of the frame: "${String(text).trim()}".${subLine} ` +
-      `Style: ${styleHint}.${toneHint} ` +
+    const commonRules =
       `CRITICAL RULES: pure flat solid WHITE (#FFFFFF) background, absolutely nothing else in the image — no product, no photo, no scene, no people, no objects, no borders, no frame, no decorative background patterns. ` +
       `Keep the exact characters and spelling of the text unchanged (it may be Traditional Chinese). Make the lettering large, clean, high-contrast and well-readable. Just the stylized text on white.`;
 
-    const genBuf = await geminiRender(baseUrl, prompt);
+    // 有參考圖：第一張係白底畫布、第二張係風格參考圖 → 模仿參考圖的字體風格畫出文字
+    const prompt = hasRef
+      ? `You are given two images. The FIRST is a blank white canvas — draw on it. The SECOND is a STYLE REFERENCE: study its lettering style, colour palette, texture, material and effects (NOT its actual words). ` +
+        `On the first white canvas, render ONLY this text as decorative artistic typography that closely imitates the reference's visual style: "${String(text).trim()}".${subLine} ${toneHint} ` +
+        commonRules
+      : `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), centered and filling most of the frame: "${String(text).trim()}".${subLine} ` +
+        `Style: ${styleHint}.${toneHint} ` +
+        commonRules;
+
+    const genBuf = await geminiRender(baseUrl, prompt, hasRef ? refImageUrl : null);
     if (!genBuf) return NextResponse.json({ error: "特效字生成失敗，請重試" }, { status: 500 });
     const genUrl = await saveBuffer(genBuf, "png", "ml-arttext-src-");
 

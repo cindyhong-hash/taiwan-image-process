@@ -60,6 +60,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);   // 短暫顯示「✓ 已儲存」回饋
   const [artBusy, setArtBusy] = useState(false);   // AI 特效字生成中
+  const [artRef, setArtRef] = useState<string | null>(null);   // AI 特效字：風格參考圖（data URL，選用）
   // 復原/重做歷史 refs（實作在 render 定義之後，避免 TDZ）
   const history = useRef<EL[][]>([]);
   const histIdx = useRef(0);
@@ -532,7 +533,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
     const target = selEl;
     setArtBusy(true);
     try {
-      const r = await fetch("/api/magic-layers/arttext", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: target.text, width: Math.round(target.w), height: Math.round(target.h) }) });
+      const r = await fetch("/api/magic-layers/arttext", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: target.text, width: Math.round(target.w), height: Math.round(target.h), refImageUrl: artRef }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? r.statusText);
       const canvas = await loadToCanvas(d.url);
@@ -543,6 +544,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
       target.h = target.w / ar;   // 保留寬、依比例定高；中心不變
       target.name = "特效字：" + (target.text || "").slice(0, 8);
       target.thumb = makeThumb(target);
+      setArtRef(null);   // 生成成功後清掉參考圖
       markDirty(); render(); refresh();
     } catch (err) { alert("AI 特效字失敗：" + (err instanceof Error ? err.message : String(err))); }
     finally { setArtBusy(false); }
@@ -705,11 +707,26 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
                         <input type="color" value={toHex(selEl.fx.strokeColor || "#ffffff")} onChange={(e) => updateFx({ strokeColor: e.target.value })} style={{ width: 40, height: 34, border: "1px solid #e5e7eb", borderRadius: 8, padding: 0, cursor: "pointer" }} />
                       </>
                     ) : null}
+                    <label style={{ ...S.rlabel, marginTop: 14 }}>風格參考圖（選用）</label>
+                    {artRef ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={artRef} alt="參考圖" style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, border: "1px solid #e5e7eb" }} />
+                        <button disabled={artBusy} onClick={() => setArtRef(null)}
+                          style={{ ...S.rbtn, flex: 1, color: "#dc2626" }}>移除參考圖</button>
+                      </div>
+                    ) : (
+                      <label style={{ display: "block", textAlign: "center", padding: "10px 8px", border: "1px dashed #c4b5fd", borderRadius: 10, color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: artBusy ? "default" : "pointer", background: "#faf5ff" }}>
+                        ＋ 上傳參考圖
+                        <input type="file" accept="image/*" disabled={artBusy} style={{ display: "none" }}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const fr = new FileReader(); fr.onload = () => setArtRef(String(fr.result)); fr.readAsDataURL(f); e.target.value = ""; }} />
+                      </label>
+                    )}
                     <button onClick={applyArtText} disabled={artBusy}
-                      style={{ width: "100%", marginTop: 14, height: 38, borderRadius: 10, border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: artBusy ? "default" : "pointer", background: artBusy ? "#a78bfa" : "linear-gradient(135deg,#8b5cf6,#7c3aed)" }}>
-                      {artBusy ? "生成藝術字中…（約 15–30 秒）" : "✨ AI 特效字（生成藝術字）"}
+                      style={{ width: "100%", marginTop: 10, height: 38, borderRadius: 10, border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: artBusy ? "default" : "pointer", background: artBusy ? "#a78bfa" : "linear-gradient(135deg,#8b5cf6,#7c3aed)" }}>
+                      {artBusy ? "生成藝術字中…（約 15–30 秒）" : artRef ? "✨ 依參考圖生成藝術字" : "✨ AI 特效字（生成藝術字）"}
                     </button>
-                    <p style={{ margin: "6px 0 0", fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>把這段文字生成成藝術字圖，變成可拖曳圖層（之後不能再改字；可用復原還原）。</p>
+                    <p style={{ margin: "6px 0 0", fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>把這段文字生成成藝術字圖，變成可拖曳圖層（之後不能再改字；可用復原還原）。{artRef ? "會模仿參考圖的字體風格。" : "上傳參考圖可模仿它的字體風格。"}</p>
                     <div style={{ height: 1, background: "#e5e7eb", margin: "18px 0" }} />
                   </>
                 )}
