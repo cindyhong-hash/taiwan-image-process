@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, Palette, Image as ImageIcon, Check, RefreshCw } from "lucide-react";
+import { InspireButton } from "@/components/activities/InspireButton";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
 import { getColors } from "@/types/library";
@@ -462,6 +463,12 @@ export function ActivityForm({
               <span className="text-gray-400 font-normal ml-1.5 text-xs">你腦中的畫面，越具體越好</span>
             </Label>
             <div className="flex items-center gap-1.5">
+              {/* 靈感：依品牌想選題，點了直接填入畫面描述 */}
+              <InspireButton
+                clientId={clientId}
+                field="scene"
+                onPick={(text) => set("imagePrompt", text)}
+              />
               {/* AI 幫改 */}
               <button
                 type="button"

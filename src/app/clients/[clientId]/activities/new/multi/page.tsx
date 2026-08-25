@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiLayoutPicker, LayoutThumb } from "@/components/activities/MultiLayoutPicker";
+import { InspireButton } from "@/components/activities/InspireButton";
 import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { getMultiLayout } from "@/types/multiLayout";
+import { useUnsavedGuard } from "@/components/common/UnsavedGuard";
 
 type Cell = { description: string; mustText: string; assetUrls: string[] };
 
@@ -110,6 +112,22 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   }, [params]);
 
   const layout = getMultiLayout(layoutId);
+
+  // 離開攔截：新增模式下有內容就攔截（編輯既有活動不算「新草稿」）
+  const draftDirty = !editId && (theme.trim() !== "" || mustText.trim() !== "" || productUrls.length > 0 || refUrls.length > 0
+    || cells.some((c) => (c.description || "").trim() !== "" || (c.mustText || "").trim() !== "" || (c.assetUrls?.length ?? 0) > 0));
+  const saveDraft = async () => {
+    const mp = genMode === "unified" ? theme : (cells[0]?.description ?? "");
+    const mt = genMode === "unified" ? mustText : (cells[0]?.mustText ?? "");
+    const mprod = genMode === "unified" ? productUrls : (cells[0]?.assetUrls ?? []);
+    const mrefs = genMode === "unified" ? refUrls : [];
+    const mcells = genMode === "perCell" ? cells : [];
+    await fetch("/api/activities", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId, layoutId, genMode, logoMode, variantCount, variantChoice, imagePrompt: mp, requiredText: mt, productImageUrls: mprod, referenceImageUrls: mrefs, cells: mcells, status: "DRAFT" }),
+    });
+  };
+  const { dialog: draftDialog } = useUnsavedGuard(draftDirty, saveDraft);
 
   if (!clientId || !layout) return <div className="text-gray-400 p-8">載入中…</div>;
 
@@ -377,6 +395,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
 
   return (
     <div className="max-w-2xl space-y-8">
+      {draftDialog}
       <div>
         {/* 標題（左）+ 版型標示／重選（右）— 與單圖編輯頁一致 */}
         <div className="flex items-center justify-between">
@@ -470,6 +489,12 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             <div className="flex items-center justify-between">
               <Label className="text-sm font-medium">活動核心主題 Prompt</Label>
               <div className="flex items-center gap-1.5">
+                {/* 靈感：依品牌想選題，點了直接填入核心主題 */}
+                <InspireButton
+                  clientId={clientId}
+                  field="theme"
+                  onPick={(text) => setTheme(text)}
+                />
                 {/* AI 幫改 */}
                 <button
                   type="button"
