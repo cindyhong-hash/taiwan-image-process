@@ -73,10 +73,13 @@ export async function POST(request: Request) {
       `CRITICAL RULES: pure flat solid WHITE (#FFFFFF) background, absolutely nothing else in the image — no product, no photo, no scene, no people, no objects, no borders, no frame, no decorative background patterns. ` +
       `Keep the exact characters and spelling of the text unchanged (it may be Traditional Chinese). Make the lettering large, clean, high-contrast and well-readable. Just the stylized text on white.`;
 
-    // 有參考圖：第一張係白底畫布、第二張係風格參考圖 → 模仿參考圖的字體風格畫出文字
+    // 有參考圖：第一張係白底畫布、第二張係風格參考圖 → 只借風格，唔可以抄參考圖上嘅字
+    const target = String(text).trim();
     const prompt = hasRef
-      ? `You are given two images. The FIRST is a blank white canvas — draw on it. The SECOND is a STYLE REFERENCE: study its lettering style, colour palette, texture, material and effects (NOT its actual words). ` +
-        `On the first white canvas, render ONLY this text as decorative artistic typography that closely imitates the reference's visual style: "${String(text).trim()}".${subLine} ${toneHint} ` +
+      ? `You are given two images. The FIRST is a blank white canvas — draw on it. The SECOND image is ONLY a VISUAL STYLE REFERENCE. ` +
+        `The text I want you to render is EXACTLY and ONLY: 「${target}」.${subLine} ` +
+        `⚠️ VERY IMPORTANT: The style-reference image probably contains DIFFERENT words — you must completely IGNORE and NOT copy any characters, words, numbers or wording from the reference image. Do NOT read its text. Copy only its visual TREATMENT: the lettering style, colour palette, gradient, texture, material, outline and shadow effects. ` +
+        `Then, on the white canvas, render the target text 「${target}」 (and nothing else) in that borrowed visual style — the characters must be EXACTLY 「${target}」, same order and spelling.${toneHint} ` +
         commonRules
       : `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), centered and filling most of the frame: "${String(text).trim()}".${subLine} ` +
         `Style: ${styleHint}.${toneHint} ` +
