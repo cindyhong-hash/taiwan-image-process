@@ -138,7 +138,7 @@ export async function POST(request: Request) {
         const cut = await removeBackground(dataUrl);
         if (cut) {
           // 依透明區裁到文字實際範圍 + 留少少邊，避免多餘留白/被切；裁失敗就用原圖
-          let out = Buffer.from(cut);
+          let out: Buffer = Buffer.from(cut);
           try {
             const trimmed = await sharp(out).trim({ threshold: 10 }).toBuffer();
             const m = await sharp(trimmed).metadata();
