@@ -51,44 +51,59 @@ const STYLE_HINTS: Record<string, string> = {
 export async function POST(request: Request) {
   try {
     if (!process.env.OPENROUTER_API_KEY) return NextResponse.json({ error: "缺少 OPENROUTER_API_KEY（生成特效字需要）" }, { status: 400 });
-    const { text, subtitle, width, height, style, brandTones, refImageUrl } = await request.json();
+    const { text, subtitle, width, height, style, brandTones, refImageUrl, editImageUrl, instruction } = await request.json();
     if (!text || !String(text).trim()) return NextResponse.json({ error: "缺少文字" }, { status: 400 });
-    const hasRef = typeof refImageUrl === "string" && /^(data:image\/|https?:\/\/)/.test(refImageUrl);
+    const hasRef = typeof refImageUrl === "string" && /^(data:image\/|https?:\/\/|\/)/.test(refImageUrl);
+    const isEdit = typeof editImageUrl === "string" && !!editImageUrl && typeof instruction === "string" && !!instruction.trim();
 
-    // 生成尺寸：夾在 768–1280、保留圖層框長寬比（太小 Gemini 畫唔清楚）
-    const boxW = Math.round(width) > 0 ? Math.round(width) : 1008;
-    const boxH = Math.round(height) > 0 ? Math.round(height) : 256;
-    const genW = Math.min(1280, Math.max(768, boxW));
-    const genH = Math.min(1280, Math.max(320, Math.round(genW * (boxH / boxW))));
-
-    // 純白底 → 只喺白底上畫藝術字，方便之後去背
-    const whiteBuf = await sharp({ create: { width: genW, height: genH, channels: 3, background: "#ffffff" } }).png().toBuffer();
-    const baseUrl = `data:image/png;base64,${whiteBuf.toString("base64")}`;
-
+    const target = String(text).trim();
     const toneHint = Array.isArray(brandTones) && brandTones.length ? ` Prefer these brand colours: ${brandTones.slice(0, 3).join(", ")}.` : "";
     const subLine = subtitle && String(subtitle).trim() ? ` Below it, in a much smaller matching style, render the subtitle text "${String(subtitle).trim()}".` : "";
-    const target = String(text).trim();
-
-    // 有參考圖 → 先用視覺模型「只描述風格（唔講內容文字）」，再拿呢段描述去生字。
-    // 咁圖像模型完全睇唔到參考圖，就唔可能抄到參考圖上嘅字。
-    let styleHint = STYLE_HINTS[String(style)] || STYLE_HINTS.gradient;
-    if (hasRef) {
-      const desc = await describeImageOpenRouter(
-        refImageUrl,
-        `Describe ONLY the visual TYPOGRAPHY STYLE of the lettering/word-art in this image, so it can be reproduced with different words. ` +
-          `Cover: font style/weight, colour palette and gradients (name hex-ish colours), outline/stroke, drop shadow or glow, 3D/bevel/texture/material, and any decorative flourishes. ` +
-          `⚠️ Do NOT transcribe, quote or mention the ACTUAL words, characters or numbers shown — describe style only, in one compact English sentence.`,
-        180,
-      );
-      if (desc && desc.trim()) styleHint = desc.trim();
-    }
-
-    const prompt =
-      `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), centered and filling most of the frame. ` +
-      `The text to render (delimited by <<< >>>, the delimiters are NOT part of the text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
-      `Apply this visual style to the lettering: ${styleHint}.${toneHint} ` +
+    const commonRules =
       `CRITICAL RULES: pure flat solid WHITE (#FFFFFF) background, absolutely nothing else in the image — no product, no photo, no scene, no people, no objects, no borders, no frame, no decorative background patterns. ` +
       `Do NOT draw any quotation marks, brackets, guillemets or delimiter symbols — only the actual characters ${target}. Make the lettering large, clean, high-contrast and well-readable. Just the stylized text on white.`;
+
+    let baseUrl: string;
+    let prompt: string;
+
+    if (isEdit) {
+      // AI 微調：拿現有藝術字（可能已透明）壓平到白底做底圖，照指令改，字元不變
+      const cur = await loadBuffer(editImageUrl);
+      const flat = await sharp(Buffer.from(cur)).flatten({ background: "#ffffff" }).png().toBuffer();
+      baseUrl = `data:image/png;base64,${flat.toString("base64")}`;
+      prompt =
+        `This image is an existing piece of word-art (藝術字) on a white background. Modify it according to this instruction: 「${String(instruction).trim()}」. ` +
+        `Keep the EXACT same text — the characters must stay <<<${target}>>> (delimiters not part of text), same wording, order and spelling; do not add or remove any characters. Only change the requested visual aspect and keep everything else consistent. ` +
+        commonRules;
+    } else {
+      // 生成尺寸：夾在 768–1280、保留圖層框長寬比（太小 Gemini 畫唔清楚）
+      const boxW = Math.round(width) > 0 ? Math.round(width) : 1008;
+      const boxH = Math.round(height) > 0 ? Math.round(height) : 256;
+      const genW = Math.min(1280, Math.max(768, boxW));
+      const genH = Math.min(1280, Math.max(320, Math.round(genW * (boxH / boxW))));
+      const whiteBuf = await sharp({ create: { width: genW, height: genH, channels: 3, background: "#ffffff" } }).png().toBuffer();
+      baseUrl = `data:image/png;base64,${whiteBuf.toString("base64")}`;
+
+      // 有參考圖 → 先用視覺模型「只描述風格（唔講內容文字）」，再拿呢段描述去生字。
+      // 咁圖像模型完全睇唔到參考圖，就唔可能抄到參考圖上嘅字。
+      let styleHint = STYLE_HINTS[String(style)] || STYLE_HINTS.gradient;
+      if (hasRef) {
+        const desc = await describeImageOpenRouter(
+          refImageUrl,
+          `Describe ONLY the visual TYPOGRAPHY STYLE of the lettering/word-art in this image, so it can be reproduced with different words. ` +
+            `Cover: font style/weight, colour palette and gradients (name hex-ish colours), outline/stroke, drop shadow or glow, 3D/bevel/texture/material, and any decorative flourishes. ` +
+            `⚠️ Do NOT transcribe, quote or mention the ACTUAL words, characters or numbers shown — describe style only, in one compact English sentence.`,
+          180,
+        );
+        if (desc && desc.trim()) styleHint = desc.trim();
+      }
+
+      prompt =
+        `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), centered and filling most of the frame. ` +
+        `The text to render (delimited by <<< >>>, the delimiters are NOT part of the text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
+        `Apply this visual style to the lettering: ${styleHint}.${toneHint} ` +
+        commonRules;
+    }
 
     const genBuf = await geminiRender(baseUrl, prompt);
     if (!genBuf) return NextResponse.json({ error: "特效字生成失敗，請重試" }, { status: 500 });

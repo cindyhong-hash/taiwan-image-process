@@ -30,6 +30,7 @@ function savedToLayerData(sl: SavedLayer): LayerData {
     meta: {
       visible: sl.visible, locked: sl.locked, opacity: sl.opacity,
       ...(sl.isText ? { style: { text: sl.text, fontSizePx: sl.fontSize, fontWeight: sl.fontWeight, color: sl.color, align: sl.align, fontFamily: sl.fontFamily, fx: sl.fx ?? null }, textObject: { text: sl.text } } : {}),
+      ...(sl.isArt ? { isArt: true, artText: sl.text ?? "" } : {}),
       ...(sl.shape ? { shape: sl.shape } : {}),
     },
   };
