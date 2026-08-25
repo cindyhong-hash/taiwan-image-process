@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     const commonRules =
       `CRITICAL RULES: pure flat solid WHITE (#FFFFFF) background, absolutely nothing else in the image — no product, no photo, no scene, no people, no objects, no borders, no frame, no decorative background patterns. ` +
       `Do NOT draw any quotation marks, brackets, guillemets or delimiter symbols — only the actual characters ${target}. ` +
-      `FRAMING: the WHOLE text — every character plus its outline, glow and drop shadow — must sit FULLY INSIDE the frame with a comfortable empty white margin (at least ~12%) on all four sides. Nothing may touch, overflow or be cut off by any edge, especially the top and bottom of tall characters. Scale the lettering down if needed so it fits completely. ` +
+      `FRAMING (extremely important): the ENTIRE text block must occupy only the central ~65% width and ~55% height of the image, surrounded by a big empty white margin on all four sides. Every part — each character AND every decorative flourish, swirl, tail, serif, outline, glow and drop shadow — must stay well inside, never touching or crossing any edge (top, bottom, left, right). When unsure, make the lettering SMALLER; excess empty margin is fine and preferred, clipping is unacceptable. ` +
       `Make the lettering clean, high-contrast and well-readable. Just the stylized text on white.`;
 
     let baseUrl: string;
