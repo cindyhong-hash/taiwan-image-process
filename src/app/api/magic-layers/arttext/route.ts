@@ -61,7 +61,9 @@ export async function POST(request: Request) {
     const subLine = subtitle && String(subtitle).trim() ? ` Below it, in a much smaller matching style, render the subtitle text "${String(subtitle).trim()}".` : "";
     const commonRules =
       `CRITICAL RULES: pure flat solid WHITE (#FFFFFF) background, absolutely nothing else in the image — no product, no photo, no scene, no people, no objects, no borders, no frame, no decorative background patterns. ` +
-      `Do NOT draw any quotation marks, brackets, guillemets or delimiter symbols — only the actual characters ${target}. Make the lettering large, clean, high-contrast and well-readable. Just the stylized text on white.`;
+      `Do NOT draw any quotation marks, brackets, guillemets or delimiter symbols — only the actual characters ${target}. ` +
+      `FRAMING: the WHOLE text — every character plus its outline, glow and drop shadow — must sit FULLY INSIDE the frame with a comfortable empty white margin (at least ~12%) on all four sides. Nothing may touch, overflow or be cut off by any edge, especially the top and bottom of tall characters. Scale the lettering down if needed so it fits completely. ` +
+      `Make the lettering clean, high-contrast and well-readable. Just the stylized text on white.`;
 
     let baseUrl: string;
     let prompt: string;
@@ -80,7 +82,8 @@ export async function POST(request: Request) {
       const boxW = Math.round(width) > 0 ? Math.round(width) : 1008;
       const boxH = Math.round(height) > 0 ? Math.round(height) : 256;
       const genW = Math.min(1280, Math.max(768, boxW));
-      const genH = Math.min(1280, Math.max(320, Math.round(genW * (boxH / boxW))));
+      // 多給 ~35% 垂直空間 + 至少 42% 高的比例，讓高字（含外框/陰影）有留白不被切
+      const genH = Math.min(1280, Math.max(Math.round(genW * 0.42), Math.round(genW * (boxH / boxW) * 1.35)));
       const whiteBuf = await sharp({ create: { width: genW, height: genH, channels: 3, background: "#ffffff" } }).png().toBuffer();
       baseUrl = `data:image/png;base64,${whiteBuf.toString("base64")}`;
 
@@ -99,7 +102,7 @@ export async function POST(request: Request) {
       }
 
       prompt =
-        `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), centered and filling most of the frame. ` +
+        `Render ONLY the following text as a single piece of decorative artistic typography (word art / 藝術字), horizontally centered, large and readable but leaving clear empty margins around it (do NOT fill the frame edge-to-edge). ` +
         `The text to render (delimited by <<< >>>, the delimiters are NOT part of the text) is: <<<${target}>>> — use these exact characters, same order and spelling, nothing added or removed.${subLine} ` +
         `Apply this visual style to the lettering: ${styleHint}.${toneHint} ` +
         commonRules;
@@ -116,7 +119,15 @@ export async function POST(request: Request) {
         const dataUrl = `data:image/png;base64,${Buffer.from(buf).toString("base64")}`;
         const cut = await removeBackground(dataUrl);
         if (cut) {
-          const url = await saveBuffer(Buffer.from(cut), "png", "ml-arttext-");
+          // 依透明區裁到文字實際範圍 + 留少少邊，避免多餘留白/被切；裁失敗就用原圖
+          let out = Buffer.from(cut);
+          try {
+            const trimmed = await sharp(out).trim({ threshold: 10 }).toBuffer();
+            const m = await sharp(trimmed).metadata();
+            const pad = Math.max(8, Math.round(Math.max(m.width ?? 0, m.height ?? 0) * 0.04));
+            out = await sharp(trimmed).extend({ top: pad, bottom: pad, left: pad, right: pad, background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+          } catch { /* 裁切失敗 → 用未裁的去背圖 */ }
+          const url = await saveBuffer(out, "png", "ml-arttext-");
           return NextResponse.json({ url, transparent: true });
         }
       } catch { /* 去背失敗 → 用不透明版 */ }
