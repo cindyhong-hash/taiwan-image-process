@@ -154,6 +154,11 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
     const hw = l.w / 2, hh = l.h / 2, cos = Math.cos(l.rotation), sin = Math.sin(l.rotation);
     return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([px, py]) => ({ x: l.cx + px * cos - py * sin, y: l.cy + px * sin + py * cos }));
   };
+  // 四邊中點（上/右/下/左）— 拖曳只改單一方向（壓扁/拉長）
+  const edges = (l: EL) => {
+    const hw = l.w / 2, hh = l.h / 2, cos = Math.cos(l.rotation), sin = Math.sin(l.rotation);
+    return ([[0, -hh, "y"], [hw, 0, "x"], [0, hh, "y"], [-hw, 0, "x"]] as const).map(([px, py, axis]) => ({ x: l.cx + px * cos - py * sin, y: l.cy + px * sin + py * cos, axis }));
+  };
   const rotHandle = (l: EL) => { const gap = 26 / view.current.zoom, dy = -(l.h / 2 + gap), cos = Math.cos(l.rotation), sin = Math.sin(l.rotation); return { x: l.cx - dy * sin, y: l.cy + dy * cos }; };
   const toLocal = (l: EL, dx: number, dy: number) => { const ox = dx - l.cx, oy = dy - l.cy, cos = Math.cos(-l.rotation), sin = Math.sin(-l.rotation); return { x: ox * cos - oy * sin, y: ox * sin + oy * cos }; };
   const sel = () => layersRef.current.find((l) => l.id === selectedId) ?? null;
@@ -245,6 +250,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
       const rp = rotHandle(l), rs = d2s(rp.x, rp.y), tm = { x: (cs[0].x + cs[1].x) / 2, y: (cs[0].y + cs[1].y) / 2 };
       ctx.beginPath(); ctx.moveTo(tm.x, tm.y); ctx.lineTo(rs.x, rs.y); ctx.stroke();
       dot(ctx, rs.x, rs.y, accent, true);
+      edges(l).forEach((e) => { const p = d2s(e.x, e.y); dot(ctx, p.x, p.y, accent, false); });
       cs.forEach((p) => dot(ctx, p.x, p.y, accent, false));
     }
     ctx.restore();
@@ -261,6 +267,8 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
     for (let i = 0; i < 4; i++) if (dist(sx, sy, cs[i].x, cs[i].y) <= 10) return { type: "scale" as const };
     const rp = rotHandle(l), rs = d2s(rp.x, rp.y);
     if (dist(sx, sy, rs.x, rs.y) <= 10) return { type: "rotate" as const };
+    const es = edges(l);
+    for (const e of es) { const p = d2s(e.x, e.y); if (dist(sx, sy, p.x, p.y) <= 10) return { type: "resize" as const, axis: e.axis }; }
     return null;
   }
   function hitLayer(dx: number, dy: number) {
@@ -304,7 +312,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
       }
       if (!wantPan) {
         const h = hitHandle(s.x, s.y);
-        if (h) { const l = sel()!; drag.current = h.type === "scale" ? { mode: "scale", l, ow: l.w, oh: l.h } : { mode: "rotate", l, orot: l.rotation, grab: Math.atan2(d.y - l.cy, d.x - l.cx) }; return; }
+        if (h) { const l = sel()!; drag.current = h.type === "rotate" ? { mode: "rotate", l, orot: l.rotation, grab: Math.atan2(d.y - l.cy, d.x - l.cx) } : { mode: "scale", l, ow: l.w, oh: l.h, handle: h }; return; }
         const l = hitLayer(d.x, d.y);
         if (l) { if (selectedId !== l.id) setSelectedId(l.id); drag.current = { mode: "move", l, sx: d.x, sy: d.y, ocx: l.cx, ocy: l.cy }; render(); return; }
       }
@@ -329,14 +337,22 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
         g.lx = d.x; g.ly = d.y; erasePt.current = d; render();
       }
       else if (g.mode === "move") { g.l.cx = g.ocx + (d.x - g.sx); g.l.cy = g.ocy + (d.y - g.sy); render(); }
-      else if (g.mode === "scale") { const lp = toLocal(g.l, d.x, d.y); const f = Math.max(Math.abs(lp.x) / (g.ow / 2 || 1), Math.abs(lp.y) / (g.oh / 2 || 1), 0.02); g.l.w = g.ow * f; g.l.h = g.oh * f; render(); }
+      else if (g.mode === "scale") {
+        const lp = toLocal(g.l, d.x, d.y); const min = 8;
+        const h = g.handle;
+        if (h && h.type === "resize" && h.axis === "x") { g.l.w = Math.max(min, Math.abs(lp.x) * 2); }          // 只改寬
+        else if (h && h.type === "resize" && h.axis === "y") { g.l.h = Math.max(min, Math.abs(lp.y) * 2); }     // 只改高
+        else if (e.shiftKey) { const f = Math.max(Math.abs(lp.x) / (g.ow / 2 || 1), Math.abs(lp.y) / (g.oh / 2 || 1), 0.02); g.l.w = g.ow * f; g.l.h = g.oh * f; }  // 角落＋Shift：等比整體縮放
+        else { g.l.w = Math.max(min, Math.abs(lp.x) * 2); g.l.h = Math.max(min, Math.abs(lp.y) * 2); }           // 角落：自由改寬高（可壓扁）
+        render();
+      }
       else if (g.mode === "rotate") { const now = Math.atan2(d.y - g.l.cy, d.x - g.l.cx); let r = g.orot + (now - g.grab); if (e.shiftKey) r = Math.round(r / (Math.PI / 12)) * (Math.PI / 12); g.l.rotation = r; render(); }
       else if (g.mode === "pan") { view.current.panX = g.opx + (s.x - g.sx); view.current.panY = g.opy + (s.y - g.sy); render(); }
     };
     const up = () => { if (drag.current && drag.current.l) { drag.current.l.thumb = makeThumb(drag.current.l); if (drag.current.mode !== "pan") markDirty(); } drag.current = null; refresh(); };
     const hover = (s: { x: number; y: number }) => {
       if (space.current) { cv.style.cursor = "grab"; return; }
-      const h = hitHandle(s.x, s.y); if (h) { cv.style.cursor = h.type === "rotate" ? "crosshair" : "nwse-resize"; return; }
+      const h = hitHandle(s.x, s.y); if (h) { cv.style.cursor = h.type === "rotate" ? "crosshair" : h.type === "resize" ? (h.axis === "x" ? "ew-resize" : "ns-resize") : "nwse-resize"; return; }
       const d = s2d(s.x, s.y); cv.style.cursor = hitLayer(d.x, d.y) ? "move" : "default";
     };
     const wheel = (e: WheelEvent) => { e.preventDefault(); const s = evPt(e); setZoom(view.current.zoom * Math.pow(1.0015, -e.deltaY), s); };
