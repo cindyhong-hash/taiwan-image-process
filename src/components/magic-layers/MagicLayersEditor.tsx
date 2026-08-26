@@ -61,6 +61,8 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
   const [showLogo, setShowLogo] = useState(false);            // Logo 選擇器（多版本挑一個）
   const [showIcon, setShowIcon] = useState(false);            // 圖標選擇器
   const [showShape, setShowShape] = useState(false);          // 形狀選擇器
+  const [toolsOpen, setToolsOpen] = useState(true);           // 左側「工具」可收合
+  const [bgOpen, setBgOpen] = useState(true);                 // 左側「背景庫」可收合
   const [panelTab, setPanelTab] = useState<"design" | "settings">("design");
   const [renaming, setRenaming] = useState(false);            // 重新命名這個設計
   const [saving, setSaving] = useState(false);
@@ -751,42 +753,50 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
       <div style={S.body}>
         <aside style={S.panel}>
           {backgrounds && backgrounds.length > 0 && (
-            <div style={{ borderBottom: "1px solid #e5e7eb", padding: "10px 10px 12px" }}>
-              <div style={{ ...S.panelHead, height: "auto", padding: 0, marginBottom: 8, border: "none" }}>背景庫（點擊替換）</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, maxHeight: 168, overflowY: "auto" }}>
-                {backgrounds.map((b, i) => (
-                  <img key={i} src={b.url} alt={b.label ?? ""} title={b.label ?? ""} onClick={() => replaceBackground(b.url)}
-                       style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8, border: "1px solid #e5e7eb", cursor: "pointer" }} />
-                ))}
-              </div>
+            <div style={{ borderBottom: "1px solid #e5e7eb", padding: "10px 10px 12px", flex: "0 0 auto" }}>
+              <button onClick={() => setBgOpen((v) => !v)} style={{ ...S.panelHead, height: "auto", padding: 0, marginBottom: bgOpen ? 8 : 0, border: "none", width: "100%", background: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>背景庫（點擊替換）</span>{bgOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              {bgOpen && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, maxHeight: 168, overflowY: "auto" }}>
+                  {backgrounds.map((b, i) => (
+                    <img key={i} src={b.url} alt={b.label ?? ""} title={b.label ?? ""} onClick={() => replaceBackground(b.url)}
+                         style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8, border: "1px solid #e5e7eb", cursor: "pointer" }} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          <div style={{ borderBottom: "1px solid #e5e7eb", padding: "10px 6px 12px" }}>
-            <div style={{ ...S.panelHead, height: "auto", padding: "0 4px", marginBottom: 6, border: "none" }}>工具</div>
-            <button style={S.tool} onClick={() => setShowInsert(true)}><ImageIcon size={16} />素材庫</button>
-            <button style={S.tool} onClick={() => uploadImgRef.current?.click()}><Upload size={16} />上傳圖片</button>
-            <button style={S.tool} onClick={addTextLayer}><Type size={16} />文字</button>
-            <button style={S.tool} onClick={addLogo}><BadgeCheck size={16} />Logo</button>
-            <button style={S.tool} onClick={addShape}><Square size={16} />形狀</button>
-            <button style={S.tool} onClick={() => setShowIcon(true)}><Star size={16} />圖標</button>
-            <button style={S.tool} onClick={addLine}><Minus size={16} />線條</button>
-            <button
-              style={{ ...S.tool, ...(tool === "erase" ? { border: "1px solid #7c3aed", color: "#7c3aed", background: "#f5f3ff" } : {}) }}
-              onClick={() => { setTool((t) => (t === "erase" ? "select" : "erase")); erasePt.current = null; if (canvasRef.current) canvasRef.current.style.cursor = "default"; render(); }}
-              title="橡皮擦：在圖片圖層上拖曳，局部擦成透明">
-              <Eraser size={16} />橡皮擦{tool === "erase" ? "（開）" : ""}
+          <div style={{ borderBottom: "1px solid #e5e7eb", padding: "10px 6px 12px", flex: "0 0 auto" }}>
+            <button onClick={() => setToolsOpen((v) => !v)} style={{ ...S.panelHead, height: "auto", padding: "0 4px", marginBottom: toolsOpen ? 6 : 0, border: "none", width: "100%", background: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>工具</span>{toolsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
-            {tool === "erase" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px 2px" }} title="筆刷大小">
-                <span style={{ fontSize: 11, color: "#9ca3af", flex: "0 0 auto" }}>筆刷</span>
-                <input type="range" min={6} max={120} value={brush} onChange={(e) => { setBrush(Number(e.target.value)); render(); }} style={{ flex: 1, accentColor: "#7c3aed" }} />
-                <span style={{ width: 26, fontSize: 11, color: "#9a9cab", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{brush}</span>
-              </div>
-            )}
+            {toolsOpen && (<>
+              <button style={S.tool} onClick={() => setShowInsert(true)}><ImageIcon size={16} />素材庫</button>
+              <button style={S.tool} onClick={() => uploadImgRef.current?.click()}><Upload size={16} />上傳圖片</button>
+              <button style={S.tool} onClick={addTextLayer}><Type size={16} />文字</button>
+              <button style={S.tool} onClick={addLogo}><BadgeCheck size={16} />Logo</button>
+              <button style={S.tool} onClick={addShape}><Square size={16} />形狀</button>
+              <button style={S.tool} onClick={() => setShowIcon(true)}><Star size={16} />圖標</button>
+              <button style={S.tool} onClick={addLine}><Minus size={16} />線條</button>
+              <button
+                style={{ ...S.tool, ...(tool === "erase" ? { border: "1px solid #7c3aed", color: "#7c3aed", background: "#f5f3ff" } : {}) }}
+                onClick={() => { setTool((t) => (t === "erase" ? "select" : "erase")); erasePt.current = null; if (canvasRef.current) canvasRef.current.style.cursor = "default"; render(); }}
+                title="橡皮擦：在圖片圖層上拖曳，局部擦成透明">
+                <Eraser size={16} />橡皮擦{tool === "erase" ? "（開）" : ""}
+              </button>
+              {tool === "erase" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px 2px" }} title="筆刷大小">
+                  <span style={{ fontSize: 11, color: "#9ca3af", flex: "0 0 auto" }}>筆刷</span>
+                  <input type="range" min={6} max={120} value={brush} onChange={(e) => { setBrush(Number(e.target.value)); render(); }} style={{ flex: 1, accentColor: "#7c3aed" }} />
+                  <span style={{ width: 26, fontSize: 11, color: "#9a9cab", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{brush}</span>
+                </div>
+              )}
+            </>)}
             <input ref={uploadImgRef} type="file" accept="image/*" onChange={onUploadImage} style={{ display: "none" }} />
           </div>
-          <div style={S.panelHead}>圖層 Layers</div>
-          <div style={{ overflowY: "auto", padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ ...S.panelHead, flex: "0 0 auto" }}>圖層 Layers</div>
+          <div style={{ flex: "1 1 0", minHeight: 60, overflowY: "auto", padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
             {panel.map((l) => (
               <div key={l.id} onClick={() => setSelectedId(l.id)}
                    style={{ ...S.row, ...(l.id === selectedId ? S.rowSel : {}), opacity: l.visible ? 1 : 0.5 }}>
