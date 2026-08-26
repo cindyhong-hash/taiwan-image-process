@@ -63,6 +63,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
   const [showShape, setShowShape] = useState(false);          // 形狀選擇器
   const [toolsOpen, setToolsOpen] = useState(true);           // 左側「工具」可收合
   const [bgOpen, setBgOpen] = useState(true);                 // 左側「背景庫」可收合
+  const [layersOpen, setLayersOpen] = useState(true);         // 左側「圖層」可收合
   const [panelTab, setPanelTab] = useState<"design" | "settings">("design");
   const [renaming, setRenaming] = useState(false);            // 重新命名這個設計
   const [saving, setSaving] = useState(false);
@@ -795,8 +796,10 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
             </>)}
             <input ref={uploadImgRef} type="file" accept="image/*" onChange={onUploadImage} style={{ display: "none" }} />
           </div>
-          <div style={{ ...S.panelHead, flex: "0 0 auto" }}>圖層 Layers</div>
-          <div style={{ flex: "1 1 0", minHeight: 60, overflowY: "auto", padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+          <button onClick={() => setLayersOpen((v) => !v)} style={{ ...S.panelHead, flex: "0 0 auto", width: "100%", background: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>圖層 Layers</span>{layersOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          <div style={{ display: layersOpen ? "flex" : "none", flex: "1 1 0", minHeight: 60, overflowY: "auto", padding: 8, flexDirection: "column", gap: 6 }}>
             {panel.map((l) => (
               <div key={l.id} onClick={() => setSelectedId(l.id)}
                    style={{ ...S.row, ...(l.id === selectedId ? S.rowSel : {}), opacity: l.visible ? 1 : 0.5 }}>
