@@ -14,7 +14,8 @@ import { alphaHit } from "@/lib/magic-layers/alpha-hit-test.ts";
 import { useUnsavedGuard } from "@/components/common/UnsavedGuard";
 
 /** Vector layer (形狀 / 圖標 / 線條) — drawn on canvas, recolourable (not baked to bitmap). */
-type ShapeSpec = { kind: "rect" | "ellipse" | "line" | "icon"; fill: string; stroke: string; strokeWidth: number; radius?: number; icon?: string };
+type ShapeKind = "rect" | "ellipse" | "line" | "icon" | "triangle" | "polygon" | "star" | "diamond";
+type ShapeSpec = { kind: ShapeKind; fill: string; stroke: string; strokeWidth: number; radius?: number; icon?: string; sides?: number };
 
 /** 文字特效（設計感）— 全部在 canvas 即時渲染，文字保持可編輯／可拖曳／可存。
  *  strokeW = 佔字級的比例（隨字放大縮小），letterSpacing = px。 */
@@ -46,7 +47,7 @@ export type SavedLayer = {
   artRefImage?: string;               // 生成時用的風格參考圖（data URL）
   isText?: boolean; text?: string; color?: string; fontSize?: number; fontFamily?: string; fontWeight?: number; align?: "left" | "center" | "right";
   fx?: { gradient?: [string, string] | null; strokeColor?: string; strokeW?: number; shadow?: boolean; italic?: boolean; letterSpacing?: number } | null;
-  shape?: { kind: "rect" | "ellipse" | "line" | "icon"; fill: string; stroke: string; strokeWidth: number; radius?: number; icon?: string };
+  shape?: { kind: ShapeKind; fill: string; stroke: string; strokeWidth: number; radius?: number; icon?: string; sides?: number };
 };
 
 export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, logos, name, onRename, onBack, onSave }: { image: HTMLImageElement; layers: LayerData[]; fragmentation?: FragmentationReport; backgrounds?: { url: string; label?: string }[]; logos?: string[]; name?: string; onRename?: (name: string) => void; onBack?: () => void; onSave?: (payload: { docW: number; docH: number; layers: SavedLayer[]; imageDataUrl: string; finalize: boolean }) => Promise<void> }) {
@@ -59,6 +60,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
   const [showInsert, setShowInsert] = useState(false);        // 素材庫插入圖片挑選器
   const [showLogo, setShowLogo] = useState(false);            // Logo 選擇器（多版本挑一個）
   const [showIcon, setShowIcon] = useState(false);            // 圖標選擇器
+  const [showShape, setShowShape] = useState(false);          // 形狀選擇器
   const [panelTab, setPanelTab] = useState<"design" | "settings">("design");
   const [renaming, setRenaming] = useState(false);            // 重新命名這個設計
   const [saving, setSaving] = useState(false);
@@ -498,10 +500,12 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
     };
     el.thumb = makeThumb(el); layersRef.current.push(el); setSelectedId(el.id); markDirty(); refresh(); render();
   }, [doc.w, doc.h, markDirty, refresh, render]);
-  const addShape = useCallback(() => {
+  const addShapeKind = useCallback((spec: Partial<ShapeSpec> & { kind: ShapeKind }, label: string) => {
+    setShowShape(false);
     const s = Math.round(Math.min(doc.w, doc.h) * 0.3);
-    pushShapeLayer({ kind: "rect", fill: "#7c3aed", stroke: "none", strokeWidth: 0, radius: 0 }, "形狀", s, s);
+    pushShapeLayer({ fill: "#7c3aed", stroke: "none", strokeWidth: 0, radius: 0, ...spec }, label, s, s);
   }, [doc.w, doc.h, pushShapeLayer]);
+  const addShape = useCallback(() => setShowShape(true), []);
   const addLine = useCallback(() => {
     pushShapeLayer({ kind: "line", fill: "none", stroke: "#1f2937", strokeWidth: 6 }, "線條", Math.round(doc.w * 0.4), 24);
   }, [doc.w, pushShapeLayer]);
@@ -883,10 +887,15 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
                 {selEl.shape && (
                   <>
                     <div style={S.rhead}>{selEl.shape.kind === "icon" ? "圖標設定" : selEl.shape.kind === "line" ? "線條設定" : "形狀設定"}</div>
-                    {(selEl.shape.kind === "rect" || selEl.shape.kind === "ellipse") && (<>
+                    {(selEl.shape.kind !== "line" && selEl.shape.kind !== "icon") && (<>
                       <label style={S.rlabel}>類型</label>
                       <select value={selEl.shape.kind} onChange={(e) => updateShape({ kind: e.target.value as ShapeSpec["kind"] })} style={S.rinput}>
-                        <option value="rect">矩形</option><option value="ellipse">橢圓</option>
+                        <option value="rect">矩形</option>
+                        <option value="ellipse">橢圓</option>
+                        <option value="triangle">三角形</option>
+                        <option value="diamond">菱形</option>
+                        <option value="polygon">多邊形</option>
+                        <option value="star">星形</option>
                       </select>
                       <label style={S.rlabel}>填色</label>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -896,6 +905,10 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
                       {selEl.shape.kind === "rect" && (<>
                         <label style={S.rlabel}>圓角 <span style={{ float: "right", color: "#9ca3af" }}>{Math.round(selEl.shape.radius ?? 0)}</span></label>
                         <input type="range" min={0} max={Math.round(Math.min(selEl.w, selEl.h) / 2)} value={Math.round(selEl.shape.radius ?? 0)} onChange={(e) => updateShape({ radius: Number(e.target.value) })} style={{ width: "100%", accentColor: "#7c3aed" }} />
+                      </>)}
+                      {(selEl.shape.kind === "polygon" || selEl.shape.kind === "star") && (<>
+                        <label style={S.rlabel}>{selEl.shape.kind === "star" ? "角數" : "邊數"} <span style={{ float: "right", color: "#9ca3af" }}>{selEl.shape.sides ?? (selEl.shape.kind === "star" ? 5 : 6)}</span></label>
+                        <input type="range" min={3} max={12} value={selEl.shape.sides ?? (selEl.shape.kind === "star" ? 5 : 6)} onChange={(e) => updateShape({ sides: Number(e.target.value) })} style={{ width: "100%", accentColor: "#7c3aed" }} />
                       </>)}
                       <label style={S.rlabel}>邊框（寬＞0 才顯示）</label>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1031,6 +1044,23 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
           </div>
         </div>
       )}
+      {showShape && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.4)" }} onClick={() => setShowShape(false)} />
+          <div style={{ position: "relative", width: "min(440px,92%)", background: "#fff", borderRadius: 16, padding: 20 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#1f2937", marginBottom: 12 }}>選擇形狀</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+              {SHAPE_PRESETS.map((p) => (
+                <button key={p.label} onClick={() => addShapeKind(p.spec, p.label)} title={p.label}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 6px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb", cursor: "pointer" }}>
+                  <img src={shapePreview(p.spec)} alt={p.label} style={{ width: 34, height: 34 }} />
+                  <span style={{ fontSize: 11, color: "#6b7280" }}>{p.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1100,6 +1130,20 @@ function drawShapeEl(ctx: CanvasRenderingContext2D, w: number, h: number, sh: Sh
     ctx.lineWidth = Math.max(1, sh.strokeWidth); ctx.strokeStyle = sh.stroke || "#111"; ctx.lineCap = "round"; ctx.stroke();
   } else if (sh.kind === "icon") {
     drawIcon(ctx, Math.min(w, h), sh.icon || "star", sh.fill || "#111");
+  } else {
+    // 多邊形類：triangle/diamond/polygon/star — 頂點落在 w×h 外接橢圓上
+    const rx = w / 2, ry = h / 2;
+    const poly = (n: number, rot: number) => { ctx.beginPath(); for (let i = 0; i < n; i++) { const a = rot + i * (2 * Math.PI / n); const px = rx * Math.cos(a), py = ry * Math.sin(a); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); } ctx.closePath(); };
+    if (sh.kind === "triangle") poly(3, -Math.PI / 2);
+    else if (sh.kind === "diamond") poly(4, -Math.PI / 2);
+    else if (sh.kind === "star") {
+      const n = Math.max(3, sh.sides ?? 5), inner = 0.42;
+      ctx.beginPath();
+      for (let i = 0; i < n * 2; i++) { const a = -Math.PI / 2 + i * (Math.PI / n); const rr = i % 2 === 0 ? 1 : inner; const px = rx * rr * Math.cos(a), py = ry * rr * Math.sin(a); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
+      ctx.closePath();
+    } else poly(Math.max(3, sh.sides ?? 6), -Math.PI / 2);   // polygon（預設六邊）
+    if (doFill) { ctx.fillStyle = sh.fill; ctx.fill(); }
+    if (doStroke) { ctx.lineWidth = sh.strokeWidth; ctx.strokeStyle = sh.stroke; ctx.lineJoin = "round"; ctx.stroke(); }
   }
 }
 
@@ -1147,6 +1191,26 @@ function cloneEL(el: EL): EL {
 function iconPreview(name: string): string {
   const c = document.createElement("canvas"); c.width = 40; c.height = 40;
   const g = c.getContext("2d")!; g.translate(20, 20); drawIcon(g, 30, name, "#374151");
+  try { return c.toDataURL("image/png"); } catch { return ""; }
+}
+// 形狀選擇器：預設清單（參考 PS）＋縮圖
+const SHAPE_PRESETS: { label: string; spec: Partial<ShapeSpec> & { kind: ShapeKind } }[] = [
+  { label: "矩形", spec: { kind: "rect", radius: 0 } },
+  { label: "圓角矩形", spec: { kind: "rect", radius: 9999 } },
+  { label: "橢圓", spec: { kind: "ellipse" } },
+  { label: "三角形", spec: { kind: "triangle" } },
+  { label: "菱形", spec: { kind: "diamond" } },
+  { label: "五邊形", spec: { kind: "polygon", sides: 5 } },
+  { label: "六邊形", spec: { kind: "polygon", sides: 6 } },
+  { label: "星形", spec: { kind: "star", sides: 5 } },
+];
+function shapePreview(spec: Partial<ShapeSpec> & { kind: ShapeKind }): string {
+  const c = document.createElement("canvas"); c.width = 44; c.height = 44;
+  const g = c.getContext("2d")!; g.translate(22, 22);
+  const full: ShapeSpec = { fill: "#374151", stroke: "none", strokeWidth: 0, ...spec };
+  const sz = 34;
+  const r = full.radius && full.radius > 0 ? Math.min(full.radius, sz / 2) : 0;
+  drawShapeEl(g, sz, sz, { ...full, radius: r });
   try { return c.toDataURL("image/png"); } catch { return ""; }
 }
 function safeDataUrl(c: HTMLCanvasElement): string | undefined {
