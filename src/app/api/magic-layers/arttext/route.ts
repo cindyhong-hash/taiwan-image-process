@@ -5,8 +5,11 @@
    內容鎖定（Content Lock）：最終只顯示 CONTENT 的文字，一字不差；參考圖只當
    風格來源，其文字內容一律忽略。可選傳入 guideImageUrl（前端用真字體把目標文字
    畫成引導圖）→ AI 只上風格、不重畫字形，大幅降低破字/改字。
+   沒有參考圖時：可傳 sceneImageUrl（整張畫面），AI 以資深設計師角度依整體
+   氛圍/配色設計最搭的字體風格（而非只看文字）。
    Body: { text, subtitle?, width?, height?, style?, brandTones?,
            refImageUrl?（風格參考）, guideImageUrl?（字形引導）,
+           sceneImageUrl?（整張畫面，供無參考圖時依畫面設計）,
            editImageUrl?+instruction?（AI 微調 image-to-image） }
    Returns: { url, transparent } | { error }
    需要 OPENROUTER_API_KEY（生字）＋ FAL_KEY（去背，選用；失敗退回不透明）。
@@ -57,11 +60,12 @@ const STYLE_HINTS: Record<string, string> = {
 export async function POST(request: Request) {
   try {
     if (!process.env.OPENROUTER_API_KEY) return NextResponse.json({ error: "缺少 OPENROUTER_API_KEY（生成特效字需要）" }, { status: 400 });
-    const { text, subtitle, width, height, style, brandTones, refImageUrl, guideImageUrl, editImageUrl, instruction } = await request.json();
+    const { text, subtitle, width, height, style, brandTones, refImageUrl, guideImageUrl, sceneImageUrl, editImageUrl, instruction } = await request.json();
     if (!text || !String(text).trim()) return NextResponse.json({ error: "缺少文字" }, { status: 400 });
     const isImgUrl = (v: unknown): v is string => typeof v === "string" && /^(data:image\/|https?:\/\/|\/)/.test(v);
     const hasRef = isImgUrl(refImageUrl);
     const hasGuide = isImgUrl(guideImageUrl);
+    const hasScene = isImgUrl(sceneImageUrl);
     const isEdit = isImgUrl(editImageUrl) && typeof instruction === "string" && !!instruction.trim();
 
     const target = String(text).trim();
@@ -95,6 +99,19 @@ export async function POST(request: Request) {
         220,
       );
       if (desc && desc.trim()) styleHint = desc.trim();
+    }
+    // 沒有參考圖但有整張畫面 → 以「資深視覺設計師」角度分析整體氛圍/配色，設計最搭的字體風格
+    if (!hasRef && hasScene && !isEdit) {
+      const rec = await describeImageOpenRouter(
+        sceneImageUrl,
+        `You are a senior visual designer. This image is the FULL ad/poster design that a headline will be placed on. ` +
+          `First read the overall scene: subject, mood/theme (e.g. fresh / summer / travel / luxury / tech / festive), colour palette and brightness, and how much decoration would feel appropriate. ` +
+          `Then recommend the single most fitting HEADLINE TYPOGRAPHY STYLE so the text feels native to this design — pick fill colour or gradient (give hex, drawn from or harmonising with the scene palette, with enough contrast to be readable over it), whether to use an outline (and its colour), shadow/depth level, and any light thematic touch. ` +
+          `Match the scene's energy — do NOT propose styles that clash with it (e.g. no neon / cyberpunk / flames / metallic-tech on a soft bright summer beach scene). Prefer tasteful, on-brand promo styling, not garish. ` +
+          `Reply with ONE compact English sentence describing the recommended lettering style only (no mention of the actual words).`,
+        220,
+      );
+      if (rec && rec.trim()) styleHint = rec.trim();
     }
     const styleClause = hasRef
       ? `STYLE_REFERENCE (the second image) is the LOOK to reproduce as CLOSELY AS POSSIBLE — the result should look like it was made by the same designer, in the same style family: ${styleHint}. ` +

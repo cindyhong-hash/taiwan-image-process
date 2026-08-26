@@ -641,7 +641,23 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
     setArtBusy(true);
     try {
       const guide = buildTextGuide(target);
-      const r = await fetch("/api/magic-layers/arttext", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: target.text, width: Math.round(target.w), height: Math.round(target.h), refImageUrl: refImage, guideImageUrl: guide }) });
+      // 沒有參考圖時：擷取「整張畫面（不含這段文字）」讓 AI 依整體氛圍/配色設計最合適的風格
+      let scene: string | null = null;
+      if (!refImage) {
+        try {
+          const c = document.createElement("canvas"); c.width = doc.w; c.height = doc.h;
+          const g = c.getContext("2d")!; g.fillStyle = "#fff"; g.fillRect(0, 0, doc.w, doc.h);
+          for (const l of layersRef.current) {
+            if (!l.visible || l.id === target.id) continue;
+            g.save(); g.translate(l.cx, l.cy); g.rotate(l.rotation); g.globalAlpha = l.opacity;
+            if (l.canvas) { g.imageSmoothingQuality = "high"; g.drawImage(l.canvas, -l.w / 2, -l.h / 2, l.w, l.h); }
+            else if (l.isText) drawTextEl(g, l); else if (l.shape) drawShapeEl(g, l.w, l.h, l.shape);
+            g.restore();
+          }
+          scene = c.toDataURL("image/jpeg", 0.85);
+        } catch { scene = null; }
+      }
+      const r = await fetch("/api/magic-layers/arttext", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: target.text, width: Math.round(target.w), height: Math.round(target.h), refImageUrl: refImage, guideImageUrl: guide, sceneImageUrl: scene }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? r.statusText);
       const canvas = await loadToCanvas(d.url);
