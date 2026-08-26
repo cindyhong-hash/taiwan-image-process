@@ -12,9 +12,9 @@
 import { useEffect, useState, useCallback, useImperativeHandle, forwardRef, useRef } from "react";
 import {
   ArrowRightCircle, LayoutTemplate, Palette, MessageSquare,
-  Image as ImageIcon, LayoutGrid, Plus, Trash2,
+  LayoutGrid, Plus, Trash2, Mountain,
   Paperclip, UserRound, Package, Sparkles, Search, ArrowUpDown,
-  CheckCircle2, Circle, X,
+  CheckCircle2, Circle, X, ImagePlus,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { StyleComponent, ComponentCategory, PromptSlots, GalleryItem, ImageDetail } from "@/types/library";
@@ -29,7 +29,7 @@ const FILTER_TABS: { key: FilterTab; label: string; icon?: React.ReactNode }[] =
   { key: "COMPOSITION", label: "構圖", icon: <LayoutTemplate className="h-3.5 w-3.5" /> },
   { key: "COLOR_SCHEME", label: "配色", icon: <Palette className="h-3.5 w-3.5" /> },
   { key: "COPY_TONE", label: "語氣", icon: <MessageSquare className="h-3.5 w-3.5" /> },
-  { key: "BACKGROUND", label: "背景", icon: <ImageIcon className="h-3.5 w-3.5" /> },
+  { key: "BACKGROUND", label: "背景", icon: <Mountain className="h-3.5 w-3.5" /> },
 ];
 
 // ─── Gallery search / engine helpers (wireframe ⑥⑦) ─────────────────────────
@@ -250,19 +250,12 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
           : item.kind === "material"
             ? (item.mode ? (engineLabel(JSON.stringify({ mode: item.mode })) ?? "AI生成") : "AI生成")
             : null;
-        // Magic Layers 排版：可續編的分層作品，用專屬標籤區隔。
-        let isLayout = false;
-        if (item.kind === "generated") { try { isLayout = JSON.parse(item.paramsJson || "{}").kind === "magicLayout"; } catch { /* ignore */ } }
         return (
           <div className="absolute top-2 left-2 flex items-center gap-1 pointer-events-none">
-            {isLayout ? (
-              <span className="flex items-center gap-1 text-[10px] font-semibold bg-violet-600 text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap">🧩 排版</span>
-            ) : (
             <span className={`flex items-center gap-1 text-[10px] font-semibold ${meta.cls} text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap`}>
               <Icon className="h-2.5 w-2.5" />{meta.label}
             </span>
-            )}
-            {!isLayout && model && (
+            {model && (
               <span className="flex items-center gap-0.5 text-[10px] font-medium bg-black/55 text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap">
                 <Sparkles className="h-2.5 w-2.5" />{model}
               </span>
@@ -306,10 +299,10 @@ type GalleryFilter = "ALL" | "uploaded" | "material" | "person" | "illustration"
 const FILTER_META: Record<GalleryFilter, { label: string; Icon: LucideIcon; cls: string; activeCls: string }> = {
   ALL:          { label: "全部",     Icon: LayoutGrid, cls: "bg-gray-700",   activeCls: "bg-violet-600 text-white border-violet-600" },
   uploaded:     { label: "參考圖",   Icon: Paperclip,  cls: "bg-blue-500",   activeCls: "bg-blue-500 text-white border-blue-500" },
-  material:     { label: "背景",     Icon: ImageIcon,  cls: "bg-teal-600",   activeCls: "bg-teal-600 text-white border-teal-600" },
+  material:     { label: "背景",     Icon: Mountain,   cls: "bg-teal-600",   activeCls: "bg-teal-600 text-white border-teal-600" },
   person:       { label: "人像",     Icon: UserRound,  cls: "bg-rose-500",   activeCls: "bg-rose-500 text-white border-rose-500" },
   illustration: { label: "插畫",     Icon: Palette,    cls: "bg-amber-500",  activeCls: "bg-amber-500 text-white border-amber-500" },
-  product:      { label: "產品成圖", Icon: Package,    cls: "bg-violet-600", activeCls: "bg-violet-600 text-white border-violet-600" },
+  product:      { label: "產品成圖", Icon: Package,    cls: "bg-[#C9A227]", activeCls: "bg-[#C9A227] text-white border-[#C9A227]" },
 };
 
 /** #4 系列圖成圖（mode=paste-template）—— 報告期間隱藏。 */
@@ -355,7 +348,7 @@ type Props = {
   onOpenImage: (detail: ImageDetail) => void;
   reloadKey?: number;
   clients?: { id: string; name: string }[];  // 批次「移到客戶 / 設公用」用
-  /** 生成 popup 開住嗰陣（PromptComposer / GenerateAssetModal）：暫停背景刷新，
+  /** 生成 popup 開住嗰陣（AddAssetModal 等）：暫停背景刷新，
    * 唔好喺用戶專注揀選項嗰陣悄悄重排/插入新 tile 令背景「跳動」。Popup 關咗即刻補刷新一次。 */
   paused?: boolean;
 };
@@ -617,8 +610,8 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
             </div>
           )}
 
-          {/* Gallery filter pills */}
-          <div className="flex gap-1.5 flex-wrap">
+          {/* Gallery filter pills + 上傳參考圖（釘死尾巴，方案 D：唔理揀邊個 filter 都顯示，單擊直接開，唔動 gallery 陣列） */}
+          <div className="flex items-center gap-1.5 flex-wrap">
             {(["ALL", "uploaded", "material", "person", "illustration", "product"] as GalleryFilter[]).map((f) => {
               const meta = FILTER_META[f];
               const Icon = meta.Icon;
@@ -633,6 +626,18 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
                 </button>
               );
             })}
+            {onOpenQuickAdd && (
+              <button
+                onClick={onOpenQuickAdd}
+                aria-label="上傳參考圖"
+                className="group relative flex items-center justify-center h-[26px] w-[26px] rounded-full border border-dashed border-violet-400 bg-violet-50 text-violet-600 hover:bg-violet-100 transition-colors shrink-0"
+              >
+                <ImagePlus className="h-3.5 w-3.5" />
+                <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-[11px] text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  上傳參考圖
+                </span>
+              </button>
+            )}
           </div>
           {!selectMode && gallery.length > 0 && (
             <p className="text-[11px] text-gray-400">提示：長按任何圖片即可進入多選，批次移到客戶 / 移入未分類 / 刪除。</p>

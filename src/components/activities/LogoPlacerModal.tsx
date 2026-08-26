@@ -12,6 +12,18 @@ type LogoItem = {
   scale: number; // 相對畫布寬 16% 的倍數
 };
 
+/** 原圖直接讀做 data URI，唔經壓縮——compressImage 失敗時嘅 fallback。
+ *  唔可以用 URL.createObjectURL：嗰個 blob: URL 淨係喺呢個瀏覽器 tab 有效，
+ *  server 端 /api/logo/place 攞唔到，一旦入去合成階段就會靜靜哋失敗。 */
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 /** 瀏覽器端壓縮 → data URI（避免上傳大檔 & HTTP 413）。 */
 async function compressImage(file: File, maxDim: number, quality: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -91,7 +103,11 @@ export default function LogoPlacerModal({
     try {
       addLogo(await compressImage(file, 800, 0.95));
     } catch {
-      addLogo(URL.createObjectURL(file));
+      try {
+        addLogo(await fileToDataURL(file));
+      } catch {
+        setError("讀取圖片失敗，請換一張再試");
+      }
     }
     if (uploadRef.current) uploadRef.current.value = "";
   }, [addLogo]);
@@ -213,6 +229,7 @@ export default function LogoPlacerModal({
                 const im = e.currentTarget;
                 if (im.naturalWidth && im.naturalHeight) setImgRatio(im.naturalWidth / im.naturalHeight);
               }}
+              onError={() => setError("底圖讀取失敗，畫布比例可能不準確")}
               className="w-full h-full block object-contain pointer-events-none"
               draggable={false}
             />

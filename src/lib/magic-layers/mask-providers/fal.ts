@@ -63,7 +63,7 @@ export function Sam2MaskProvider(): MaskProvider {
   // data: URI); dedupe concurrent object segments onto one upload.
   let uploading: Promise<string> | null = null;
   const uploadOnce = (image: { url: string }): Promise<string> => {
-    if (!uploading) uploading = toBuffer(image.url).then(buf => fal.storage.upload(new File([buf], "src.png", { type: "image/png" })));
+    if (!uploading) uploading = toBuffer(image.url).then(buf => fal.storage.upload(new File([new Uint8Array(buf)], "src.png", { type: "image/png" })));
     return uploading;
   };
   return {

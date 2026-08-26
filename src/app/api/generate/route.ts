@@ -283,6 +283,7 @@ export async function POST(request: Request) {
             copyText: postCopy,
             textLayerJson: JSON.stringify(variantLayer),
             textBurnedIn: burnedIn,
+            effectLevel: v.effectLevel,
           },
         });
         saved.push(layout);

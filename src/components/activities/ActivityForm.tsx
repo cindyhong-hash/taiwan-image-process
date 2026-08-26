@@ -3,12 +3,13 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, Palette, Image as ImageIcon, Check, RefreshCw } from "lucide-react";
+import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Check, Lock, RefreshCw } from "lucide-react";
 import { InspireButton } from "@/components/activities/InspireButton";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
-import { getColors } from "@/types/library";
-import type { StyleComponent, ComponentCategory } from "@/types/library";
+import { getColors, PALETTE_ROLES } from "@/types/library";
+import { readableText } from "@/components/library/ColorCards";
+import type { StyleComponent, ComponentCategory, PaletteRole } from "@/types/library";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -194,6 +195,11 @@ export function ActivityForm({
   // [UX] 目前值同步俾上層（切版型時帶去多圖頁，唔會丟資料）
   useEffect(() => { onValuesChange?.(values); }, [values, onValuesChange]);
 
+  // 生成前必填檢查：一般模式靠「畫面描述 Prompt」（AI 生圖嘅核心輸入）；
+  // 底圖模式唔重新生圖，靠「必放文字」先夠料生成文案（跟 GenerateAssetForm/
+  // PromptComposer 嗰套「鎖住呢個場景嘅核心輸入」做法一致）。
+  const canSubmit = isBaseMode ? !!values.requiredText.trim() : !!values.imagePrompt.trim();
+
   const [uploadingProduct, setUploadingProduct] = useState(false);
   const [uploadingRef,     setUploadingRef]     = useState(false);
   const [loading,          setLoading]          = useState(false);
@@ -211,31 +217,91 @@ export function ActivityForm({
     COLOR_SCHEME: { slot: "color"      as const, label: "配色" },
     BACKGROUND:   { slot: "background" as const, label: "背景" },
   };
-  // 由 block 砌出該類標籤內容，如 [構圖:…]
+  // 配色開關 chip 狀態（同素材庫 PromptComposer 一致）：主色必用鎖定，其餘可撳開關；
+  // null = 用返揀嗰個組件嘅預設（每隻有定義嘅色都開）。組件一換就要重置（下面 render 期間 check）。
+  type PalRow = { role: PaletteRole; label: string; hex: string; enabled: boolean; present: boolean };
+  const [paletteRows, setPaletteRows] = useState<PalRow[] | null>(null);
+  function buildPaletteRows(comp: StyleComponent | null): PalRow[] {
+    const cols = comp ? getColors(comp.data) : [];
+    return PALETTE_ROLES.map((r) => {
+      const found = cols.find((c) => c.role === r.role);
+      return {
+        role: r.role,
+        label: r.label,
+        hex: found?.hex ?? "#e5e7eb",
+        enabled: r.role === "primary" ? true : !!found,
+        present: r.role === "primary" ? true : !!found,
+      };
+    });
+  }
+  const effRows = paletteRows ?? buildPaletteRows(styleBlocks.color);
+  const [prevColorId, setPrevColorId] = useState(styleBlocks.color?.id);
+  if (prevColorId !== styleBlocks.color?.id) { setPrevColorId(styleBlocks.color?.id); setPaletteRows(null); }
+  // 由 block 砌出該類標籤內容，如「構圖：…」（自然一句，冇方括號）
   const tagFor = (cat: keyof typeof CAT_META, comp: StyleComponent): string => {
     const { label } = CAT_META[cat];
     let body = "";
     if (cat === "COLOR_SCHEME") {
-      const hexes = getColors(comp.data).map((c) => c.hex);
+      const hexes = buildPaletteRows(comp).filter((r) => r.enabled).map((r) => r.hex);
       body = hexes.length ? hexes.join("、") : (comp.aiPromptText || comp.name);
     } else {
       body = (comp.data?.description as string) || comp.aiPromptText || comp.name;
     }
-    return body ? `[${label}:${body}]` : "";
+    return body ? `${label}：${body}` : "";
   };
-  // 揀 / 清除積木：更新 card 狀態 + 直接寫入畫面描述 Prompt（先移除舊同類標籤，再加返新）。
+  // 揀 / 清除積木：更新 card 狀態 + 直接寫入畫面描述 Prompt（先移除舊同類標籤，再加返新）+
+  // 同步 selectedComponentIds（隨表單一齊存落 DB），唔係淨係印咗喺文字度——冇呢步嘅話，
+  // 儲存後返嚟編輯，card 揀嘅狀態冇嘢可以還原（畫面描述文字有可能俾用戶自己再改到面目全非，
+  // 唔可靠），會睇落好似「積木不見咗」。
   const applyBlock = (cat: keyof typeof CAT_META, comp: StyleComponent | null) => {
     const { slot, label } = CAT_META[cat];
+    const prevComp = styleBlocks[slot];
     setStyleBlocks((p) => ({ ...p, [slot]: comp }));
     setValues((prev) => {
-      let txt = prev.imagePrompt.replace(new RegExp(`\\[${label}:[^\\]]*\\]`, "g"), "").replace(/\n{2,}/g, "\n").trim();
+      let txt = prev.imagePrompt.replace(new RegExp(`^${label}：.*$`, "gm"), "").replace(/\n{2,}/g, "\n").trim();
       if (comp) {
         const tag = tagFor(cat, comp);
         if (tag) txt = txt ? `${txt}\n${tag}` : tag;
       }
-      return { ...prev, imagePrompt: txt };
+      const selectedComponentIds = prev.selectedComponentIds.filter((id) => id !== prevComp?.id);
+      if (comp) selectedComponentIds.push(comp.id);
+      return { ...prev, imagePrompt: txt, selectedComponentIds };
     });
   };
+  // 配色開關 chip：撳一下即刻反映入畫面描述（唔經 applyBlock，因為組件本身冇換）。
+  function toggleColorEnabled(role: PaletteRole) {
+    const newRows = effRows.map((r) => (r.role === role ? { ...r, enabled: !r.enabled } : r));
+    setPaletteRows(newRows);
+    const hexes = newRows.filter((r) => r.enabled).map((r) => r.hex);
+    setValues((prev) => {
+      let txt = prev.imagePrompt.replace(/^配色：.*$/m, "").replace(/\n{2,}/g, "\n").trim();
+      if (hexes.length) { const tag = `配色：${hexes.join("、")}`; txt = txt ? `${txt}\n${tag}` : tag; }
+      return { ...prev, imagePrompt: txt };
+    });
+  }
+
+  // 編輯已存在嘅活動時，用已存嘅 selectedComponentIds 攞返實際 StyleComponent，
+  // 重新掛落 styleBlocks，等 03 積木 card 顯示返上次揀咗嘅嗰件（否則永遠得返
+  // 畫面描述入面嘅純文字標籤，card 會一直顯示「未選取」）。
+  useEffect(() => {
+    const ids = initialValues?.selectedComponentIds;
+    if (!ids || ids.length === 0) return;
+    fetch(`/api/components?ids=${ids.join(",")}`)
+      .then((r) => r.json())
+      .then((comps: StyleComponent[]) => {
+        if (!Array.isArray(comps)) return;
+        setStyleBlocks((prev) => {
+          const next = { ...prev };
+          for (const c of comps) {
+            if (c.type === "COMPOSITION") next.layout = c;
+            else if (c.type === "COLOR_SCHEME") next.color = c;
+            else if (c.type === "BACKGROUND") next.background = c;
+          }
+          return next;
+        });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // AI 輔助狀態
   const [optimizingPrompt,  setOptimizingPrompt]  = useState(false);
@@ -377,7 +443,7 @@ export function ActivityForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8 max-w-2xl">
+    <form onSubmit={handleSubmit} className="space-y-8 max-w-3xl pb-20">
 
       {/* ── 底圖模式 banner（成張相做背景，唔重新生圖）─────────── */}
       {isBaseMode && (
@@ -394,7 +460,7 @@ export function ActivityForm({
               <ImageIcon className="h-4 w-4" />活動圖底圖模式
             </div>
             <p className="text-[11px] text-violet-600/90 mt-1 leading-relaxed">
-              呢張相會 <b>100% 做背景</b>，唔會重新生圖。填下面嘅文字內容，系統會幫你生成文案，再交排版加落圖上。
+              這張相片會 <b>100% 做背景</b>，不會重新生成圖片。填寫下面的文字內容，系統會幫你生成文案，再交由排版加到圖上。
             </p>
             <button type="button" onClick={() => setShowBasePicker(true)}
               className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-violet-600 border border-violet-200 rounded-lg px-2 py-1 hover:bg-violet-100 transition-colors">
@@ -414,7 +480,7 @@ export function ActivityForm({
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5">
             <h3 className="text-sm font-semibold text-gray-800">移除底圖模式？</h3>
             <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-              呢張相會被移除，表單改做「由零開始」一般生成模式（可以再上傳素材 / 用 AI 生成）。想換另一張底圖的話，可以用「換一張底圖」代替。
+              這張相片會被移除，表單改為「從零開始」的一般生成模式（可以再上傳素材／用 AI 生成）。想換另一張底圖的話，可以用「換一張底圖」代替。
             </p>
             <div className="flex items-center justify-end gap-2 mt-4">
               <button type="button" onClick={() => setConfirmRemoveBase(false)}
@@ -607,7 +673,7 @@ export function ActivityForm({
             {/* 除咗上傳，仲可以由素材庫揀一張現有圖做參考 */}
             <button type="button" onClick={() => setShowLibPicker(true)}
               className="w-full flex items-center justify-center gap-1 text-[11px] font-medium text-violet-600 border border-violet-200 rounded-lg py-1.5 hover:bg-violet-50 transition-colors">
-              <Images className="h-3 w-3" />從素材庫揀
+              <Images className="h-3 w-3" />從素材庫選取
             </button>
           </div>
 
@@ -646,15 +712,16 @@ export function ActivityForm({
 
       {/* ── 03 套用風格積木（構圖 / 顏色 / 背景）→ 內容注入 AI Prompt ─────────── */}
       <div className="space-y-3">
-        <SectionLabel step="03" title="套用風格積木" hint="選填 · 揀咗會加入 AI Prompt 做生成參考" />
+        <SectionLabel step="03" title="套用風格積木" hint="選填 · 選取後會加入 AI Prompt 做生成參考" />
         <div className="grid grid-cols-3 gap-3">
           {([
             { cat: "COMPOSITION",  slot: "layout",     label: "構圖", icon: <LayoutTemplate className="h-4 w-4" /> },
-            { cat: "COLOR_SCHEME", slot: "color",      label: "顏色", icon: <Palette className="h-4 w-4" /> },
-            { cat: "BACKGROUND",   slot: "background", label: "背景", icon: <ImageIcon className="h-4 w-4" /> },
+            { cat: "COLOR_SCHEME", slot: "color",      label: "配色", icon: <SwatchBook className="h-4 w-4" /> },
+            { cat: "BACKGROUND",   slot: "background", label: "背景", icon: <Mountain className="h-4 w-4" /> },
           ] as const).map(({ cat, slot, label, icon }) => {
             const comp = styleBlocks[slot];
-            const colors = comp && slot === "color" ? getColors(comp.data) : [];
+            // 顏色卡嘅色板預覽淨係顯示已勾選（enabled）嘅色，同下面 chip 狀態一致。
+            const colors = comp && slot === "color" ? effRows.filter((r) => r.enabled).map((r) => ({ hex: r.hex, role: r.role })) : [];
             return (
               <div key={cat}>
                 <div className="flex items-center justify-between mb-1">
@@ -670,12 +737,20 @@ export function ActivityForm({
                     <>
                       {/* 顏色：優先顯示色板（睇色 pattern）；其餘：優先顯示圖 */}
                       {slot === "color" && colors.length ? (
-                        <div className="flex h-20">{colors.map((c, i) => <div key={i} style={{ background: c.hex }} className="flex-1" />)}</div>
+                        <div className="flex h-20">{colors.map((c, i) => (
+                          <div key={i} style={{ background: c.hex }} className="flex-1 relative">
+                            {c.role === "primary" && <Lock className="absolute inset-0 m-auto h-3.5 w-3.5" style={{ color: readableText(c.hex) }} />}
+                          </div>
+                        ))}</div>
                       ) : comp.previewUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={comp.previewUrl} alt={comp.name} className="w-full h-20 object-cover" />
                       ) : colors.length ? (
-                        <div className="flex h-20">{colors.map((c, i) => <div key={i} style={{ background: c.hex }} className="flex-1" />)}</div>
+                        <div className="flex h-20">{colors.map((c, i) => (
+                          <div key={i} style={{ background: c.hex }} className="flex-1 relative">
+                            {c.role === "primary" && <Lock className="absolute inset-0 m-auto h-3.5 w-3.5" style={{ color: readableText(c.hex) }} />}
+                          </div>
+                        ))}</div>
                       ) : (
                         <div className="h-20 bg-violet-50" />
                       )}
@@ -689,11 +764,33 @@ export function ActivityForm({
                     </div>
                   )}
                 </button>
+                {/* 配色開關 chip：只顯示可以開關嘅顏色。主色已經喺上面色板圖用 🔒 標咗、一定會用，
+                    呢度唔使再重複顯示，即時反映入畫面描述 */}
+                {slot === "color" && comp && (
+                  <>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {effRows.filter((r) => r.present && r.role !== "primary").map((r) => (
+                        <button key={r.role} type="button" onClick={() => toggleColorEnabled(r.role)}
+                          title="啟用／停用（色碼要到素材庫修改）"
+                          className={`flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full border transition-colors ${
+                            r.enabled ? "bg-violet-50 border-violet-300 text-violet-700" : "bg-white border-gray-200 text-gray-400"}`}>
+                          <span className={`w-2 h-2 rounded-full border border-black/10 shrink-0 ${r.enabled ? "" : "opacity-40"}`} style={{ background: r.hex }} />
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-gray-400 leading-snug mt-1">
+                      • 勾選：套用該顏色<br />
+                      • 取消勾選：生成時不參考該顏色<br />
+                      • 主色：必定使用，固定鎖定
+                    </p>
+                  </>
+                )}
               </div>
             );
           })}
         </div>
-        <p className="text-[11px] text-gray-400">揀咗會即時加入上方「畫面描述 Prompt」，可再喺嗰度改字。</p>
+        <p className="text-[11px] text-gray-400">選取後會即時加入上方「畫面描述 Prompt」，可以再到那裡修改文字。</p>
       </div>
       </>)}
 
@@ -749,17 +846,29 @@ export function ActivityForm({
         )}
       </div>
 
-      {/* ── Submit ──────────────────────────────────────────── */}
-      <Button type="submit" disabled={loading} className="w-full">
-        {loading
-          ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />處理中…</>
-          : (isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel)}
-      </Button>
+      {/* ── Submit — fixed 貼實 viewport 底（跟其他生成 flow 同一套 pattern，
+          外層 <main class="overflow-auto"> 令 sticky 失效，見 QuickAddForm 註解）。
+          呢頁外層 wrapper 同呢個 form 自己都用 max-w-3xl（兩處要一致，唔可以淨改
+          外層——form 自己嘅 max-width 唔跟住闊會變返窄嗰個先生效），令 footer 同
+          頁面實際欄闊對齊。掣跟返多圖版本嘅 w-full + Button 預設高度，全部生成
+          流程一致。
+          ml-6（唔係 px-6）：呢個 fixed bar 唔經過 <MainLayout> 個 <main class="p-6">，
+          冇跟到嗰 24px 嘅左邊距，所以要手動補返 ml-6，等個掣個左邊同真正內容欄
+          （max-w-3xl 個 div，冇自己嘅左右 padding）啱啱好對齊，唔會偏咗。 ── */}
+      <div className="fixed bottom-0 left-60 right-0 z-30 bg-white border-t">
+        <div className="max-w-3xl ml-6 py-3">
+          <Button type="submit" disabled={loading || !canSubmit} className="w-full bg-violet-600 hover:bg-violet-700 text-white">
+            {loading
+              ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />處理中…</>
+              : (isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel)}
+          </Button>
+        </div>
+      </div>
 
       {showLibPicker && (
         <LibraryImagePickerModal
           clientId={clientId}
-          title="從素材庫揀參考圖"
+          title="從素材庫選取參考圖"
           onPick={(url, promptText) => {
             set("referenceImageUrls", [url]);
             setRefStylePrompt(promptText ?? "");
@@ -774,7 +883,7 @@ export function ActivityForm({
       {showBasePicker && (
         <LibraryImagePickerModal
           clientId={clientId}
-          title="從素材庫揀底圖"
+          title="從素材庫選取底圖"
           onPick={(url, promptText) => {
             setValues((prev) => ({ ...prev, baseImageUrl: url, imagePrompt: promptText?.trim() || prev.imagePrompt }));
             setShowBasePicker(false);

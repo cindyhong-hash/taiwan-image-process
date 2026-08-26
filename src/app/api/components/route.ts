@@ -9,6 +9,13 @@ export async function GET(request: Request) {
   const clientId = searchParams.get("clientId");
   const previewUrl = searchParams.get("previewUrl");
   const unassigned = searchParams.get("unassigned") === "1"; // 未分組：clientId 為 null
+  const ids = searchParams.get("ids"); // 逗號分隔嘅 component id 清單 —— 用嚟由已存嘅 selectedComponentIds 準確攞返嗰幾件（例如活動編輯頁重新掛返 03 積木），跳過下面嘅 client/previewUrl 篩選同去重（呢個係精確 id 對應，唔應該被去重邏輯漏走）。
+
+  if (ids) {
+    const idList = ids.split(",").filter(Boolean);
+    const components = await db.styleComponent.findMany({ where: { id: { in: idList } } });
+    return NextResponse.json(components.map((c) => ({ ...c, data: JSON.parse(c.data) })));
+  }
 
   const where: { clientId?: string | null; previewUrl?: string } = {};
   if (clientId) where.clientId = clientId;

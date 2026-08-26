@@ -161,10 +161,14 @@ export function EditorCanvas({ layout, brandLogoUrl, logoVersions = [] }: Props)
         <div className="flex items-center justify-between">
           <h2 className="font-medium">圖片預覽</h2>
           <div className="flex items-center gap-2">
-            {maskDataUrl && !inpainting && (
-              <span className="text-xs text-blue-500 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-                遮罩已就緒
-              </span>
+            {!inpainting && (
+              <button
+                onClick={() => setShowLogo(true)}
+                className="flex items-center gap-1 text-xs text-gray-600 hover:text-violet-600 border border-gray-200 hover:border-violet-300 hover:bg-violet-50 rounded-lg px-2 py-1 transition-all"
+              >
+                <Stamp className="h-3.5 w-3.5" />
+                放置標誌
+              </button>
             )}
             {!inpainting && (
               <button
@@ -178,7 +182,7 @@ export function EditorCanvas({ layout, brandLogoUrl, logoVersions = [] }: Props)
             {canUndo && !inpainting && (
               <button
                 onClick={undo}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-400 rounded-lg px-2 py-1 transition-all"
+                className="flex items-center gap-1 text-xs text-gray-600 hover:text-violet-600 border border-gray-200 hover:border-violet-300 hover:bg-violet-50 rounded-lg px-2 py-1 transition-all"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 上一步
@@ -237,7 +241,8 @@ export function EditorCanvas({ layout, brandLogoUrl, logoVersions = [] }: Props)
                 onClick={handleSave}
                 disabled={saving}
                 size="sm"
-                className="shrink-0 gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
+                variant="outline"
+                className="shrink-0 gap-1.5 border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 hover:bg-violet-50"
               >
                 {saving
                   ? <Loader2 className="h-3.5 w-3.5 animate-spin" />

@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, ImagePlus, X, ChevronDown, Sparkles, LayoutGrid, Wand2, Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Loader2, ImagePlus, X, ChevronDown, ChevronLeft, Sparkles, LayoutGrid, Wand2, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +44,6 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
 
   // 模式 B（各圖獨立）
   const [cells, setCells] = useState<Cell[]>([]);
-  const [logoMode, setLogoMode] = useState<"first" | "all" | "none">("first");
 
   const [optimizing, setOptimizing] = useState(false);
   const [splitting, setSplitting] = useState(false);
@@ -77,7 +77,6 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         setMustText(a.titleText || a.focusPoint || "");
         setProductUrls(Array.isArray(a.productImageUrls) ? a.productImageUrls : []);
         setRefUrls(Array.isArray(a.referenceImageUrls) ? a.referenceImageUrls : []);
-        setLogoMode(a.logoMode || "first");
         setVariantCount(a.variantCount === 2 ? 2 : 1);
         setVariantChoice(a.variantChoice === "B" ? "B" : "A");
         let parsed: Cell[] = [];
@@ -124,12 +123,13 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
     const mcells = genMode === "perCell" ? cells : [];
     await fetch("/api/activities", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId, layoutId, genMode, logoMode, variantCount, variantChoice, imagePrompt: mp, requiredText: mt, productImageUrls: mprod, referenceImageUrls: mrefs, cells: mcells, status: "DRAFT" }),
+      body: JSON.stringify({ clientId, layoutId, genMode, variantCount, variantChoice, imagePrompt: mp, requiredText: mt, productImageUrls: mprod, referenceImageUrls: mrefs, cells: mcells, status: "DRAFT" }),
     });
   };
   const { dialog: draftDialog } = useUnsavedGuard(draftDirty, saveDraft);
 
   if (!clientId || !layout) return <div className="text-gray-400 p-8">載入中…</div>;
+
 
   const repick = () => setShowPicker(true);
 
@@ -358,7 +358,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             focusPoint: mappedText,
             titleText: mappedText,
             imagePrompt: mappedPrompt,
-            layoutId, genMode, logoMode,
+            layoutId, genMode,
             variantCount, variantChoice,
             productImageUrls: mappedProducts,
             referenceImageUrls: mappedRefs,
@@ -375,7 +375,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientId, layoutId, genMode, logoMode,
+          clientId, layoutId, genMode,
           variantCount, variantChoice,
           imagePrompt: mappedPrompt,
           requiredText: mappedText,
@@ -393,17 +393,31 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
 
   const canExpand = layout.expandable && cells.length < (layout.maxCount ?? layout.count);
 
+  // 生成前必填檢查：統一主題模式靠「活動核心主題 Prompt」；各圖獨立填寫要求每格
+  // 都有內容（描述或者自己嘅產品圖）——用「幫我拆解」AI 分鏡帶入描述之後會自動
+  // 解鎖；但如果直接撳「各圖獨立填寫」切換過去（cells 由 emptyCell() 全空開始），
+  // 就要逐格填夠先解鎖，避免有格完全冇料就照樣送去生成。
+  const canSubmit = genMode === "unified"
+    ? theme.trim().length > 0
+    : cells.length > 0 && cells.every((c) => c.description.trim().length > 0 || c.assetUrls.length > 0);
+
   return (
-    <div className="max-w-2xl space-y-8">
+    <div className="max-w-3xl space-y-8 pb-20">
       {draftDialog}
       <div>
         {/* 標題（左）+ 版型標示／重選（右）— 與單圖編輯頁一致 */}
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">{editId ? "編輯活動（多圖）" : "新增活動（多圖）"}</h1>
+          <div className="flex items-center gap-2">
+            {/* 編輯模式返去嗰個活動；新增模式（冇 editId）返去 client 主頁，同單圖新增頁一致做法 */}
+            <Link href={editId ? `/clients/${clientId}/activities/${editId}` : `/clients/${clientId}`} className="text-gray-400 hover:text-gray-700">
+              <ChevronLeft className="h-5 w-5" />
+            </Link>
+            <h1 className="text-xl font-semibold">{editId ? "編輯活動（多圖）" : "新增活動（多圖）"}</h1>
+          </div>
           <button
             type="button"
             onClick={repick}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-violet-600 border border-gray-200 hover:border-violet-300 rounded-lg px-3 py-1.5 transition-all"
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-violet-600 border border-gray-200 hover:border-violet-300 rounded-lg px-3 py-1.5 transition-all shrink-0 whitespace-nowrap"
           >
             已選版型：<span className="font-medium text-gray-800">{layout.label}</span>
             <ChevronDown className="h-4 w-4" />
@@ -589,10 +603,10 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
 
 
           <div className="grid grid-cols-3 gap-4">
-            <AssetStrip label="產品主圖" sub="最多 5 張（選填）" urls={productUrls} max={5}
+            <AssetStrip label="產品主圖" sub="最多 5 張（選填）" urls={productUrls} max={5} size="lg"
               onAdd={(f) => addAssets(f, 5, productUrls, setProductUrls)}
               onRemove={(i) => setProductUrls(productUrls.filter((_, x) => x !== i))} />
-            <AssetStrip label="風格參考圖" sub="1 張（選填）" urls={refUrls} max={1}
+            <AssetStrip label="風格參考圖" sub="1 張（選填）" urls={refUrls} max={1} size="lg"
               onAdd={(f) => addAssets(f, 1, refUrls, setRefUrls)}
               onRemove={(i) => setRefUrls(refUrls.filter((_, x) => x !== i))} />
             {/* AI 反推提示詞：分析風格參考圖 → 直貼進主題 Prompt */}
@@ -605,7 +619,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                 type="button"
                 onClick={analyzeRef}
                 disabled={analyzing || refUrls.length === 0}
-                className="w-full h-14 flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-200 text-gray-400 hover:border-violet-300 hover:text-violet-600 disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:text-gray-400"
+                className="w-full h-32 flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 hover:border-violet-300 hover:text-violet-600 disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:text-gray-400"
               >
                 {analyzing
                   ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -726,31 +740,16 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
               ＋ 新增一格（上限 {layout.maxCount}）
             </button>
           )}
-
-          {/* 全域品牌標識設定 */}
-          <div className="space-y-2 pt-2 border-t">
-            <Label className="text-sm font-medium">全域品牌標識設定 — LOGO 位置</Label>
-            <div className="flex gap-2">
-              {([["first", "僅放於圖1"], ["all", "每張都放"], ["none", "不放 LOGO"]] as const).map(([v, lbl]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setLogoMode(v)}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-xs transition-all ${
-                    logoMode === v ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
-                  }`}
-                >
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       )}
 
-      <Button onClick={handleSubmit} disabled={saving} className="w-full">
-        {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /><span>處理中…</span></> : (editId ? "儲存並重新生成" : "建立活動並生成")}
-      </Button>
+      <div className="fixed bottom-0 left-60 right-0 z-30 bg-white border-t">
+        <div className="max-w-3xl ml-6 py-3">
+          <Button onClick={handleSubmit} disabled={saving || !canSubmit} className="w-full bg-violet-600 hover:bg-violet-700 text-white">
+            {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /><span>處理中…</span></> : (editId ? "儲存並重新生成" : "建立活動並生成")}
+          </Button>
+        </div>
+      </div>
 
       {showPicker && (
         <MultiLayoutPicker selectedId={layoutId} onSelect={handlePickLayout} onClose={() => setShowPicker(false)} />
@@ -761,10 +760,14 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
 
 // ── 小型素材上傳條 ──────────────────────────────────────────────────────────
 function AssetStrip({
-  label, sub, urls, max, onAdd, onRemove,
+  label, sub, urls, max, onAdd, onRemove, size = "sm",
 }: {
   label: string; sub: string; urls: string[]; max: number;
   onAdd: (files: FileList) => void; onRemove: (i: number) => void;
+  /** "lg" — 同單圖版 UploadZone 一樣：完全未上傳時顯示大隻 dropzone（h-32），
+   *  唔再係細細粒 56px tile，等單/多圖兩版嘅「素材上傳」睇落大細一致。
+   *  一有圖之後兩種 size 都跟返細 tile row（同單圖版縮返細一致）。 */
+  size?: "sm" | "lg";
 }) {
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -772,6 +775,7 @@ function AssetStrip({
     setBusy(true);
     try { await onAdd(files); } finally { setBusy(false); }
   };
+  const showBigEmptyZone = size === "lg" && urls.length === 0;
   return (
     <div className="space-y-1.5">
       {label && (
@@ -780,26 +784,36 @@ function AssetStrip({
           {sub && <span className="text-[10px] text-gray-400 ml-1">{sub}</span>}
         </div>
       )}
-      <div className="flex gap-1.5 flex-wrap">
-        {urls.map((url, i) => (
-          <div key={i} className="relative w-14 h-14 shrink-0">
-            <img src={url} alt="" onClick={() => setPreview(url)}
-              className="w-14 h-14 object-cover rounded-lg border border-gray-200 cursor-zoom-in" />
-            <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(i); }}
-              className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
-              <X className="h-2.5 w-2.5 text-gray-500" />
-            </button>
-          </div>
-        ))}
-        {urls.length < max && (
-          <label className="flex flex-col items-center justify-center gap-1 w-14 h-14 rounded-lg border-2 border-dashed border-gray-200 hover:border-violet-300 cursor-pointer">
-            {busy ? <Loader2 className="h-4 w-4 text-gray-300 animate-spin" /> : <ImagePlus className="h-4 w-4 text-gray-300" />}
-            <span className="text-[9px] text-gray-300">{urls.length}/{max}</span>
-            <input type="file" accept="image/*" multiple className="hidden"
-              onChange={(e) => e.target.files && handle(e.target.files)} />
-          </label>
-        )}
-      </div>
+      {showBigEmptyZone ? (
+        <label className="w-full h-32 flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 hover:border-violet-300 hover:bg-violet-50/30 cursor-pointer transition-colors">
+          {busy ? <Loader2 className="h-5 w-5 text-gray-300 animate-spin" /> : <ImagePlus className="h-5 w-5 text-gray-300" />}
+          <span className="text-xs text-gray-400">點擊或拖曳上傳</span>
+          <span className="text-[10px] text-gray-300">{urls.length}/{max}</span>
+          <input type="file" accept="image/*" multiple className="hidden"
+            onChange={(e) => e.target.files && handle(e.target.files)} />
+        </label>
+      ) : (
+        <div className="flex gap-1.5 flex-wrap">
+          {urls.map((url, i) => (
+            <div key={i} className="relative w-14 h-14 shrink-0">
+              <img src={url} alt="" onClick={() => setPreview(url)}
+                className="w-14 h-14 object-cover rounded-lg border border-gray-200 cursor-zoom-in" />
+              <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(i); }}
+                className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
+                <X className="h-2.5 w-2.5 text-gray-500" />
+              </button>
+            </div>
+          ))}
+          {urls.length < max && (
+            <label className="flex flex-col items-center justify-center gap-1 w-14 h-14 rounded-lg border-2 border-dashed border-gray-200 hover:border-violet-300 cursor-pointer">
+              {busy ? <Loader2 className="h-4 w-4 text-gray-300 animate-spin" /> : <ImagePlus className="h-4 w-4 text-gray-300" />}
+              <span className="text-[9px] text-gray-300">{urls.length}/{max}</span>
+              <input type="file" accept="image/*" multiple className="hidden"
+                onChange={(e) => e.target.files && handle(e.target.files)} />
+            </label>
+          )}
+        </div>
+      )}
       {preview && (
         <div onClick={() => setPreview(null)}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6 cursor-zoom-out">

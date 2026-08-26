@@ -1,8 +1,9 @@
 "use client";
 /**
- * QuickAddModal (v3)
- * ──────────────────
- * Four素材 types shown together (構圖 / 配色 / 語氣 / 背景), each toggleable.
+ * QuickAddForm — 素材表單內容（構圖 / 配色 / 背景）。
+ * ──────────────────────────────────
+ * 抽自舊 QuickAddModal：拆走 modal 外殼（backdrop / 右側抽屜 / X 關閉），
+ * 淨係表單內容，用喺「上傳參考圖」全頁（唔再係 popup）。
  *   1. Upload a reference image (optional) → AI 讀取圖片 fills 構圖/配色/語氣
  *   2. 配色 is a 5-color palette (主色/輔色/強調色/中性色/點綴色); each color toggleable
  *   3. 背景 is upload-only (no AI): its own image + description
@@ -10,13 +11,12 @@
  */
 
 import { useState, useRef, useEffect } from "react";
-import { X, Upload, Sparkles, Loader2, Plus, Trash2, Check } from "lucide-react";
+import { X, Upload, Sparkles, Loader2, Plus, Trash2, Check, ChevronDown } from "lucide-react";
 import { CATEGORY_META, PALETTE_ROLES, getColors } from "@/types/library";
 import type { PaletteRole, StyleComponent, ComponentCategory } from "@/types/library";
 import { useRotatingHint } from "@/hooks/useRotatingHint";
 // AI 分析（生成素材積木）loading 輪播提示
 const ANALYZE_HINTS = ["AI 分析構圖中…", "抽取配色…", "解讀風格語氣…", "整理素材積木…", "快好喇…"];
-// INDUSTRY_PRESETS moved to PromptComposer (積木組合台)
 import { ColorCards } from "./ColorCards";
 
 type Props = {
@@ -28,7 +28,8 @@ type Props = {
   /** Set when editing a GENERATED image → save rewrites that image's paramsJson.slots
    *  instead of writing StyleComponent rows (which the generated-image modal never reads). */
   libraryImageId?: string;
-  onClose: () => void;
+  /** 取消 → 唔儲存，返去素材庫。 */
+  onCancel: () => void;
   onSaved: () => void;
 };
 
@@ -41,7 +42,7 @@ const DEFAULT_PALETTE: PaletteEntry[] = PALETTE_ROLES.map((r, idx) => ({
   enabled: idx < 2, // primary + secondary on by default
 }));
 
-export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefillComponents, libraryImageId, onClose, onSaved }: Props) {
+export function QuickAddForm({ clientId, initialImageUrl, editComponent, prefillComponents, libraryImageId, onCancel, onSaved }: Props) {
   const isEdit = !!editComponent || (!!prefillComponents && prefillComponents.length > 0);
   // ── Reference image (for AI analyze) ──
   const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl ?? null);
@@ -69,6 +70,9 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
   // ── COLOR_SCHEME (5-color palette) ──
   const [colorName, setColorName] = useState("");
   const [palette, setPalette] = useState<PaletteEntry[]>(DEFAULT_PALETTE);
+  // 色盤編輯（5 色）預設收埋，淨顯示色票摘要——用戶要改先自己打開。
+  // 編輯現有素材／AI 分析出真實色盤 → 自動展開，唔會靜雞藏走用戶資料。
+  const [showPaletteEditor, setShowPaletteEditor] = useState(isEdit);
   const [colorPrompt, setColorPrompt] = useState("");
 
   // ── COPY_TONE ──
@@ -81,8 +85,6 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
   const [bgName, setBgName] = useState("");
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
   // (背景 is image-only now — no description / aiPrompt fields)
-
-  // (套用行業範本 moved to PromptComposer / 積木組合台)
 
   // ── AI ──
   const [analyzing, setAnalyzing] = useState(false);
@@ -168,6 +170,29 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
     setPalette((prev) => prev.map((p) => (p.role === role ? { ...p, ...patch } : p)));
   }
 
+  // 單行緊湊色盤列：checkbox + 色塊 + hex + 名稱（用途說明搬去 title tooltip，唔再佔多一行）。
+  function renderColorRow(c: PaletteEntry) {
+    const roleMeta = PALETTE_ROLES.find((r) => r.role === c.role)!;
+    return (
+      <div key={c.role} className={`flex items-center gap-2 ${c.enabled ? "" : "opacity-45"}`}>
+        <button type="button" onClick={() => roleMeta.toggleable && updateColor(c.role, { enabled: !c.enabled })}
+          disabled={!roleMeta.toggleable}
+          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${c.enabled ? "bg-rose-500 border-rose-500" : "border-gray-300 bg-white"} ${roleMeta.toggleable ? "" : "cursor-default"}`}
+          title={roleMeta.toggleable ? "啟用 / 停用" : "主色必用"}>
+          {c.enabled && <Check className="h-3 w-3 text-white" />}
+        </button>
+        <input type="color" value={c.hex} onChange={(e) => updateColor(c.role, { hex: e.target.value })}
+          className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer p-0.5 shrink-0" />
+        <input value={c.hex} onChange={(e) => updateColor(c.role, { hex: e.target.value })}
+          className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-rose-400 shrink-0" />
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-gray-700 leading-none">{c.label}</div>
+          <div className="text-[10px] text-gray-400 leading-none mt-0.5 truncate">{roleMeta.hint}</div>
+        </div>
+      </div>
+    );
+  }
+
   // Call the analyze endpoint once; throws on error. Returns { composition, colorScheme, copyTone, ... }.
   async function runAnalyze() {
     const res = await fetch("/api/components/analyze", {
@@ -193,6 +218,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
     if (!cs) return;
     setColorName(cs.name ?? "");
     setColorPrompt(cs.aiPromptText ?? "");
+    setShowPaletteEditor(true); // AI 填咗真實色盤 → 展開俾用戶睇/微調，唔藏埋
     // Map primary, secondary, then extraColors → accent/neutral/highlight
     const extra: string[] = Array.isArray(cs.extraColors) ? cs.extraColors : [];
     setPalette((prev) =>
@@ -231,7 +257,7 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
     }
   }
 
-  // 一有新圖（一開 modal 就帶咗初始圖，或者用戶喺「手動加入素材」入面自己上傳），
+  // 一有新圖（一開頁就帶咗初始圖，或者用戶喺「手動加入素材」入面自己上傳），
   // 就自動讀圖填欄位，唔使用戶多撳一次——有圖擺喺度已經表達咗「幫我分析」嘅意圖。
   // 淨係「調整」（prefillComponents/editComponent 已有真實內容要保護）先跳過，
   // 避免靜雞蓋走現有資料。跟住 imageUrl（唔淨係初始 prop）：換圖／手動上傳都會再觸發一次。
@@ -320,7 +346,6 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
       setSaving(false);
       if (!res.ok) { setSaveError("儲存失敗，請重試"); return; }
       onSaved();
-      onClose();
       return;
     }
 
@@ -340,7 +365,6 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
       setSaving(false);
       if (!res.ok) { setSaveError("儲存失敗，請重試"); return; }
       onSaved();
-      onClose();
       return;
     }
 
@@ -369,7 +393,6 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
     setSaving(false);
     if (results.some((r) => !r.ok)) { setSaveError("部分素材儲存失敗，請重試"); return; }
     onSaved();
-    onClose();
   }
 
   const compMeta = CATEGORY_META["COMPOSITION"];
@@ -379,159 +402,140 @@ export function QuickAddModal({ clientId, initialImageUrl, editComponent, prefil
   const enabledColors = palette.filter((p) => p.enabled && p.hex);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+    <div className="pb-20">
+      {isEdit && <p className="text-xs text-gray-400 mb-5">修改後儲存即覆蓋原素材</p>}
 
-      <div className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <div>
-            <h2 className="text-base font-semibold">{isEdit ? "編輯素材" : "快速加入素材"}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{isEdit ? "修改後儲存即覆蓋原素材" : "構圖・配色・背景可同時新增"}</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-            <X className="h-4 w-4" />
-          </button>
+      {/* Edit-mode: project selector only (type is fixed — an image's 構圖/配色/語氣 are edited together) */}
+      {isEdit && (
+        <div className="mb-5 flex items-center gap-2 flex-wrap">
+          <label className="text-xs font-semibold text-gray-500 whitespace-nowrap">專案</label>
+          <select value={editClientId ?? ""} onChange={(e) => setEditClientId(e.target.value || null)}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white">
+            <option value="">全部（無分類）</option>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {/* Reference image upload + AI analyze — available in both create and edit mode */}
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">
+            參考圖片（選填，供 AI 分析構圖／配色）
+          </label>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
+            onChange={(e) => { if (e.target.files?.[0]) handleUpload(e.target.files[0]); }} />
+          {imageUrl ? (
+            <div className="relative group">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageUrl} alt="preview" className="w-full h-40 object-contain rounded-xl border bg-gray-50" />
+              <button onClick={() => setImageUrl(null)}
+                className="absolute top-2 right-2 bg-white/90 hover:bg-white p-1.5 rounded-lg shadow opacity-0 group-hover:opacity-100 transition-opacity">
+                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+              </button>
+              <button onClick={handleAnalyze} disabled={analyzing}
+                className="absolute bottom-3 right-3 flex items-center gap-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg shadow transition-colors disabled:opacity-60">
+                {analyzing
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />{analyzeHint}</>
+                  : <><Sparkles className="h-3.5 w-3.5" />AI 讀取圖片，填入欄位</>}
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => fileRef.current?.click()} disabled={uploading}
+              className="w-full h-32 border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center justify-center gap-1.5 text-gray-400 hover:border-violet-300 hover:text-violet-500 transition-colors">
+              {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+              <span className="text-xs">{uploading ? "上傳中…" : "點擊上傳圖片（可用 AI 自動填入欄位）"}</span>
+            </button>
+          )}
+          {aiError && <p className="text-xs text-red-500 mt-1.5">{aiError}</p>}
         </div>
 
-        {/* Edit-mode: project selector only (type is fixed — an image's 構圖/配色/語氣 are edited together) */}
-        {isEdit && (
-          <div className="px-6 py-3 border-b bg-gray-50/60 flex items-center gap-2 flex-wrap">
-            <label className="text-xs font-semibold text-gray-500 whitespace-nowrap">專案</label>
-            <select value={editClientId ?? ""} onChange={(e) => setEditClientId(e.target.value || null)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white">
-              <option value="">全部（無分類）</option>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-        )}
+        {/* COMPOSITION */}
+        <SectionWrapper meta={compMeta} label="構圖" checked={include.COMPOSITION}
+          onToggle={() => setInclude((p) => ({ ...p, COMPOSITION: !p.COMPOSITION }))}
+          action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COMPOSITION"} disabled={!!sectionAnalyzing || analyzing} filled={!!(compName.trim() || description.trim())} onClick={() => analyzeSection("COMPOSITION")} /> : null}>
+          <Field label="素材名稱 *">
+            <input value={compName} onChange={(e) => setCompName(e.target.value)} placeholder="例：留白極簡構圖"
+              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </Field>
+          <Field label="構圖描述">
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="例：主體置中，大量留白，視覺乾淨" rows={1}
+              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </Field>
+        </SectionWrapper>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Reference image upload + AI analyze — available in both create and edit mode */}
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-2 block">
-              參考圖片（選填，供 AI 分析構圖／配色／背景）
-            </label>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden"
-              onChange={(e) => { if (e.target.files?.[0]) handleUpload(e.target.files[0]); }} />
-            {imageUrl ? (
-              <div className="relative group">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={imageUrl} alt="preview" className="w-full h-64 object-contain rounded-xl border bg-gray-50" />
-                <button onClick={() => setImageUrl(null)}
-                  className="absolute top-2 right-2 bg-white/90 hover:bg-white p-1.5 rounded-lg shadow opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                </button>
-                <button onClick={handleAnalyze} disabled={analyzing}
-                  className="absolute bottom-3 right-3 flex items-center gap-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg shadow transition-colors disabled:opacity-60">
-                  {analyzing
-                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />{analyzeHint}</>
-                    : <><Sparkles className="h-3.5 w-3.5" />AI 讀取圖片，填入欄位</>}
+        {/* COLOR_SCHEME — 5-color palette */}
+        <SectionWrapper meta={colorMeta} label="配色" checked={include.COLOR_SCHEME}
+          onToggle={() => setInclude((p) => ({ ...p, COLOR_SCHEME: !p.COLOR_SCHEME }))}
+          action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COLOR_SCHEME"} disabled={!!sectionAnalyzing || analyzing} filled={!!colorName.trim()} onClick={() => analyzeSection("COLOR_SCHEME")} /> : null}>
+          <Field label="素材名稱 *">
+            <input value={colorName} onChange={(e) => setColorName(e.target.value)} placeholder="例：暖橙系配色"
+              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400" />
+          </Field>
+          <Field label="色盤（最多 5 色，可勾選啟用）">
+            {enabledColors.length > 0 && <div className="mb-1.5"><ColorCards colors={enabledColors} height="h-12" /></div>}
+            {showPaletteEditor ? (
+              <div className="space-y-1.5">
+                {palette.map((c) => renderColorRow(c))}
+                <button type="button" onClick={() => setShowPaletteEditor(false)}
+                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 pt-0.5">
+                  收起色盤編輯<ChevronDown className="h-3.5 w-3.5 rotate-180" />
                 </button>
               </div>
             ) : (
-              <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                className="w-full h-32 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-violet-300 hover:text-violet-500 transition-colors">
-                {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
-                <span className="text-xs">{uploading ? "上傳中…" : "點擊上傳圖片（可用 AI 自動填入欄位）"}</span>
+              <button type="button" onClick={() => setShowPaletteEditor(true)}
+                className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700 font-medium">
+                編輯色盤（主色／輔色／強調色／中性色／點綴色）<ChevronDown className="h-3.5 w-3.5" />
               </button>
             )}
-            {aiError && <p className="text-xs text-red-500 mt-1.5">{aiError}</p>}
-          </div>
+          </Field>
+        </SectionWrapper>
 
-          {/* COMPOSITION */}
-          <SectionWrapper meta={compMeta} label="構圖" checked={include.COMPOSITION}
-            onToggle={() => setInclude((p) => ({ ...p, COMPOSITION: !p.COMPOSITION }))}
-            action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COMPOSITION"} disabled={!!sectionAnalyzing || analyzing} filled={!!(compName.trim() || description.trim())} onClick={() => analyzeSection("COMPOSITION")} /> : null}>
-            <Field label="素材名稱 *">
-              <input value={compName} onChange={(e) => setCompName(e.target.value)} placeholder="例：留白極簡構圖"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-            </Field>
-            <Field label="構圖描述">
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="例：主體置中，大量留白，視覺乾淨" rows={2}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-            </Field>
-          </SectionWrapper>
+        {/* COPY_TONE — 語氣積木已移除（wireframe ⑧），暫隱藏（保留 code 供日後） */}
+        {false && (
+        <SectionWrapper meta={toneMeta} label="語氣" checked={include.COPY_TONE}
+          onToggle={() => setInclude((p) => ({ ...p, COPY_TONE: !p.COPY_TONE }))}
+          action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COPY_TONE"} disabled={!!sectionAnalyzing || analyzing} filled={!!toneName.trim()} onClick={() => analyzeSection("COPY_TONE")} /> : null}>
+          <Field label="素材名稱 *">
+            <input value={toneName} onChange={(e) => setToneName(e.target.value)} placeholder="例：活潑親切語氣"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+          </Field>
+          <Field label="語氣標籤">
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {toneLabels.map((l, i) => (
+                <span key={i} className="flex items-center gap-1 bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-full border border-amber-200">
+                  {l}
+                  <button onClick={() => setToneLabels(toneLabels.filter((_, j) => j !== i))}><X className="h-3 w-3" /></button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input value={toneInput} onChange={(e) => setToneInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && toneInput.trim()) { e.preventDefault(); setToneLabels([...toneLabels, toneInput.trim()]); setToneInput(""); } }}
+                placeholder="輸入標籤後按 Enter"
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              <button onClick={() => { if (toneInput.trim()) { setToneLabels([...toneLabels, toneInput.trim()]); setToneInput(""); } }}
+                className="px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-sm hover:bg-amber-100 transition-colors">
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+          </Field>
+        </SectionWrapper>
+        )}
+      </div>
 
-          {/* COLOR_SCHEME — 5-color palette */}
-          <SectionWrapper meta={colorMeta} label="配色" checked={include.COLOR_SCHEME}
-            onToggle={() => setInclude((p) => ({ ...p, COLOR_SCHEME: !p.COLOR_SCHEME }))}
-            action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COLOR_SCHEME"} disabled={!!sectionAnalyzing || analyzing} filled={!!colorName.trim()} onClick={() => analyzeSection("COLOR_SCHEME")} /> : null}>
-            <Field label="素材名稱 *">
-              <input value={colorName} onChange={(e) => setColorName(e.target.value)} placeholder="例：暖橙系配色"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400" />
-            </Field>
-            <Field label="色盤（最多 5 色，可勾選啟用）">
-              {enabledColors.length > 0 && <div className="mb-2"><ColorCards colors={enabledColors} height="h-12" /></div>}
-              <div className="space-y-1.5">
-                {palette.map((c) => {
-                  const roleMeta = PALETTE_ROLES.find((r) => r.role === c.role)!;
-                  return (
-                    <div key={c.role} className={`flex items-center gap-2 ${c.enabled ? "" : "opacity-45"}`}>
-                      <button type="button" onClick={() => roleMeta.toggleable && updateColor(c.role, { enabled: !c.enabled })}
-                        disabled={!roleMeta.toggleable}
-                        className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${c.enabled ? "bg-rose-500 border-rose-500" : "border-gray-300 bg-white"} ${roleMeta.toggleable ? "" : "cursor-default"}`}
-                        title={roleMeta.toggleable ? "啟用 / 停用" : "主色必用"}>
-                        {c.enabled && <Check className="h-3 w-3 text-white" />}
-                      </button>
-                      <input type="color" value={c.hex} onChange={(e) => updateColor(c.role, { hex: e.target.value })}
-                        className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer p-0.5 shrink-0" />
-                      <input value={c.hex} onChange={(e) => updateColor(c.role, { hex: e.target.value })}
-                        className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-rose-400 shrink-0" />
-                      <div className="min-w-0">
-                        <div className="text-xs font-medium text-gray-700 leading-none">{c.label}</div>
-                        <div className="text-[10px] text-gray-400 leading-none mt-0.5 truncate">{roleMeta.hint}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Field>
-          </SectionWrapper>
-
-          {/* COPY_TONE — 語氣積木已移除（wireframe ⑧），暫隱藏（保留 code 供日後） */}
-          {false && (
-          <SectionWrapper meta={toneMeta} label="語氣" checked={include.COPY_TONE}
-            onToggle={() => setInclude((p) => ({ ...p, COPY_TONE: !p.COPY_TONE }))}
-            action={imageUrl ? <SectionAIButton loading={sectionAnalyzing === "COPY_TONE"} disabled={!!sectionAnalyzing || analyzing} filled={!!toneName.trim()} onClick={() => analyzeSection("COPY_TONE")} /> : null}>
-            <Field label="素材名稱 *">
-              <input value={toneName} onChange={(e) => setToneName(e.target.value)} placeholder="例：活潑親切語氣"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
-            </Field>
-            <Field label="語氣標籤">
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {toneLabels.map((l, i) => (
-                  <span key={i} className="flex items-center gap-1 bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-full border border-amber-200">
-                    {l}
-                    <button onClick={() => setToneLabels(toneLabels.filter((_, j) => j !== i))}><X className="h-3 w-3" /></button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input value={toneInput} onChange={(e) => setToneInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && toneInput.trim()) { e.preventDefault(); setToneLabels([...toneLabels, toneInput.trim()]); setToneInput(""); } }}
-                  placeholder="輸入標籤後按 Enter"
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
-                <button onClick={() => { if (toneInput.trim()) { setToneLabels([...toneLabels, toneInput.trim()]); setToneInput(""); } }}
-                  className="px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-sm hover:bg-amber-100 transition-colors">
-                  <Plus className="h-4 w-4" />
-                </button>
-              </div>
-            </Field>
-          </SectionWrapper>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t bg-gray-50 flex items-center gap-3">
+      {/* Actions — fixed 貼實 viewport 底（唔用 sticky：外層 <main class="overflow-auto"> 令
+          sticky 嘅 containing block 變咗 main 本身，而 main 又冇真係內部滾動，sticky 完全唔生效）。
+          left-60 對應 side nav 闊度（w-60），令呢條 bar 淨係蓋住內容欄，唔遮埋側 nav。 */}
+      <div className="fixed bottom-0 left-60 right-0 z-30 bg-white border-t">
+        <div className="max-w-3xl px-6 py-3 flex items-center gap-3">
           {saveError && <p className="text-xs text-red-500 flex-1">{saveError}</p>}
-          <button onClick={onClose}
+          <button onClick={onCancel}
             className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-100 transition-colors">
             取消
           </button>
           <button onClick={handleSave} disabled={saving || checkedCount === 0}
-            className="flex-1 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5">
+            className="flex-1 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5">
             {saving ? <><Loader2 className="h-4 w-4 animate-spin" />儲存中…</> : isEdit ? <>儲存修改</> : <>儲存已選素材（{checkedCount}）</>}
           </button>
         </div>
@@ -552,7 +556,7 @@ function SectionWrapper({ meta, label, checked, onToggle, children, action }: {
 }) {
   return (
     <div className={`rounded-xl border transition-opacity ${checked ? "" : "opacity-40"} ${meta.bg} ${meta.border}`}>
-      <div className="w-full flex items-center gap-2 px-4 pt-3 pb-2">
+      <div className="w-full flex items-center gap-2 px-3.5 pt-2.5 pb-1.5">
         <button onClick={onToggle} className="flex items-center gap-2 text-left flex-1 min-w-0">
           <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${checked ? `${meta.border} ${meta.bg}` : "border-gray-300 bg-white"}`}>
             {checked && <Check className={`h-3 w-3 ${meta.color}`} />}
@@ -561,7 +565,7 @@ function SectionWrapper({ meta, label, checked, onToggle, children, action }: {
         </button>
         {action}
       </div>
-      {checked && <div className="px-4 pb-4 space-y-3">{children}</div>}
+      {checked && <div className="px-3.5 pb-3 space-y-2">{children}</div>}
     </div>
   );
 }
@@ -588,3 +592,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
+
+export const isQuickAddEdit = (editComponent?: StyleComponent | null, prefillComponents?: StyleComponent[] | null) =>
+  !!editComponent || (!!prefillComponents && prefillComponents.length > 0);

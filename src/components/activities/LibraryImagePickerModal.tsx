@@ -5,7 +5,7 @@
  * 搜尋涵蓋 標題 + AI Prompt 文字。點一張即回傳 imageUrl。
  */
 import { useEffect, useMemo, useState } from "react";
-import { X, Search, LayoutGrid, Package, Image as ImageIcon, UserRound, Palette, Paperclip, type LucideIcon } from "lucide-react";
+import { X, Search, LayoutGrid, Package, Mountain, UserRound, Palette, Paperclip, type LucideIcon } from "lucide-react";
 
 type GalleryItem = {
   kind: "generated" | "uploaded" | "material";
@@ -22,8 +22,8 @@ type Client = { id: string; name: string };
 
 // 同 ComponentGrid FILTER_META 一致：lucide icon + 每類 solid 底色（tag 用 cls，filter 選中用 activeCls）。
 const META: Record<TypeKey, { label: string; Icon: LucideIcon; cls: string; activeCls: string }> = {
-  product:      { label: "產品成圖", Icon: Package,    cls: "bg-violet-600", activeCls: "bg-violet-600 text-white border-violet-600" },
-  background:   { label: "背景",     Icon: ImageIcon,  cls: "bg-teal-600",   activeCls: "bg-teal-600 text-white border-teal-600" },
+  product:      { label: "產品成圖", Icon: Package,    cls: "bg-[#C9A227]", activeCls: "bg-[#C9A227] text-white border-[#C9A227]" },
+  background:   { label: "背景",     Icon: Mountain,   cls: "bg-teal-600",   activeCls: "bg-teal-600 text-white border-teal-600" },
   person:       { label: "人像",     Icon: UserRound,  cls: "bg-rose-500",   activeCls: "bg-rose-500 text-white border-rose-500" },
   illustration: { label: "插畫",     Icon: Palette,    cls: "bg-amber-500",  activeCls: "bg-amber-500 text-white border-amber-500" },
   reference:    { label: "參考圖",   Icon: Paperclip,  cls: "bg-blue-500",   activeCls: "bg-blue-500 text-white border-blue-500" },

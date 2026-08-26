@@ -41,29 +41,20 @@ export function MaskCanvas({ imageUrl, onMaskChange, onSelectionChange }: Props)
   const [rect, setRect]       = useState<Rect>(null);
   const [hasSelection, setHasSelection] = useState(false);
 
-  // ── Canvas size synced to container ──────────────────────────────────────────
-  useEffect(() => {
-    const container = containerRef.current;
-    const canvas    = canvasRef.current;
-    if (!container || !canvas) return;
-    const ro = new ResizeObserver(([e]) => {
-      canvas.width  = Math.round(e.contentRect.width);
-      canvas.height = Math.round(e.contentRect.height);
-      // Repaint handled by rect state
-    });
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, []);
+  // rect 嘅最新值——ResizeObserver callback 註冊一次就唔會再變（closure 停喺初次
+  // 嗰個值），要靠 ref 先攞到 resize 嗰一刻真正嘅選框，用嚟喺 resize 後重畫。
+  const rectRef = useRef<Rect>(null);
+  useEffect(() => { rectRef.current = rect; }, [rect]);
 
-  // ── Draw selection rect ───────────────────────────────────────────────────────
-  useEffect(() => {
+  // ── Draw selection rect（抽出嚟俾 resize 之後都可以重畫，唔止 rect 變嗰陣）──────
+  const drawRect = useCallback((r: Rect) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!rect) return;
+    if (!r) return;
 
-    const { x, y, w, h } = rect;
+    const { x, y, w, h } = r;
 
     // Dimming overlay outside selection
     ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -93,8 +84,29 @@ export function MaskCanvas({ imageUrl, onMaskChange, onSelectionChange }: Props)
     ctx.font        = "12px system-ui, sans-serif";
     ctx.fillStyle   = "rgba(59,130,246,1)";
     ctx.fillText(label, x + 4, y - 6 > 14 ? y - 6 : y + 16);
+  }, []);
 
-  }, [rect]);
+  useEffect(() => { drawRect(rect); }, [rect, drawRect]);
+
+  // ── Canvas size synced to container ──────────────────────────────────────────
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas    = canvasRef.current;
+    if (!container || !canvas) return;
+    const ro = new ResizeObserver(([e]) => {
+      canvas.width  = Math.round(e.contentRect.width);
+      canvas.height = Math.round(e.contentRect.height);
+      // 改 canvas.width/height 本身會清空畫布——縮放/佈局變動（例如揀咗第一格之後
+      // 側欄／提示文字令容器高度變化）都會觸發呢個 observer，之前淨係靠下面
+      // 「Draw selection rect」個 effect 去重畫，但嗰個 effect 淨係喺 rect state
+      // 改變先會 rerun，resize 本身唔算 state 改變，所以畫好嘅選框會突然消失
+      // （但 rect/hasSelection state 冇變，所以「已選取區域」badge 仍然啱）。
+      // 呢度直接用返最新嘅 rectRef 重畫，先真正跟得切 resize。
+      drawRect(rectRef.current);
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [drawRect]);
 
   // ── Mouse events ──────────────────────────────────────────────────────────────
   const getXY = (e: React.MouseEvent) => {
@@ -186,7 +198,10 @@ export function MaskCanvas({ imageUrl, onMaskChange, onSelectionChange }: Props)
     <div className="space-y-3">
       <div
         ref={containerRef}
-        className="relative rounded-xl overflow-hidden border select-none"
+        // w-fit + mx-auto：呢個帶邊框嘅框務必跟返圖片本身闊度，唔可以靠外層 grid/flex
+        // 嘅斷點小聰明（例如淨係大螢幕先 auto、細螢幕/多圖版仲係逼滿）。冇呢兩個
+        // class，框會攤到跟父層一樣闊，窄長圖（9:16）就會喺框入面兩側留白邊。
+        className="relative w-fit mx-auto rounded-xl overflow-hidden border select-none"
         style={{ cursor: "crosshair" }}
       >
         <img

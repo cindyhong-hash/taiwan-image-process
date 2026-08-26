@@ -1,10 +1,10 @@
 "use client";
 /**
- * AddAssetModal — wireframe v2 ⑧「新增產品／素材圖片」融合入口（type-picker wrapper）。
- * 先揀 4 類型 → 交返俾上層路由：
- *   • 產品圖   → 切去「生成圖片」(PromptComposer)
- *   • 背景/人像/2D插圖 → 開 GenerateAssetModal 並預選對應 type
- * 唔重寫核心生成邏輯，只統一入口（依用戶揀嘅 type-picker wrapper 方案）。
+ * AddAssetModal — 「新增產品／素材圖片」入口第一步（type-picker）。
+ * 先揀 4 類型 → 上層 router.push 去全頁 /clients/[clientId]/components/new?type=xxx：
+ *   • 產品圖 → PromptComposer；背景/人像/2D插圖 → GenerateAssetForm。
+ * 落咗嗰頁之後想轉類型，用返頁面右上「已選類型」切換器（一樣係呢個 modal），
+ * 唔使返嚟第一步。
  */
 import { X, ImageIcon, Mountain, UserRound, Palette } from "lucide-react";
 

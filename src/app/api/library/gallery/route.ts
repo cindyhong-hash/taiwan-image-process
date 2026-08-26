@@ -55,7 +55,7 @@ export async function GET(request: Request) {
       entry.createdAt = c.createdAt; entry.name = c.name;
       if (c.aiPromptText) entry.aiPromptText = c.aiPromptText;
     }
-    // Extract mode from data JSON (stored by GenerateAssetModal for AI-generated backgrounds).
+    // Extract mode from data JSON (stored by GenerateAssetForm for AI-generated backgrounds).
     if (!entry.mode) {
       try { const d = JSON.parse(c.data ?? "{}"); if (d.mode) entry.mode = d.mode; } catch { /* ignore */ }
     }

@@ -4,7 +4,6 @@ import { anthropic } from "@/lib/anthropic";
 import { generateImageFal, generateImageFluxSchnell, describeStyle, describeProduct, removeBackground } from "@/lib/fal";
 import { generateImageOpenRouter } from "@/lib/openrouter";
 import { compositeCollage, overlaySubImageCard, overlayProduct, extractDominantColor, sampleCornerBusyness, sampleRegionBusynessByZone, type SubCardVariant } from "@/lib/composite-multi";
-import { overlayLogo } from "@/lib/composite";
 import { buildImagePrompt } from "@/lib/prompts";
 import { getMultiLayout, getCellRects } from "@/types/multiLayout";
 import { generateGlobalDesignSpec, designSpecPromptBlock, type GlobalDesignSpec } from "@/lib/multi/design-spec";
@@ -615,13 +614,8 @@ ${cellNoProduct}${cellProductFreeNote}${razorExclusionNote}${subImageNoText}`;
           heroAccentColor = await extractDominantColor(url, client.primaryColor || "#4A90D9")
             .catch(() => client.primaryColor || "#4A90D9");
           console.log(`[generate][multi][${seedKey}] hero accent=${heroAccentColor} variant=${chosenVariant}`);
-          // hero：疊 logo（右上，避開左側標題）並直接放入拼版第 0 格
-          let heroUrl = url;
-          if (!!client.logoUrl && activity.logoMode !== "none" && !url.includes("picsum")) {
-            try { heroUrl = await overlayLogo({ imageUrl: url, logoUrl: client.logoUrl!, position: "top-right", seed: `${seed}-logo` }); }
-            catch (e) { console.warn(`[generate][multi] hero logo overlay failed:`, e); }
-          }
-          cellUrls[0] = heroUrl;
+          // 生成不再自動貼 logo，改喺生成完之後用 LogoPlacerModal 手動微調拖放（同單圖版一致）。
+          cellUrls[0] = url;
           console.log(`[generate][multi][${seedKey}] cell 1/${n} done`);
         } else {
           // 副圖：先存乾淨底圖，等整組生成完再統一決定版型＋合成卡片（見迴圈後的第二階段）
@@ -692,10 +686,6 @@ ${cellNoProduct}${cellProductFreeNote}${razorExclusionNote}${subImageNoText}`;
           } catch (e) {
             console.warn(`[generate][multi] cell ${p.i} sub-card overlay failed:`, e);
           }
-        }
-        if (activity.logoMode === "all" && !!client.logoUrl && !u.includes("picsum")) {
-          try { u = await overlayLogo({ imageUrl: u, logoUrl: client.logoUrl!, textZone: "none", seed: `${p.seed}-logo` }); }
-          catch (e) { console.warn(`[generate][multi] cell ${p.i} logo overlay failed:`, e); }
         }
         cellUrls[p.i] = u;
         console.log(`[generate][multi][${seedKey}] cell ${p.i + 1}/${n} done`);

@@ -8,7 +8,7 @@
  * the generated copy and offers 「分析此圖加入素材」.
  */
 import { useEffect, useState } from "react";
-import { X, ArrowRightCircle, Sparkles, ScanSearch, Pencil, RefreshCw, Trash2, Download, Check, Loader2, Image as ImageIcon, Target } from "lucide-react";
+import { X, ArrowRightCircle, Sparkles, Paperclip, Mountain, UserRound, Palette, Package, Pencil, RefreshCw, Trash2, Download, Check, Loader2, Image as ImageIcon, Target } from "lucide-react";
 import type { StyleComponent, ComponentCategory } from "@/types/library";
 import { CATEGORY_META, getColors } from "@/types/library";
 import { ColorCards } from "./ColorCards";
@@ -29,7 +29,7 @@ type Props = {
   refImageUrl?: string;
   /** 合成時用咗嘅產品來源圖（喺 popup 顯示返）。 */
   sourceImages?: string[];
-  /** 從 popup 觸發「重新生成/調整」，傳回預填資料讓父層打開 GenerateAssetModal。 */
+  /** 從 popup 觸發「重新生成/調整」，傳回預填資料讓父層帶去「新增產品／素材圖片」全頁。 */
   onOpenGenerateAsset?: (init: { description: string; refImageUrl: string; type: "background" | "person" | "illustration"; engine: "flux" | "nano" }) => void;
   injectedIds?: Set<string>;
   onInject: (comp: StyleComponent) => void;
@@ -47,8 +47,6 @@ type Props = {
   onRefresh?: () => void;
   /** 帶入此圖去「新增活動」（經 sessionStorage 傳 URL + AI prompt，唔會喺網址外露）。 */
   onUseAsActivityRef?: (imageUrl: string, prompt?: string) => void;
-  /** 用此圖做 Magic Layers 分層排版的背景（經 sessionStorage 傳去 /magic-layers/compose）。 */
-  onUseAsComposeBg?: (imageUrl: string) => void;
   onClose: () => void;
 };
 
@@ -104,7 +102,6 @@ export function ImageDetailModal({
   onRefresh,
   onOpenGenerateAsset,
   onUseAsActivityRef,
-  onUseAsComposeBg,
   onClose,
 }: Props) {
   const [confirmDel, setConfirmDel] = useState(false);
@@ -131,14 +128,26 @@ export function ImageDetailModal({
   }
 
   // Download the displayed image (same-origin /uploads → the `download` attribute is honored).
-  function handleDownload() {
+  // fetch → blob 先再落地：本機圖片存喺同源 /uploads，download attribute 直接生效；
+  // 但 Vercel 上圖片存喺 *.public.blob.vercel-storage.com（跨域），瀏覽器會無視
+  // download attribute 直接開新分頁顯示，唔會落地。同 LayoutPicker.tsx 用返一致做法。
+  async function handleDownload() {
     if (!imageUrl) return;
-    const a = document.createElement("a");
-    a.href = imageUrl;
-    a.download = imageUrl.split("/").pop() || "image";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    const filename = imageUrl.split("/").pop() || "image";
+    try {
+      const res = await fetch(imageUrl);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(imageUrl, "_blank");
+    }
   }
 
   // 「移到 / 換專案」已從 popup 移除（重複功能）——改用「調整→編輯素材」入面個專案下拉，或 gallery 長按多選移到。
@@ -186,7 +195,7 @@ export function ImageDetailModal({
         <div className="relative w-full max-w-2xl max-h-[92vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0 gap-3 min-w-0">
             <h2 className="text-sm font-semibold flex items-center gap-1.5 min-w-0 truncate">
-              <ScanSearch className="h-4 w-4 text-teal-500 shrink-0" />
+              <Mountain className="h-4 w-4 text-teal-500 shrink-0" />
               <span className="truncate">背景</span>
             </h2>
             {!loading && (
@@ -195,13 +204,21 @@ export function ImageDetailModal({
                 {onOpenGenerateAsset && (
                   <button onClick={() => onOpenGenerateAsset({ description: prompt ?? "", refImageUrl: effectiveRefImageUrl ?? "", type: "background", engine: derivedEngine })}
                     title="重新生成 / 調整（帶入素材生成）"
-                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg whitespace-nowrap bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap bg-white border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 transition-colors">
                     <RefreshCw className="h-3.5 w-3.5" />重新生成背景
+                  </button>
+                )}
+                {bgComp && (
+                  <button onClick={() => onInject(bgComp)} disabled={injectedIds?.has(bgComp.id)}
+                    title="帶入產品圖生成"
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap transition-colors
+                      ${injectedIds?.has(bgComp.id) ? "bg-gray-100 border-gray-200 text-gray-400 cursor-default" : "bg-white border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600"}`}>
+                    <ArrowRightCircle className="h-3.5 w-3.5" />{injectedIds?.has(bgComp.id) ? "已帶入" : "帶入產品圖生成"}
                   </button>
                 )}
                 {imageUrl && (
                   <button onClick={handleDownload} title="下載圖片"
-                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap bg-white border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 transition-colors">
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap bg-white border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 transition-colors">
                     <Download className="h-3.5 w-3.5" />下載
                   </button>
                 )}
@@ -260,29 +277,13 @@ export function ImageDetailModal({
               </div>
             )}
           </div>
-          {/* 固定 footer：帶入掣永遠可見（唔會被高圖 push 走）；兩條統一 outline 風格 */}
-          {!loading && imageUrl && (onUseAsActivityRef || onUseAsComposeBg || bgComp) && (
-            <div className="px-5 py-3 border-t shrink-0 space-y-2">
-              {bgComp && (
-                <button onClick={() => onInject(bgComp)} disabled={injectedIds?.has(bgComp.id)}
-                  className={`w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl border transition-colors
-                    ${injectedIds?.has(bgComp.id) ? "bg-gray-100 border-gray-200 text-gray-400 cursor-default" : "bg-teal-600 border-teal-600 text-white hover:bg-teal-700"}`}>
-                  <ArrowRightCircle className="h-3.5 w-3.5" />{injectedIds?.has(bgComp.id) ? "已帶入產品圖生成" : "帶入產品圖生成"}
-                </button>
-              )}
-              {onUseAsActivityRef && (
-                <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
-                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
-                  <Target className="h-3.5 w-3.5" />帶入活動圖生成
-                </button>
-              )}
-              {onUseAsComposeBg && (
-                <button onClick={() => onUseAsComposeBg(imageUrl)}
-                  title="用這張當背景，加去背產品＋可編輯文字，進 Magic Layers 自由排版"
-                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
-                  🧩 用這張做背景排版
-                </button>
-              )}
+          {/* 固定 footer：帶入掣永遠可見（唔會被高圖 push 走）；統一 primary 紫色風格 */}
+          {!loading && imageUrl && onUseAsActivityRef && (
+            <div className="px-5 py-3 border-t shrink-0">
+              <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
+                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                <Target className="h-3.5 w-3.5" />帶入活動圖生成
+              </button>
             </div>
           )}
         </div>
@@ -299,7 +300,11 @@ export function ImageDetailModal({
         <div className="relative w-full max-w-2xl max-h-[92vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0 gap-3 min-w-0">
             <h2 className="text-sm font-semibold flex items-center gap-1.5 min-w-0 truncate">
-              <ScanSearch className={`h-4 w-4 shrink-0 ${genType === "person" ? "text-rose-500" : "text-amber-500"}`} />
+              {genType === "person" ? (
+                <UserRound className="h-4 w-4 shrink-0 text-rose-500" />
+              ) : (
+                <Palette className="h-4 w-4 shrink-0 text-amber-500" />
+              )}
               <span className="truncate">{genType === "person" ? "人像" : "插畫"}</span>
             </h2>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -307,7 +312,7 @@ export function ImageDetailModal({
               {onOpenGenerateAsset && (
                 <button onClick={() => onOpenGenerateAsset({ description: prompt ?? "", refImageUrl: effectiveRefImageUrl ?? "", type: genType as "person" | "illustration", engine: derivedEngine })}
                   title="重新生成 / 調整（帶入素材生成）"
-                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg whitespace-nowrap bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap bg-white border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 transition-colors">
                   <RefreshCw className="h-3.5 w-3.5" />重新生成{genType === "person" ? "人像" : "插畫"}
                 </button>
               )}
@@ -359,21 +364,12 @@ export function ImageDetailModal({
               </div>
             )}
           </div>
-          {(onUseAsActivityRef || onUseAsComposeBg) && imageUrl && (
-            <div className="px-5 py-3 border-t shrink-0 space-y-2">
-              {onUseAsActivityRef && (
-                <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
-                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
-                  <Target className="h-3.5 w-3.5" />帶入活動圖生成
-                </button>
-              )}
-              {onUseAsComposeBg && (
-                <button onClick={() => onUseAsComposeBg(imageUrl)}
-                  title="用這張當背景，加去背產品＋可編輯文字，進 Magic Layers 自由排版"
-                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
-                  🧩 用這張做背景排版
-                </button>
-              )}
+          {onUseAsActivityRef && imageUrl && (
+            <div className="px-5 py-3 border-t shrink-0">
+              <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
+                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                <Target className="h-3.5 w-3.5" />帶入活動圖生成
+              </button>
             </div>
           )}
         </div>
@@ -390,7 +386,11 @@ export function ImageDetailModal({
         <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0 gap-3 min-w-0">
           {/* 標題只 show 類別（唔再用生成文字 / 唔可改名）*/}
           <h2 className="text-sm font-semibold flex items-center gap-1.5 min-w-0">
-            <ScanSearch className={`h-4 w-4 shrink-0 ${genType === "reference" || !libraryImageId ? "text-blue-500" : "text-violet-500"}`} />
+            {genType === "reference" || !libraryImageId ? (
+              <Paperclip className="h-4 w-4 shrink-0 text-blue-500" />
+            ) : (
+              <Package className="h-4 w-4 shrink-0 text-[#C9A227]" />
+            )}
             <span>{genType === "reference" || !libraryImageId ? "參考圖" : "產品成圖"}</span>
           </h2>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -400,7 +400,7 @@ export function ImageDetailModal({
               <button
                 onClick={onRegenerate ?? (() => onInjectAll?.([...sorted, ...(bgComp ? [bgComp] : [])]))}
                 title="重新生成（用這張圖的原參數 / 積木帶到生成台）"
-                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg whitespace-nowrap bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap bg-white border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 transition-colors">
                 <RefreshCw className="h-3.5 w-3.5" />重新生成{genType === "reference" || !libraryImageId ? "參考圖" : "產品圖"}
               </button>
             )}
@@ -501,7 +501,7 @@ export function ImageDetailModal({
                 {imageUrl && onAnalyze && (
                   <button
                     onClick={() => onAnalyze(imageUrl, libraryImageId)}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium bg-violet-600 text-white px-3 py-1.5 rounded-lg hover:bg-violet-700 transition-colors"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg hover:border-violet-300 hover:text-violet-600 transition-colors"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
                     分析此圖加入素材
@@ -533,21 +533,12 @@ export function ImageDetailModal({
             )}
           </div>
         </div>
-        {(onUseAsActivityRef || onUseAsComposeBg) && imageUrl && (
-          <div className="px-5 py-3 border-t shrink-0 space-y-2">
-            {onUseAsActivityRef && (
-              <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
-                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
-                <Target className="h-3.5 w-3.5" />帶入活動圖生成
-              </button>
-            )}
-            {onUseAsComposeBg && (
-              <button onClick={() => onUseAsComposeBg(imageUrl)}
-                title="用這張當背景，加去背產品＋可編輯文字，進 Magic Layers 自由排版"
-                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
-                🧩 用這張做背景排版
-              </button>
-            )}
+        {onUseAsActivityRef && imageUrl && (
+          <div className="px-5 py-3 border-t shrink-0">
+            <button onClick={() => onUseAsActivityRef(imageUrl, prompt ?? undefined)}
+              className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors">
+              <Target className="h-3.5 w-3.5" />帶入活動圖生成
+            </button>
           </div>
         )}
       </div>

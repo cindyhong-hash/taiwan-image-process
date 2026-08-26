@@ -41,8 +41,8 @@ export async function reconstructBackground(
     const imgBuf = dataUrlToBuffer(imageDataUrl);
     const maskBuf = await buildObjectMask(removable, W, H);
     const [imageUrl, maskUrl] = await Promise.all([
-      fal.storage.upload(new File([imgBuf], "img.png", { type: "image/png" })),
-      fal.storage.upload(new File([maskBuf], "mask.png", { type: "image/png" })),
+      fal.storage.upload(new File([new Uint8Array(imgBuf)], "img.png", { type: "image/png" })),
+      fal.storage.upload(new File([new Uint8Array(maskBuf)], "mask.png", { type: "image/png" })),
     ]);
     const r = await fal.run("fal-ai/lama", { input: { image_url: imageUrl, mask_image_url: maskUrl } }) as { data?: { image?: { url?: string } }; image?: { url?: string } };
     const url = r?.data?.image?.url ?? r?.image?.url;

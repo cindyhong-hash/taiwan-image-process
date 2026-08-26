@@ -577,7 +577,7 @@ async function buildWhiteCard(
     const photoH = cardH - captionH;
     photoBuf = await roundedPhoto(imgBuf, photoW, photoH, R, true); // 上緣圓角
     // 左上角圓弧缺角色塊（半透明白，深字）— 疊在照片上（最上層）；標籤直式堆疊 + 大圓弧缺角
-    const hRaw = (labelText || "").trim();
+    const hRaw = stripEmoji(labelText || "").trim(); // corner-label-card 短標籤(2-6字)分支唔行 fitAndWrap，要喺呢度自己 strip，否則帶 emoji 嘅短標題（如「🔥新品」）會漏網令 Pango 崩潰
     const labTopPad = Math.round(H * 0.042);
     const labPadX = Math.round(W * 0.04);
     let fsLab: number, labLines: string[];

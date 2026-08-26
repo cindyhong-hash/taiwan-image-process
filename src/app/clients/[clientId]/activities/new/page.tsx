@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronLeft } from "lucide-react";
 import { ActivityForm, type ActivityFormValues } from "@/components/activities/ActivityForm";
 import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
@@ -100,16 +100,19 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   if (!clientId) return null;
 
   return (
-    <div className="max-w-xl">
+    <div className="max-w-3xl">
       {dialog}
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-xl font-semibold">新增活動</h1>
+      <div className="flex items-center gap-2 mb-8">
+        <button onClick={() => router.push(`/clients/${clientId}`)} className="text-gray-400 hover:text-gray-700">
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <h1 className="text-xl font-semibold flex-1">新增活動</h1>
         {/* [MULTI] 版型下拉：可從單圖切換到多圖版型（底圖模式唔支援，隱藏） */}
         {!isBaseMode && (
           <button
             type="button"
             onClick={() => setShowLayoutPicker(true)}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-violet-600 border border-gray-200 hover:border-violet-300 rounded-lg px-3 py-1.5 transition-all"
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-violet-600 border border-gray-200 hover:border-violet-300 rounded-lg px-3 py-1.5 transition-all shrink-0 whitespace-nowrap"
           >
             已選版型：<span className="font-medium text-gray-800">1張（單圖）</span>
             <ChevronDown className="h-4 w-4" />

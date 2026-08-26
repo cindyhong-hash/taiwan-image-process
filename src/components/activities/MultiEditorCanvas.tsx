@@ -185,7 +185,7 @@ export function MultiEditorCanvas({
             {!busy && (
               <button
                 onClick={() => setShowLogo(true)}
-                className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 border border-violet-200 hover:border-violet-400 rounded-lg px-2 py-1 transition-all"
+                className="flex items-center gap-1 text-xs text-gray-600 hover:text-violet-600 border border-gray-200 hover:border-violet-300 hover:bg-violet-50 rounded-lg px-2 py-1 transition-all"
               >
                 <Stamp className="h-3.5 w-3.5" />
                 放置標誌
@@ -226,8 +226,11 @@ export function MultiEditorCanvas({
             ))}
           </div>
 
-          {/* 中央大圖（填滿欄位，比例同單圖）*/}
-          <div className="relative flex-1 rounded-xl overflow-hidden border">
+          {/* 中央大圖——唔再用 flex-1 逼滿欄位闊度：flex-1 會令個框跟返欄位闊度
+              （即使圖片本身好窄，例如 9:16），圖片喺框入面用 object-contain 置中，
+              兩側就會多咗睇落好似「白邊」嘅留白。改做跟返圖片自身闊度（max-w 只係
+              防止太闊嘅圖撐爆版面），同單圖版 EditorCanvas.tsx 嘅做法一致。*/}
+          <div className="relative max-w-[560px] rounded-xl overflow-hidden border">
             {isCell ? (
               <MaskCanvas
                 key={`${activeCell}-${cells[activeCell]}`}
@@ -253,13 +256,14 @@ export function MultiEditorCanvas({
             onClick={undo}
             disabled={history.length === 0 || busy}
             variant="outline"
-            className="gap-1.5"
+            className="gap-1.5 border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 hover:bg-violet-50"
             title={history.length === 0 ? "沒有可復原的修改" : `回上一步（還可復原 ${history.length} 步）`}
           >
             <Undo2 className="h-4 w-4" />
             <span>回上一步{history.length > 0 ? `（${history.length}）` : ""}</span>
           </Button>
-          <Button onClick={handleSave} disabled={saving} variant={saved ? "outline" : "default"} className="gap-1.5">
+          <Button onClick={handleSave} disabled={saving} variant="outline"
+            className="gap-1.5 border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-600 hover:bg-violet-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : null}
             <span>{saving ? "儲存中…" : saved ? "已儲存最新拼版" : "完成此版本"}</span>
           </Button>

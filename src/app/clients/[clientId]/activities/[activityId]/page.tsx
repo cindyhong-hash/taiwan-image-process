@@ -5,7 +5,7 @@ import { Loader2, Pencil, SlidersHorizontal, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; textBurnedIn?: boolean; savedToLibrary?: boolean };
+type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null };
 type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; variantCount?: number; generatedLayouts: GeneratedLayout[] };
 
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
@@ -178,8 +178,8 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
           {/* 選中一款先出現：頂部主 CTA，永遠喺視線頂、唔使 scroll（取代浮動 FAB）*/}
           {selectedId && (
             <Link href={`/clients/${clientId}/activities/${activityId}/editor`}>
-              <Button size="sm" className="gap-1">
-                <SlidersHorizontal className="h-4 w-4" />進入微調畫布 →
+              <Button size="sm" className="gap-1 bg-violet-600 hover:bg-violet-700 text-white">
+                <SlidersHorizontal className="h-4 w-4" />進入微調畫布
               </Button>
             </Link>
           )}
@@ -197,7 +197,6 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
         selectedId={selectedId}
         activityId={activityId}
         clientId={clientId}
-        hasLockedText={!!activity.titleText?.trim()}
         onSelect={handleSelect}
       />
     </div>

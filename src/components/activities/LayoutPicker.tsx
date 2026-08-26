@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { Check, Flame, BookmarkPlus, BookmarkCheck, BookmarkX, Loader2, Download } from "lucide-react";
+import { Check, BookmarkPlus, BookmarkCheck, BookmarkX, Loader2, Download } from "lucide-react";
+import { getMultiLayout } from "@/types/multiLayout";
 
 type Layout = {
   id: string;
@@ -9,24 +10,50 @@ type Layout = {
   copyText: string;
   textBurnedIn?: boolean;  // 文字是否已由 AI 燒入圖片
   savedToLibrary?: boolean; // 是否已加入素材庫
+  effectLevel?: string | null; // 底圖模式（BASE-*）文字視覺處理：plain/effect/styled
 };
 
 const LAYOUT_META: Record<string, { label: string }> = {
   A: { label: "產品置中" },
   B: { label: "視覺強烈" },
   C: { label: "氣氛感" },
-  // 底圖模式 3 款：AI 特效字（款1 鎖必放文字，款2/3 AI 發揮）
-  "BASE-1": { label: "特效字 · 主文案" },
-  "BASE-2": { label: "特效字 · AI 發揮①" },
-  "BASE-3": { label: "特效字 · AI 發揮②" },
 };
 
-// 解析 Claude 原始文案，移除「主標題：」等標籤
+// 底圖模式（BASE-1/2/3）真正嘅差異：填咗必放文字（而家已經必填）之後，3 款主標
+// 題其實一定一樣（刻意設計，避免用戶填咗但得一款用到），唯一必然唔同嘅係文字
+// 視覺處理程度——用返呢個嚟做標籤，唔再假裝分得出「邊款鎖文字／邊款 AI 發揮」。
+// 「文字效果」呢個分類詞中性，「有效果」定「冇效果」都啱用，唔似「特效字/設計」
+// 咁同「簡約/純文字」自相矛盾。
+const EFFECT_LEVEL_LABEL: Record<string, string> = {
+  plain:  "簡約",
+  effect: "特效",
+  styled: "風格",
+};
+const BASE_LETTER: Record<string, string> = {
+  "BASE-1": "A",
+  "BASE-2": "B",
+  "BASE-3": "C",
+};
+
+// 解析 Claude 原始文案，移除「主標題：」等標籤；多圖仲有「【A 導購版】」呢類生成
+// 款式前綴（見 generate-multi.ts 嘅 set.label），一齊攞埋。
 function parseCopyDisplay(raw: string) {
   const headline = raw.match(/(?:主標題|標題)[：:]\s*(.+)/)?.[1]?.trim() ?? "";
   const subtitle = raw.match(/(?:副標題|副標)[：:]\s*(.+)/)?.[1]?.trim() ?? "";
   const cta      = raw.match(/CTA[：:]\s*(.+)/)?.[1]?.trim() ?? "";
-  return { headline, subtitle, cta };
+  const variant  = raw.match(/^【(.+?)】/)?.[1]?.trim() ?? "";
+  return { headline, subtitle, cta, variant };
+}
+
+// 下載檔名：主標題/文案（攞唔到就用版型代號）+ 版型 + 副檔名，比原本嘅
+// 儲存亂碼檔名（時間戳+random）易讀。副檔名跟返圖片本身（URL 最後一截）。
+function buildDownloadFilename(layout: Layout): string {
+  const ext = (layout.imageUrl.split(".").pop() || "jpg").split("?")[0].slice(0, 5);
+  const { headline, subtitle } = parseCopyDisplay(layout.copyText || "");
+  const label = LAYOUT_META[layout.layoutType]?.label ?? layout.layoutType;
+  const base = (headline || subtitle || layout.copyText || "").trim();
+  const safe = base.replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim().slice(0, 24);
+  return `${safe ? `${safe}-${label}` : `活動圖-${label}`}.${ext}`;
 }
 
 type Props = {
@@ -34,28 +61,39 @@ type Props = {
   selectedId?: string;
   activityId: string;
   clientId: string;
-  /** 用戶有冇填「必放文字」——冇填時款1 其實都係 AI 生成，唔應該標「文字鎖定」。 */
-  hasLockedText?: boolean;
   onSelect: (layoutId: string) => void;
 };
 
-export function LayoutPicker({ layouts, selectedId, hasLockedText, onSelect }: Props) {
+export function LayoutPicker({ layouts, selectedId, onSelect }: Props) {
   // 已加入素材庫的 layout id 集合（初始來自 props）
   const [saved, setSaved] = useState<Set<string>>(
     () => new Set((layouts ?? []).filter((l) => l.savedToLibrary).map((l) => l.id))
   );
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  // 直接下載該款生成圖（同源 /uploads → download attribute 生效；唔行壞咗嘅 /api/export）
-  const handleDownload = (e: React.MouseEvent, layout: Layout) => {
+  // 下載該款生成圖。本機圖片存喺同源 /uploads，download attribute 直接生效；
+  // 但 Vercel 上圖片存喺 *.public.blob.vercel-storage.com（跨域），瀏覽器會無視
+  // download attribute 直接開新分頁顯示。所以改為 fetch 圖片轉做 blob:// URL
+  // 先落 download attribute，兩種情況都真正觸發下載。
+  const handleDownload = async (e: React.MouseEvent, layout: Layout) => {
     e.preventDefault();
     e.stopPropagation();
-    const a = document.createElement("a");
-    a.href = layout.imageUrl;
-    a.download = layout.imageUrl.split("/").pop() || `layout-${layout.layoutType}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    const filename = buildDownloadFilename(layout);
+    try {
+      const res = await fetch(layout.imageUrl);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      // fetch 失敗（例如 CORS 被擋）就 fallback 返開新分頁，起碼睇到張圖
+      window.open(layout.imageUrl, "_blank");
+    }
   };
 
   const handleToggleLibrary = async (e: React.MouseEvent, layoutId: string) => {
@@ -89,18 +127,20 @@ export function LayoutPicker({ layouts, selectedId, hasLockedText, onSelect }: P
       <h2 className="font-medium text-gray-700">選擇一款版型</h2>
       <div className="grid grid-cols-3 gap-4 items-start">
         {(layouts ?? []).map((layout) => {
-          const meta = LAYOUT_META[layout.layoutType];
+          const singleMeta = LAYOUT_META[layout.layoutType];
+          const multiMeta = singleMeta ? undefined : getMultiLayout(layout.layoutType);
+          const isMulti = !!multiMeta;
+          const isBaseVariant = layout.layoutType.startsWith("BASE");
+          const effectLabel = layout.effectLevel ? EFFECT_LEVEL_LABEL[layout.effectLevel] : undefined;
           const isSelected = layout.id === selectedId;
-          const { headline, subtitle, cta } = parseCopyDisplay(layout.copyText);
-          // 款1（A / BASE-1）只喺用戶真係有填必放文字先算「鎖定」；否則同款2/3 一樣係 AI 自由發揮
-          const isLocked = (layout.layoutType === "A" || layout.layoutType === "BASE-1") && !!hasLockedText;
+          const { headline, subtitle, cta, variant } = parseCopyDisplay(layout.copyText);
 
           return (
             <div
               key={layout.id}
               onClick={() => onSelect(layout.id)}
               className={`cursor-pointer rounded-xl border-2 overflow-hidden transition-all ${
-                isSelected ? "border-black shadow-lg" : "border-gray-200 hover:border-gray-400"
+                isSelected ? "border-violet-500 shadow-lg" : "border-gray-200 hover:border-gray-400"
               }`}
             >
               <div className="relative">
@@ -110,33 +150,21 @@ export function LayoutPicker({ layouts, selectedId, hasLockedText, onSelect }: P
                   className="block mx-auto w-auto max-w-full max-h-[calc(100vh-330px)] object-contain bg-gray-50"
                 />
                 {isSelected && (
-                  <div className="absolute top-2 right-2 bg-black text-white rounded-full p-1">
+                  <div className="absolute top-2 right-2 bg-violet-600 text-white rounded-full p-1">
                     <Check className="h-3 w-3" />
                   </div>
                 )}
               </div>
 
               <div className="p-3">
-                {/* badge 放卡底（唔再 overlay 圖上，避免遮住圖上文字）。
-                    兩個維度分開顯示：① 圖片來源（底圖）② 文案來源（款1 鎖用戶文字 / 款2·3 AI 發揮）③ 文字燒入狀態。 */}
-                <div className="flex flex-wrap items-center gap-1 mb-1.5">
-                  {/* ① 底圖模式標記（BASE-* 都係用戶原圖做背景）*/}
-                  {layout.layoutType.startsWith("BASE") && (
-                    <span className="flex items-center gap-1 rounded-full bg-violet-500 px-2 py-0.5 text-[10px] font-medium text-white">🖼️ 底圖</span>
-                  )}
-                  {/* ② 文案來源：款1（A / BASE-1）且用戶有填必放文字先叫「文字鎖定」；否則都係 AI 發揮 */}
-                  {isLocked ? (
-                    <span className="flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-medium text-white">🔒 文字鎖定</span>
-                  ) : (
-                    <span className="flex items-center gap-1 rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-medium text-white">✨ AI 發揮</span>
-                  )}
-                  {/* ③ 文字已由 AI 燒入圖片像素（底圖 typography）*/}
-                  {layout.textBurnedIn && (
-                    <span className="flex items-center gap-1 bg-rose-500/90 text-white text-[10px] px-2 py-0.5 rounded-full"><Flame className="h-2.5 w-2.5" />文字已燒入</span>
-                  )}
-                </div>
                 <div className="font-medium text-sm">
-                  Layout {layout.layoutType} — {meta?.label}
+                  {isMulti ? (
+                    <>{multiMeta?.label ?? layout.layoutType}{variant && ` · ${variant}`}</>
+                  ) : isBaseVariant ? (
+                    <>文字效果 {BASE_LETTER[layout.layoutType] ?? layout.layoutType}{effectLabel ? ` — ${effectLabel}` : ""}</>
+                  ) : (
+                    <>設計 {layout.layoutType} — {singleMeta?.label}</>
+                  )}
                 </div>
 
                 {layout.textBurnedIn ? (
@@ -148,11 +176,7 @@ export function LayoutPicker({ layouts, selectedId, hasLockedText, onSelect }: P
                     {subtitle && (
                       <div className="text-xs text-gray-500 line-clamp-2">{subtitle}</div>
                     )}
-                    {cta && (
-                      <div className="inline-block text-[10px] bg-yellow-400 text-gray-800 font-bold px-2 py-0.5 rounded-full mt-1">
-                        {cta}
-                      </div>
-                    )}
+                    {cta && <div className="text-xs text-gray-400">→ {cta}</div>}
                   </div>
                 ) : (
                   // 一般模式 → 顯示完整 copy（去掉標籤後）

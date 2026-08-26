@@ -67,6 +67,7 @@ model GeneratedLayout {
   savedToLibrary  Boolean  @default(false)  // [COLLEAGUE] 是否已加入素材庫（策展）
   textLayerJson   String   @default("{}")   // [2b] 底圖模式：交俾後續文字排版階段嘅文字層 JSON
   cellImageUrls   String   @default("[]")   // [MULTI] 多圖拼版：各格子圖 URL（供日後個別編輯）
+  effectLevel     String?                   // 底圖模式（BASE-1/2/3）文字視覺處理：plain/effect/styled，隨機分配，供 LayoutPicker 顯示真正差異
   createdAt       DateTime @default(now())
 }
 
