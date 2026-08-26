@@ -873,7 +873,6 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
                       <button style={S.fxChip} onClick={() => applyFxPreset({ gradient: ["#fce38a", "#c8811f"] })}>漸層金</button>
                       <button style={S.fxChip} onClick={() => applyFxPreset({ gradient: ["#c4b5fd", "#6d28d9"] })}>漸層紫</button>
                       <button style={S.fxChip} onClick={() => applyFxPreset({ strokeColor: "#111827", strokeW: 0.08 }, "#ffffff")}>白字黑框</button>
-                      <button style={S.fxChip} onClick={() => applyFxPreset({ shadow: true })}>陰影</button>
                       <button style={S.fxChip} onClick={() => applyFxPreset({ gradient: ["#a78bfa", "#7c3aed"], shadow: true })}>霓虹</button>
                     </div>
                     <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
