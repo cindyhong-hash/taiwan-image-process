@@ -697,19 +697,6 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
         <button style={S.tbtn} onClick={fit}>符合畫面</button>
         <button style={S.tbtn} onClick={() => setZoom(1)}>1:1</button>
         <span style={S.divider} />
-        <button
-          style={{ ...S.tbtn, ...(tool === "erase" ? { border: "1px solid #7c3aed", color: "#7c3aed", background: "#f5f3ff" } : {}) }}
-          onClick={() => { setTool((t) => (t === "erase" ? "select" : "erase")); erasePt.current = null; if (canvasRef.current) canvasRef.current.style.cursor = "default"; render(); }}
-          title="橡皮擦：在選中的圖片圖層上拖曳，局部擦成透明">
-          <Eraser size={15} />橡皮擦
-        </button>
-        {tool === "erase" && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title="筆刷大小">
-            <input type="range" min={6} max={120} value={brush} onChange={(e) => { setBrush(Number(e.target.value)); render(); }} style={{ width: 90, accentColor: "#7c3aed" }} />
-            <span style={{ width: 30, fontSize: 12, color: "#9a9cab", fontVariantNumeric: "tabular-nums" }}>{brush}</span>
-          </span>
-        )}
-        <span style={S.divider} />
         <button style={{ ...S.tbtn, border: "1px solid #ddd6fe", color: "#7c3aed", background: "#f5f3ff" }} onClick={() => addProdRef.current?.click()} disabled={adding} title="上傳一張產品圖，自動去背後加入為新圖層">
           {adding ? "去背中…" : <><Plus size={15} />加入產品</>}
         </button>
@@ -747,6 +734,19 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
             <button style={S.tool} onClick={addShape}><Square size={16} />形狀</button>
             <button style={S.tool} onClick={() => setShowIcon(true)}><Star size={16} />圖標</button>
             <button style={S.tool} onClick={addLine}><Minus size={16} />線條</button>
+            <button
+              style={{ ...S.tool, ...(tool === "erase" ? { border: "1px solid #7c3aed", color: "#7c3aed", background: "#f5f3ff" } : {}) }}
+              onClick={() => { setTool((t) => (t === "erase" ? "select" : "erase")); erasePt.current = null; if (canvasRef.current) canvasRef.current.style.cursor = "default"; render(); }}
+              title="橡皮擦：在圖片圖層上拖曳，局部擦成透明">
+              <Eraser size={16} />橡皮擦{tool === "erase" ? "（開）" : ""}
+            </button>
+            {tool === "erase" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px 2px" }} title="筆刷大小">
+                <span style={{ fontSize: 11, color: "#9ca3af", flex: "0 0 auto" }}>筆刷</span>
+                <input type="range" min={6} max={120} value={brush} onChange={(e) => { setBrush(Number(e.target.value)); render(); }} style={{ flex: 1, accentColor: "#7c3aed" }} />
+                <span style={{ width: 26, fontSize: 11, color: "#9a9cab", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{brush}</span>
+              </div>
+            )}
             <input ref={uploadImgRef} type="file" accept="image/*" onChange={onUploadImage} style={{ display: "none" }} />
           </div>
           <div style={S.panelHead}>圖層 Layers</div>
