@@ -7,7 +7,7 @@
    Ported from the verified vanilla engine.
    ============================================================ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronUp, ChevronDown, Eye, EyeOff, Lock, Unlock, Copy, Trash2, ArrowLeft, Plus, Save, Download, Check, Image as ImageIcon, Upload, Type, BadgeCheck, Square, Star, Minus, Pencil, Undo2, Redo2 } from "lucide-react";
+import { ChevronUp, ChevronDown, Eye, EyeOff, Lock, Unlock, Copy, Trash2, ArrowLeft, Plus, Save, Download, Check, Image as ImageIcon, Upload, Type, BadgeCheck, Square, Star, Minus, Pencil, Undo2, Redo2, Eraser } from "lucide-react";
 import type { LayerData, FragmentationReport } from "@/lib/magic-layers/types.ts";
 import { extractLayer } from "@/lib/magic-layers/extract-browser.ts";
 import { alphaHit } from "@/lib/magic-layers/alpha-hit-test.ts";
@@ -85,6 +85,12 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
   const refresh = useCallback(() => force((n) => n + 1), []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoomPct, setZoomPct] = useState(100);
+  // 橡皮擦工具（局部擦掉圖片圖層）
+  const [tool, setTool] = useState<"select" | "erase">("select");
+  const [brush, setBrush] = useState(28);   // 筆刷半徑（文件座標 px）
+  const toolRef = useRef(tool); toolRef.current = tool;
+  const brushRef = useRef(brush); brushRef.current = brush;
+  const erasePt = useRef<{ x: number; y: number } | null>(null);   // 筆刷游標位置（文件座標）
 
   /* ---------- build editor layers from analysis output ---------- */
   useEffect(() => {
@@ -180,11 +186,31 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
       }
       ctx.restore();
     }
+    // 橡皮擦筆刷游標圈
+    if (toolRef.current === "erase" && erasePt.current) {
+      ctx.beginPath();
+      ctx.arc(erasePt.current.x, erasePt.current.y, brushRef.current, 0, Math.PI * 2);
+      ctx.lineWidth = 1.5 / view.current.zoom; ctx.strokeStyle = "#7c3aed";
+      ctx.fillStyle = "rgba(124,58,237,.12)"; ctx.fill(); ctx.stroke();
+    }
     ctx.restore();
 
     const s = sel();
-    if (s && s.visible) drawSelection(ctx, s);
+    if (s && s.visible && toolRef.current !== "erase") drawSelection(ctx, s);
   }, [doc.w, doc.h, selectedId]);
+  // 局部擦除：文件座標 → 圖層像素 → destination-out 挖透明
+  const eraseAt = (l: EL, dx: number, dy: number) => {
+    if (!l.canvas) return;
+    const lp = toLocal(l, dx, dy);
+    const sx = l.canvas.width / l.w, sy = l.canvas.height / l.h;
+    const px = (lp.x + l.w / 2) * sx, py = (lp.y + l.h / 2) * sy;
+    const r = brushRef.current * ((sx + sy) / 2);
+    const c = l.canvas.getContext("2d")!;
+    c.save(); c.globalCompositeOperation = "destination-out";
+    c.beginPath(); c.arc(px, py, r, 0, Math.PI * 2); c.fillStyle = "#000"; c.fill();
+    c.restore();
+  };
+  const cloneCanvas = (src: HTMLCanvasElement) => { const c = document.createElement("canvas"); c.width = src.width; c.height = src.height; c.getContext("2d")!.drawImage(src, 0, 0); return c; };
 
   /* ---------- undo / redo history (defined after render to avoid TDZ) ---------- */
   const seedHistory = useCallback(() => { history.current = [layersRef.current.map(cloneEL)]; histIdx.current = 0; savedIdx.current = 0; bump(); }, [bump]);
@@ -259,6 +285,21 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
       cv.setPointerCapture(e.pointerId);
       const s = evPt(e), d = s2d(s.x, s.y);
       const wantPan = e.button === 1 || space.current;
+      // 橡皮擦模式：在圖片圖層上局部擦除（優先用選中的圖片圖層，其次點到的圖層）
+      if (!wantPan && toolRef.current === "erase") {
+        let l = sel();
+        const inBBox = (x: EL) => { const lp = toLocal(x, d.x, d.y); return Math.abs(lp.x) <= x.w / 2 && Math.abs(lp.y) <= x.h / 2; };
+        if (!(l && l.canvas && !l.isText && !l.locked && inBBox(l))) l = hitLayer(d.x, d.y);
+        if (l && l.canvas && !l.isText && !l.locked) {
+          if (selectedId !== l.id) setSelectedId(l.id);
+          l.canvas = cloneCanvas(l.canvas);   // 新 canvas → 復原能還原被擦的像素
+          l.src = null;                        // 擦過後以 canvas 為準（存檔用 data URL）
+          eraseAt(l, d.x, d.y); erasePt.current = d;
+          drag.current = { mode: "erase", l, lx: d.x, ly: d.y };
+          render();
+        }
+        return;
+      }
       if (!wantPan) {
         const h = hitHandle(s.x, s.y);
         if (h) { const l = sel()!; drag.current = h.type === "scale" ? { mode: "scale", l, ow: l.w, oh: l.h } : { mode: "rotate", l, orot: l.rotation, grab: Math.atan2(d.y - l.cy, d.x - l.cx) }; return; }
@@ -269,9 +310,23 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
       if (!wantPan && selectedId) setSelectedId(null);
     };
     const move = (e: PointerEvent) => {
-      const g = drag.current; if (!g) { hover(evPt(e)); return; }
+      const g = drag.current;
+      if (!g) {
+        const s = evPt(e);
+        if (toolRef.current === "erase") { erasePt.current = s2d(s.x, s.y); cv.style.cursor = "crosshair"; render(); return; }
+        hover(s); return;
+      }
       const s = evPt(e), d = s2d(s.x, s.y);
-      if (g.mode === "move") { g.l.cx = g.ocx + (d.x - g.sx); g.l.cy = g.ocy + (d.y - g.sy); render(); }
+      if (g.mode === "erase") {
+        // 沿上一點→現在點內插，避免快速拖曳留下斷點
+        const lx = g.lx ?? d.x, ly = g.ly ?? d.y;
+        const distp = Math.hypot(d.x - lx, d.y - ly);
+        const step = Math.max(1, brushRef.current * 0.35);
+        const n = Math.max(1, Math.ceil(distp / step));
+        for (let i = 1; i <= n; i++) eraseAt(g.l, lx + (d.x - lx) * (i / n), ly + (d.y - ly) * (i / n));
+        g.lx = d.x; g.ly = d.y; erasePt.current = d; render();
+      }
+      else if (g.mode === "move") { g.l.cx = g.ocx + (d.x - g.sx); g.l.cy = g.ocy + (d.y - g.sy); render(); }
       else if (g.mode === "scale") { const lp = toLocal(g.l, d.x, d.y); const f = Math.max(Math.abs(lp.x) / (g.ow / 2 || 1), Math.abs(lp.y) / (g.oh / 2 || 1), 0.02); g.l.w = g.ow * f; g.l.h = g.oh * f; render(); }
       else if (g.mode === "rotate") { const now = Math.atan2(d.y - g.l.cy, d.x - g.l.cx); let r = g.orot + (now - g.grab); if (e.shiftKey) r = Math.round(r / (Math.PI / 12)) * (Math.PI / 12); g.l.rotation = r; render(); }
       else if (g.mode === "pan") { view.current.panX = g.opx + (s.x - g.sx); view.current.panY = g.opy + (s.y - g.sy); render(); }
@@ -641,6 +696,19 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
         <button style={S.tbtn} onClick={() => setZoom(view.current.zoom * 1.2)}>＋</button>
         <button style={S.tbtn} onClick={fit}>符合畫面</button>
         <button style={S.tbtn} onClick={() => setZoom(1)}>1:1</button>
+        <span style={S.divider} />
+        <button
+          style={{ ...S.tbtn, ...(tool === "erase" ? { border: "1px solid #7c3aed", color: "#7c3aed", background: "#f5f3ff" } : {}) }}
+          onClick={() => { setTool((t) => (t === "erase" ? "select" : "erase")); erasePt.current = null; if (canvasRef.current) canvasRef.current.style.cursor = "default"; render(); }}
+          title="橡皮擦：在選中的圖片圖層上拖曳，局部擦成透明">
+          <Eraser size={15} />橡皮擦
+        </button>
+        {tool === "erase" && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title="筆刷大小">
+            <input type="range" min={6} max={120} value={brush} onChange={(e) => { setBrush(Number(e.target.value)); render(); }} style={{ width: 90, accentColor: "#7c3aed" }} />
+            <span style={{ width: 30, fontSize: 12, color: "#9a9cab", fontVariantNumeric: "tabular-nums" }}>{brush}</span>
+          </span>
+        )}
         <span style={S.divider} />
         <button style={{ ...S.tbtn, border: "1px solid #ddd6fe", color: "#7c3aed", background: "#f5f3ff" }} onClick={() => addProdRef.current?.click()} disabled={adding} title="上傳一張產品圖，自動去背後加入為新圖層">
           {adding ? "去背中…" : <><Plus size={15} />加入產品</>}
@@ -1124,8 +1192,8 @@ const S: Record<string, React.CSSProperties> = {
   rtabs: { display: "flex", gap: 18, padding: "0 16px", borderBottom: "1px solid #e5e7eb", flex: "0 0 auto" },
   rtab: { height: 44, border: "none", background: "transparent", color: "#9ca3af", fontSize: 14, fontWeight: 700, cursor: "pointer", borderBottom: "2px solid transparent" },
   rtabOn: { color: "#7c3aed", borderBottom: "2px solid #7c3aed" },
-  rhead: { fontSize: 14, fontWeight: 800, color: "#1f2937", margin: "0 0 12px" },
-  rlabel: { display: "block", fontSize: 12, color: "#6b7280", margin: "12px 0 4px", fontWeight: 600 },
+  rhead: { fontSize: 14, fontWeight: 800, color: "#1f2937", marginTop: 0, marginRight: 0, marginBottom: 12, marginLeft: 0 },
+  rlabel: { display: "block", fontSize: 12, color: "#6b7280", marginTop: 12, marginRight: 0, marginBottom: 4, marginLeft: 0, fontWeight: 600 },
   rinput: { width: "100%", height: 34, background: "#fff", border: "1px solid #e5e7eb", color: "#1f2937", borderRadius: 8, padding: "0 10px", fontSize: 13, boxSizing: "border-box", fontFamily: "inherit" },
   rbtn: { height: 34, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, border: "1px solid #e5e7eb", background: "#fff", color: "#374151", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" },
   fxChip: { height: 30, padding: "0 12px", border: "1px solid #e5e7eb", background: "#fff", color: "#374151", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer" },
