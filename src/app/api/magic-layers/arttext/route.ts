@@ -1,7 +1,8 @@
 /* ============================================================
    POST /api/magic-layers/arttext
    AI 特效字：把一段文字生成成藝術字圖（立體/漸層/書法…）。
-   作法：純白底 → Gemini 只畫「隔離的藝術字」→ 去背成透明 PNG → 疊在版面上。
+   作法：洋紅底(#FF00FF) → Gemini 只畫「隔離的藝術字」→ 色鍵去背成透明 PNG → 疊在版面上。
+   （改用洋紅色鍵而非 BiRefNet：平面藝術字邊緣更乾淨、保得住白外框，不再破圖）
    內容鎖定（Content Lock）：最終只顯示 CONTENT 的文字，一字不差；參考圖只當
    風格來源，其文字內容一律忽略。可選傳入 guideImageUrl（前端用真字體把目標文字
    畫成引導圖）→ AI 只上風格、不重畫字形，大幅降低破字/改字。
@@ -12,10 +13,9 @@
            sceneImageUrl?（整張畫面，供無參考圖時依畫面設計）,
            editImageUrl?+instruction?（AI 微調 image-to-image） }
    Returns: { url, transparent } | { error }
-   需要 OPENROUTER_API_KEY（生字）＋ FAL_KEY（去背，選用；失敗退回不透明）。
+   需要 OPENROUTER_API_KEY（生字）。去背為本地色鍵，不需 FAL。
    ============================================================ */
 import { NextResponse } from "next/server";
-import { removeBackground } from "@/lib/fal";
 import { describeImageOpenRouter } from "@/lib/openrouter";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 import sharp from "sharp";
@@ -46,6 +46,26 @@ async function geminiRender(dataUrl: string, prompt: string, refUrl?: string | n
     ? Buffer.from(out.split(",")[1], "base64")
     : Buffer.from(await (await fetch(out)).arrayBuffer());
   return await sharp(raw).png().toBuffer();
+}
+
+/** 洋紅色鍵去背：把 #FF00FF 背景挖成透明，邊緣做柔和過渡 + 去洋紅溢色。
+    比 BiRefNet 更適合平面藝術字（保得住白外框、邊緣乾淨不破圖）。 */
+async function chromaKeyMagenta(buf: Buffer): Promise<Buffer> {
+  const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height } = info;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const mag = Math.min(r, b) - g;        // 洋紅程度：紅、藍高而綠低
+    if (mag > 60 && r > 80 && b > 80) {
+      data[i + 3] = 0;                       // 純背景 → 全透明
+    } else if (mag > 12) {
+      data[i + 3] = Math.min(data[i + 3], Math.round(255 * (1 - (mag - 12) / 48)));  // 邊緣柔和過渡
+      const cap = g + 12;                    // 去溢色：把邊緣殘留的洋紅拉回
+      if (r > cap) data[i] = cap;
+      if (b > cap) data[i + 2] = cap;
+    }
+  }
+  return await sharp(data, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }
 
 const STYLE_HINTS: Record<string, string> = {
@@ -80,7 +100,8 @@ export async function POST(request: Request) {
       `- Do NOT draw the <<< >>> delimiters or any quotation marks/brackets — only the actual characters ${target}.`;
     // 構圖：完整、不裁切、四周留白（之後還會用 alpha bounding box 再裁一次）
     const composition =
-      `COMPOSITION: solid flat WHITE (#FFFFFF) background, nothing else besides the styled text — no product/photo/scene/border/background pattern. ` +
+      `COMPOSITION: the background MUST be solid flat pure magenta chroma-key (#FF00FF), completely filling the frame, nothing else besides the styled text — no product/photo/scene/border/background pattern. ` +
+      `NEVER use magenta / hot pink / fuchsia anywhere in the lettering, outline, shadow or effects (it is the removable chroma-key background); pick clearly different colours for the text. ` +
       `Keep the COMPLETE artwork inside the canvas with generous empty margin (>=12–15% on every side). Never crop any character, outline, stroke, shadow, glow or decorative element; nothing may touch or cross any edge. When unsure, scale the lettering DOWN — excess margin is preferred, clipping is unacceptable.`;
 
     let baseUrl: string;
@@ -122,7 +143,7 @@ export async function POST(request: Request) {
     if (isEdit) {
       // AI 微調：image-to-image，拿現有藝術字壓平到白底做底圖，只改風格、內容鎖定
       const cur = await loadBuffer(editImageUrl);
-      const flat = await sharp(Buffer.from(cur)).flatten({ background: "#ffffff" }).png().toBuffer();
+      const flat = await sharp(Buffer.from(cur)).flatten({ background: "#ff00ff" }).png().toBuffer();
       baseUrl = `data:image/png;base64,${flat.toString("base64")}`;
       prompt =
         `You are editing an EXISTING typography artwork (shown on the canvas). Apply ONLY this visual change requested by the user: 「${String(instruction).trim()}」. ` +
@@ -142,10 +163,10 @@ export async function POST(request: Request) {
       const boxH = Math.round(height) > 0 ? Math.round(height) : 256;
       const genW = Math.min(1280, Math.max(768, boxW));
       const genH = Math.min(1280, Math.max(Math.round(genW * 0.42), Math.round(genW * (boxH / boxW) * 1.35)));
-      const whiteBuf = await sharp({ create: { width: genW, height: genH, channels: 3, background: "#ffffff" } }).png().toBuffer();
-      baseUrl = `data:image/png;base64,${whiteBuf.toString("base64")}`;
+      const bgBuf = await sharp({ create: { width: genW, height: genH, channels: 3, background: "#ff00ff" } }).png().toBuffer();
+      baseUrl = `data:image/png;base64,${bgBuf.toString("base64")}`;
       prompt =
-        `You are creating a standalone typography artwork (word art / 藝術字) on the blank white canvas, horizontally centered. ` +
+        `You are creating a standalone typography artwork (word art / 藝術字) on the blank magenta canvas, horizontally centered. ` +
         styleClause + " " + toneHint + " " + contentLock + " " + composition;
     }
 
@@ -153,26 +174,18 @@ export async function POST(request: Request) {
     if (!genBuf) return NextResponse.json({ error: "特效字生成失敗，請重試" }, { status: 500 });
     const genUrl = await saveBuffer(genBuf, "png", "ml-arttext-src-");
 
-    // 去背成透明（BiRefNet）→ 乾淨疊喺版面背景上。失敗就退回不透明整張。
-    if (process.env.FAL_KEY) {
+    // 洋紅色鍵去背 → 邊緣乾淨、保得住白外框；再依透明區裁切 + 留邊。任一步失敗退回原圖。
+    try {
+      let out: Buffer = await chromaKeyMagenta(Buffer.from(genBuf));
       try {
-        const buf = await loadBuffer(genUrl);
-        const dataUrl = `data:image/png;base64,${Buffer.from(buf).toString("base64")}`;
-        const cut = await removeBackground(dataUrl);
-        if (cut) {
-          // 依透明區裁到文字實際範圍 + 留少少邊，避免多餘留白/被切；裁失敗就用原圖
-          let out: Buffer = Buffer.from(cut);
-          try {
-            const trimmed = await sharp(out).trim({ threshold: 10 }).toBuffer();
-            const m = await sharp(trimmed).metadata();
-            const pad = Math.max(8, Math.round(Math.max(m.width ?? 0, m.height ?? 0) * 0.04));
-            out = await sharp(trimmed).extend({ top: pad, bottom: pad, left: pad, right: pad, background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
-          } catch { /* 裁切失敗 → 用未裁的去背圖 */ }
-          const url = await saveBuffer(out, "png", "ml-arttext-");
-          return NextResponse.json({ url, transparent: true });
-        }
-      } catch { /* 去背失敗 → 用不透明版 */ }
-    }
+        const trimmed = await sharp(out).trim({ threshold: 10 }).toBuffer();
+        const m = await sharp(trimmed).metadata();
+        const pad = Math.max(8, Math.round(Math.max(m.width ?? 0, m.height ?? 0) * 0.04));
+        out = await sharp(trimmed).extend({ top: pad, bottom: pad, left: pad, right: pad, background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+      } catch { /* 裁切失敗 → 用未裁的去背圖 */ }
+      const url = await saveBuffer(out, "png", "ml-arttext-");
+      return NextResponse.json({ url, transparent: true });
+    } catch { /* 去背失敗 → 用原圖 */ }
     return NextResponse.json({ url: genUrl, transparent: false });
   } catch (err) {
     console.error("[magic-layers/arttext] failed:", err);

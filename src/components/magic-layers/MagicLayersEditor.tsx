@@ -628,7 +628,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
     const H = Math.round(textH / (1 - pad * 2));       // 上下各留 16%
     c.width = W; c.height = H;
     const g = c.getContext("2d")!;
-    g.fillStyle = "#ffffff"; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#ff00ff"; g.fillRect(0, 0, W, H);   // 洋紅底（chroma key）→ 去背乾淨、保得住白外框
     g.fillStyle = "#111111";
     g.textAlign = "center"; g.textBaseline = "middle";
     g.font = `${el.fontWeight || 700} ${Math.round(fs)}px ${el.fontFamily}`;
