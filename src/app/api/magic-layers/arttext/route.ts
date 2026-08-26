@@ -97,7 +97,9 @@ export async function POST(request: Request) {
       if (desc && desc.trim()) styleHint = desc.trim();
     }
     const styleClause = hasRef
-      ? `STYLE_REFERENCE (the second image) provides the visual style ONLY: ${styleHint}. Transfer only its visual characteristics — typography style, stroke thickness, glyph FILL colour (match it precisely; ignore the reference's background colour), gradient, outline, shadow, depth, texture, decoration, spacing and mood. Do NOT add decorative elements the reference does not have (no extra wings/ribbons/confetti/stars/banners/mascots).`
+      ? `STYLE_REFERENCE (the second image) is the LOOK to reproduce as CLOSELY AS POSSIBLE — the result should look like it was made by the same designer, in the same style family: ${styleHint}. ` +
+        `Copy its full visual treatment faithfully: exact glyph FILL colours (match precisely; if the reference uses two layered colours — e.g. a main colour with a second offset colour behind — reproduce BOTH; ignore only the reference's plain background colour), gradient direction, the outline colour and thickness, the drop shadow / 3D depth / extrusion, the italic/slant angle, and the overall dynamic, energetic layout and mood. ` +
+        `Only leave out purely pictorial content that isn't part of the lettering style (do not copy the reference's actual words, logos, mascots or unrelated background objects).`
       : `Target visual style: ${styleHint}.`;
 
     if (isEdit) {
@@ -113,8 +115,9 @@ export async function POST(request: Request) {
       // 字形 guide：底圖已用真字體畫好目標文字 → AI 只上風格、不可重畫字形（大幅降低破字/改字）
       baseUrl = guideImageUrl;
       prompt =
-        `You are creating a standalone typography artwork. The canvas ALREADY shows the exact target text drawn in a plain reference font. ` +
-        `Treat those glyph shapes and their positions as a FIXED skeleton: RESTYLE them (colour, gradient, stroke, outline, shadow, depth, texture, decoration, weight) into the target style, but do NOT change, re-shape into different characters, add or remove any glyph. Keep the same characters, order and layout as drawn. ` +
+        `You are creating a standalone typography artwork. The canvas shows the exact target characters drawn in a plain font — use it ONLY as the source of truth for WHICH characters to draw and their reading order. ` +
+        `Every character must stay the same identifiable glyph (do not change/add/remove/substitute or break any character, keep "88" as "88"). ` +
+        `But you SHOULD transform the presentation to match the reference: you may re-slant/italicise, re-scale, tilt/perspective and re-arrange the characters into a dynamic layout, and fully re-style them (colour, layered dual colour, gradient, outline, shadow, 3D depth, texture) so the result closely resembles the STYLE_REFERENCE. Do not stay flat and upright if the reference is slanted/3D. ` +
         styleClause + " " + contentLock + " " + composition;
     } else {
       // 後備：無 guide → 白底從零生成
