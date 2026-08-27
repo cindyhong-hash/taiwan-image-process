@@ -12,6 +12,7 @@ import { X, ArrowRightCircle, Sparkles, Paperclip, Mountain, UserRound, Palette,
 import type { StyleComponent, ComponentCategory } from "@/types/library";
 import { CATEGORY_META, getColors } from "@/types/library";
 import { ColorCards } from "./ColorCards";
+import { buildDownloadFilename } from "@/lib/download-filename";
 
 type Props = {
   imageUrl: string | null;
@@ -47,6 +48,8 @@ type Props = {
   onRefresh?: () => void;
   /** 帶入此圖去「新增活動」（經 sessionStorage 傳 URL + AI prompt，唔會喺網址外露）。 */
   onUseAsActivityRef?: (imageUrl: string, prompt?: string) => void;
+  /** 品牌名（下載檔名用；冇就淨用類型/標題/尺寸）。 */
+  clientName?: string | null;
   onClose: () => void;
 };
 
@@ -66,14 +69,14 @@ function sizeLabel(w: number, h: number): string {
   return diff / bestVal < 0.03 ? `${bestLabel} · ${w}×${h}` : `${w}×${h}`;
 }
 
-// 主圖 + 右下角尺寸 pill（比例 · 原始尺寸）
-function ImageWithSize({ src, alt, className }: { src: string; alt?: string; className?: string }) {
+// 主圖 + 右下角尺寸 pill（比例 · 原始尺寸）；onDims 將原始 px 交返上層做下載檔名用。
+function ImageWithSize({ src, alt, className, onDims }: { src: string; alt?: string; className?: string; onDims?: (w: number, h: number) => void }) {
   const [dims, setDims] = useState("");
   return (
     <div className="relative">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={src} alt={alt ?? "preview"} className={className}
-        onLoad={(e) => { const t = e.currentTarget; setDims(sizeLabel(t.naturalWidth, t.naturalHeight)); }} />
+        onLoad={(e) => { const t = e.currentTarget; setDims(sizeLabel(t.naturalWidth, t.naturalHeight)); onDims?.(t.naturalWidth, t.naturalHeight); }} />
       {dims && (
         <span className="absolute bottom-2 right-2 text-[10px] font-medium bg-black/55 text-white px-1.5 py-0.5 rounded shadow pointer-events-none">{dims}</span>
       )}
@@ -102,6 +105,7 @@ export function ImageDetailModal({
   onRefresh,
   onOpenGenerateAsset,
   onUseAsActivityRef,
+  clientName,
   onClose,
 }: Props) {
   const [confirmDel, setConfirmDel] = useState(false);
@@ -113,6 +117,8 @@ export function ImageDetailModal({
   const [savedTitle, setSavedTitle] = useState<string | null>(null);
   const [savingTitle, setSavingTitle] = useState(false);
   const displaySubject = savedTitle ?? subject;
+  // 下載檔名用嘅原始 px 尺寸（由 ImageWithSize 個 onLoad 交返嚟，冇得就淨係唔加呢段）。
+  const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
 
   async function saveTitle() {
     if (!libraryImageId) return;
@@ -133,7 +139,18 @@ export function ImageDetailModal({
   // download attribute 直接開新分頁顯示，唔會落地。同 LayoutPicker.tsx 用返一致做法。
   async function handleDownload() {
     if (!imageUrl) return;
-    const filename = imageUrl.split("/").pop() || "image";
+    // 同 LayoutPicker.tsx 用返同一套命名格式（見 src/lib/download-filename.ts）：
+    // {品牌名}-{類型}-{寬x高}-{可讀標題}.ext，缺邊截就跳過，唔再係亂碼檔名。
+    const isMaterial = genType === "material" || (!loading && bgComp && sorted.length === 0);
+    const typeLabel = isMaterial ? "背景素材"
+      : genType === "person" ? "人像"
+      : genType === "illustration" ? "插畫"
+      : (genType === "reference" || !libraryImageId) ? "參考圖"
+      : "產品成圖";
+    const filename = buildDownloadFilename({
+      url: imageUrl, label: typeLabel, readableText: displaySubject, brand: clientName,
+      size: imgDims ? `${imgDims.w}x${imgDims.h}` : null,
+    });
     try {
       const res = await fetch(imageUrl);
       const blob = await res.blob();
@@ -249,7 +266,7 @@ export function ImageDetailModal({
             {loading ? (
               <div className="text-sm text-gray-400 py-10 text-center">載入中…</div>
             ) : imageUrl ? (
-              <ImageWithSize src={imageUrl} alt={bgComp?.name} className="w-full max-h-[60vh] object-contain rounded-xl border bg-gray-50" />
+              <ImageWithSize src={imageUrl} alt={bgComp?.name} className="w-full max-h-[60vh] object-contain rounded-xl border bg-gray-50" onDims={(w, h) => setImgDims({ w, h })} />
             ) : null}
             {!loading && prompt && (
               <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3">
@@ -338,7 +355,7 @@ export function ImageDetailModal({
           </div>
           <div className="p-5 overflow-y-auto flex-1 min-h-0">
             {imageUrl && (
-              <ImageWithSize src={imageUrl} alt="preview" className="w-full max-h-[60vh] object-contain rounded-xl border bg-gray-50" />
+              <ImageWithSize src={imageUrl} alt="preview" className="w-full max-h-[60vh] object-contain rounded-xl border bg-gray-50" onDims={(w, h) => setImgDims({ w, h })} />
             )}
             {prompt && (
               <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3">
@@ -442,7 +459,7 @@ export function ImageDetailModal({
           {/* Image */}
           <div>
             {imageUrl && (
-              <ImageWithSize src={imageUrl} alt="preview" className="w-full max-h-[70vh] rounded-xl border object-contain bg-gray-50" />
+              <ImageWithSize src={imageUrl} alt="preview" className="w-full max-h-[70vh] rounded-xl border object-contain bg-gray-50" onDims={(w, h) => setImgDims({ w, h })} />
             )}
             {/* 參考文案 intentionally hidden (not needed). AI Prompt is shown below. */}
             {prompt && (

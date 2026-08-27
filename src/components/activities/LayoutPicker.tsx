@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Check, BookmarkPlus, BookmarkCheck, BookmarkX, Loader2, Download } from "lucide-react";
 import { getMultiLayout } from "@/types/multiLayout";
+import { buildDownloadFilename as buildFilename } from "@/lib/download-filename";
 
 type Layout = {
   id: string;
@@ -11,6 +12,7 @@ type Layout = {
   textBurnedIn?: boolean;  // 文字是否已由 AI 燒入圖片
   savedToLibrary?: boolean; // 是否已加入素材庫
   effectLevel?: string | null; // 底圖模式（BASE-*）文字視覺處理：plain/effect/styled
+  cellImageUrls?: string; // [MULTI] 多圖拼版：各格子圖 URL（JSON string），imageUrl 淨係已合併嘅拼圖
 };
 
 const LAYOUT_META: Record<string, { label: string }> = {
@@ -45,42 +47,31 @@ function parseCopyDisplay(raw: string) {
   return { headline, subtitle, cta, variant };
 }
 
-// 下載檔名：主標題/文案（攞唔到就用版型代號）+ 版型 + 副檔名，比原本嘅
-// 儲存亂碼檔名（時間戳+random）易讀。副檔名跟返圖片本身（URL 最後一截）。
-function buildDownloadFilename(layout: Layout): string {
-  const ext = (layout.imageUrl.split(".").pop() || "jpg").split("?")[0].slice(0, 5);
-  const { headline, subtitle } = parseCopyDisplay(layout.copyText || "");
-  const label = LAYOUT_META[layout.layoutType]?.label ?? layout.layoutType;
-  const base = (headline || subtitle || layout.copyText || "").trim();
-  const safe = base.replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim().slice(0, 24);
-  return `${safe ? `${safe}-${label}` : `活動圖-${label}`}.${ext}`;
-}
-
 type Props = {
   layouts: Layout[];
   selectedId?: string;
   activityId: string;
   clientId: string;
+  clientName?: string | null;
   onSelect: (layoutId: string) => void;
 };
 
-export function LayoutPicker({ layouts, selectedId, onSelect }: Props) {
+export function LayoutPicker({ layouts, selectedId, clientName, onSelect }: Props) {
   // 已加入素材庫的 layout id 集合（初始來自 props）
   const [saved, setSaved] = useState<Set<string>>(
     () => new Set((layouts ?? []).filter((l) => l.savedToLibrary).map((l) => l.id))
   );
   const [savingId, setSavingId] = useState<string | null>(null);
+  // 下載檔名用嘅原始 px 尺寸，key=layout.id（GeneratedLayout 冇存 WxH，靠 <img onLoad> 攞）。
+  const [dims, setDims] = useState<Record<string, { w: number; h: number }>>({});
 
   // 下載該款生成圖。本機圖片存喺同源 /uploads，download attribute 直接生效；
   // 但 Vercel 上圖片存喺 *.public.blob.vercel-storage.com（跨域），瀏覽器會無視
   // download attribute 直接開新分頁顯示。所以改為 fetch 圖片轉做 blob:// URL
   // 先落 download attribute，兩種情況都真正觸發下載。
-  const handleDownload = async (e: React.MouseEvent, layout: Layout) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const filename = buildDownloadFilename(layout);
+  const downloadOne = async (url: string, filename: string) => {
     try {
-      const res = await fetch(layout.imageUrl);
+      const res = await fetch(url);
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -92,7 +83,45 @@ export function LayoutPicker({ layouts, selectedId, onSelect }: Props) {
       URL.revokeObjectURL(blobUrl);
     } catch {
       // fetch 失敗（例如 CORS 被擋）就 fallback 返開新分頁，起碼睇到張圖
-      window.open(layout.imageUrl, "_blank");
+      window.open(url, "_blank");
+    }
+  };
+
+  // 檔名：{品牌名}-{類型}-{寬x高}-{可讀標題}.ext（見 src/lib/download-filename.ts），
+  // 缺邊截就跳過，同 ImageDetailModal 等其他生成類型一致嘅命名格式。
+  const handleDownload = async (e: React.MouseEvent, layout: Layout) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const { headline, subtitle } = parseCopyDisplay(layout.copyText || "");
+    const label = LAYOUT_META[layout.layoutType]?.label ?? layout.layoutType;
+    const base = (headline || subtitle || layout.copyText || "").trim();
+    const d = dims[layout.id];
+    const filename = buildFilename({
+      url: layout.imageUrl, label, readableText: base, brand: clientName,
+      size: d ? `${d.w}x${d.h}` : null,
+    });
+    await downloadOne(layout.imageUrl, filename);
+  };
+
+  // [MULTI] 逐張下載每格原圖（唔係已合併嘅拼圖）。瀏覽器會擋連續觸發嘅多個下載，
+  // 要逐張加少少延遲，唔可以用 Promise.all 一次過起晒。個別格仔冇獨立 WxH 記錄，
+  // 淨係用返個合併圖嘅尺寸做近似值（唔會嚴重錯——同一批生成通常同一輸出尺寸）。
+  const handleDownloadCells = async (e: React.MouseEvent, layout: Layout) => {
+    e.preventDefault();
+    e.stopPropagation();
+    let cells: string[] = [];
+    try { cells = JSON.parse(layout.cellImageUrls || "[]"); } catch { cells = []; }
+    if (cells.length === 0) return;
+    const { headline, subtitle } = parseCopyDisplay(layout.copyText || "");
+    const base = (headline || subtitle || layout.copyText || "").trim();
+    const d = dims[layout.id];
+    for (let i = 0; i < cells.length; i++) {
+      const filename = buildFilename({
+        url: cells[i], label: `多圖${String(i + 1).padStart(2, "0")}`, readableText: base, brand: clientName,
+        size: d ? `${d.w}x${d.h}` : null,
+      });
+      await downloadOne(cells[i], filename);
+      if (i < cells.length - 1) await new Promise((r) => setTimeout(r, 300));
     }
   };
 
@@ -131,6 +160,10 @@ export function LayoutPicker({ layouts, selectedId, onSelect }: Props) {
           const multiMeta = singleMeta ? undefined : getMultiLayout(layout.layoutType);
           const isMulti = !!multiMeta;
           const isBaseVariant = layout.layoutType.startsWith("BASE");
+          let cellCount = 0;
+          if (isMulti && layout.cellImageUrls) {
+            try { cellCount = (JSON.parse(layout.cellImageUrls) as string[]).length; } catch { cellCount = 0; }
+          }
           const effectLabel = layout.effectLevel ? EFFECT_LEVEL_LABEL[layout.effectLevel] : undefined;
           const isSelected = layout.id === selectedId;
           const { headline, subtitle, cta, variant } = parseCopyDisplay(layout.copyText);
@@ -147,6 +180,10 @@ export function LayoutPicker({ layouts, selectedId, onSelect }: Props) {
                 <img
                   src={layout.imageUrl}
                   alt={`Layout ${layout.layoutType}`}
+                  onLoad={(e) => {
+                    const t = e.currentTarget;
+                    setDims((prev) => prev[layout.id] ? prev : { ...prev, [layout.id]: { w: t.naturalWidth, h: t.naturalHeight } });
+                  }}
                   className="block mx-auto w-auto max-w-full max-h-[calc(100vh-330px)] object-contain bg-gray-50"
                 />
                 {isSelected && (
@@ -187,14 +224,35 @@ export function LayoutPicker({ layouts, selectedId, onSelect }: Props) {
                   </div>
                 )}
 
+                {/* 多圖：拼合圖 + 逐張原圖分開兩粒掣，唔再淨得已合併嗰張先落得到 */}
+                {cellCount > 0 && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={(e) => handleDownload(e, layout)}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium border border-gray-200 text-gray-600 hover:border-gray-400 hover:bg-gray-50 rounded-lg py-2 transition-all"
+                    >
+                      <Download className="h-3.5 w-3.5" />下載合併圖
+                    </button>
+                    <button
+                      onClick={(e) => handleDownloadCells(e, layout)}
+                      title="逐張下載每格原圖（非合併版）"
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium border border-gray-200 text-gray-600 hover:border-gray-400 hover:bg-gray-50 rounded-lg py-2 transition-all"
+                    >
+                      <Download className="h-3.5 w-3.5" />下載全部（{cellCount}張）
+                    </button>
+                  </div>
+                )}
+
                 {/* 卡底動作（方案 B）：下載（主，左）+ 加入素材庫（次，右）並排一行 */}
                 <div className="mt-3 flex items-center gap-2">
-                  <button
-                    onClick={(e) => handleDownload(e, layout)}
-                    className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium border border-gray-200 text-gray-600 hover:border-gray-400 hover:bg-gray-50 rounded-lg py-2 transition-all"
-                  >
-                    <Download className="h-3.5 w-3.5" />下載圖片
-                  </button>
+                  {cellCount === 0 && (
+                    <button
+                      onClick={(e) => handleDownload(e, layout)}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium border border-gray-200 text-gray-600 hover:border-gray-400 hover:bg-gray-50 rounded-lg py-2 transition-all"
+                    >
+                      <Download className="h-3.5 w-3.5" />下載圖片
+                    </button>
+                  )}
                   {saved.has(layout.id) ? (
                     <button
                       onClick={(e) => handleToggleLibrary(e, layout.id)}

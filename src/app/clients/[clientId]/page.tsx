@@ -5,6 +5,7 @@ import { Trash2, Search, CheckCircle2, Circle, X, Image as ImageIcon } from "luc
 import { BrandWorkspaceHeader } from "@/components/layout/BrandWorkspaceHeader";
 import { BrandMemoryCards } from "@/components/clients/BrandMemoryCards";
 import { getMultiLayout } from "@/types/multiLayout";
+import { setLastClientTab } from "@/lib/lastClientTab";
 
 type Activity = { id: string; theme: string; focusPoint: string; status: string; createdAt: string; imageRatio?: string; customW?: number; customH?: number; layoutId?: string; generatedLayouts?: { imageUrl: string; isSelected?: boolean }[] };
 type Client = {
@@ -133,6 +134,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   useEffect(() => {
     params.then(({ clientId }) => {
       setClientId(clientId);
+      setLastClientTab(clientId, "activities");
       fetch(`/api/clients/${clientId}`).then((r) => r.json()).then(setClient);
     });
     fetch("/api/clients").then((r) => r.json()).then(setClientsList).catch(() => {});

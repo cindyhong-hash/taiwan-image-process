@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { BrandWorkspaceHeader } from "@/components/layout/BrandWorkspaceHeader";
 import { LibraryWorkspace, type LibraryWorkspaceHandle } from "@/components/library/LibraryWorkspace";
+import { setLastClientTab } from "@/lib/lastClientTab";
 
 export default function BrandComponentsPage({ params }: { params: Promise<{ clientId: string }> }) {
   const [clientId, setClientId] = useState<string>("");
@@ -11,6 +12,10 @@ export default function BrandComponentsPage({ params }: { params: Promise<{ clie
   useEffect(() => {
     params.then(({ clientId }) => setClientId(clientId));
   }, [params]);
+
+  useEffect(() => {
+    if (clientId) setLastClientTab(clientId, "components");
+  }, [clientId]);
 
   if (!clientId) return <div className="text-gray-400">載入中...</div>;
 

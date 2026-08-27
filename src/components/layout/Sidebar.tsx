@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { FolderOpen, Plus, Trash2, Layers, Pin } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getLastClientTab } from "@/lib/lastClientTab";
 
 type Client = { id: string; name: string; _count: { activities: number } };
 
@@ -82,8 +83,13 @@ export function Sidebar() {
 
       {sortedClients.map((client) => {
         const isPinned = !!pinned[client.id];
+        // 撳品牌名帶返用戶去返佢啱啱嗰頁（活動圖／素材庫），唔好一律撞去活動圖列表——
+        // 素材庫生成緊嗰陣（有「生成中」佔位卡）先至最痛，撳走咗仲以為批次唔見咗。
+        const href = getLastClientTab(client.id) === "components"
+          ? `/clients/${client.id}/components`
+          : `/clients/${client.id}`;
         return (
-          <Link key={client.id} href={`/clients/${client.id}`} className="block group">
+          <Link key={client.id} href={href} className="block group">
             <div
               className={`flex items-center gap-2 px-2 py-2 rounded-md text-sm cursor-pointer hover:bg-gray-100 ${
                 pathname.startsWith(`/clients/${client.id}`) ? "bg-gray-200 font-medium" : ""
