@@ -20,7 +20,6 @@ const ANALYZE_HINTS = ["AI 分析構圖中…", "抽取配色…", "解讀風格
 import { ColorCards } from "./ColorCards";
 
 type Props = {
-  clientId: string | null;
   initialImageUrl?: string | null;
   editComponent?: StyleComponent | null;
   /** Image-based edit: prefill ALL of an image's components (構圖/配色/語氣) to edit together. */
@@ -28,6 +27,8 @@ type Props = {
   /** Set when editing a GENERATED image → save rewrites that image's paramsJson.slots
    *  instead of writing StyleComponent rows (which the generated-image modal never reads). */
   libraryImageId?: string;
+  /** 專案（clientId）而家由頁面 header 右上角揀（同 width-align 問題），呢度淨係讀，唔會自己 render 個 dropdown。 */
+  editClientId: string | null;
   /** 取消 → 唔儲存，返去素材庫。 */
   onCancel: () => void;
   onSaved: () => void;
@@ -42,17 +43,15 @@ const DEFAULT_PALETTE: PaletteEntry[] = PALETTE_ROLES.map((r, idx) => ({
   enabled: idx < 2, // primary + secondary on by default
 }));
 
-export function QuickAddForm({ clientId, initialImageUrl, editComponent, prefillComponents, libraryImageId, onCancel, onSaved }: Props) {
+export function QuickAddForm({ initialImageUrl, editComponent, prefillComponents, libraryImageId, editClientId, onCancel, onSaved }: Props) {
   const isEdit = !!editComponent || (!!prefillComponents && prefillComponents.length > 0);
   // ── Reference image (for AI analyze) ──
   const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl ?? null);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // ── Edit-mode: type and clientId change ──
+  // ── Edit-mode: type change (clientId 而家由 page header 控制，經 props 傳入) ──
   const [editType, setEditType] = useState<ComponentCategory>(editComponent?.type ?? "COMPOSITION");
-  const [editClientId, setEditClientId] = useState<string | null>(editComponent?.clientId ?? clientId);
-  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
 
   // ── Section toggles ──
   const [include, setInclude] = useState({
@@ -97,17 +96,11 @@ export function QuickAddForm({ clientId, initialImageUrl, editComponent, prefill
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Load client list for project selector
-  useEffect(() => {
-    fetch("/api/clients").then((r) => r.json()).then((data) => setClients(Array.isArray(data) ? data : []));
-  }, []);
-
   // ── Edit-mode init: prefill the one section being edited ──
   useEffect(() => {
     if (!editComponent) return;
     const t = editComponent.type as ComponentCategory;
     setEditType(t);
-    setEditClientId(editComponent.clientId ?? clientId);
     setInclude({ COMPOSITION: t === "COMPOSITION", COLOR_SCHEME: t === "COLOR_SCHEME", COPY_TONE: t === "COPY_TONE", BACKGROUND: t === "BACKGROUND" });
     const d = editComponent.data ?? {};
     if (t === "COMPOSITION") { setCompName(editComponent.name); setDescription((d.description as string) ?? ""); setCompPrompt(editComponent.aiPromptText); }
@@ -128,7 +121,6 @@ export function QuickAddForm({ clientId, initialImageUrl, editComponent, prefill
   useEffect(() => {
     if (!prefillComponents || prefillComponents.length === 0) return;
     const present = { COMPOSITION: false, COLOR_SCHEME: false, COPY_TONE: false, BACKGROUND: false };
-    setEditClientId(prefillComponents[0].clientId ?? clientId);
     for (const comp of prefillComponents) {
       const t = comp.type as ComponentCategory;
       const d = comp.data ?? {};
@@ -403,20 +395,8 @@ export function QuickAddForm({ clientId, initialImageUrl, editComponent, prefill
 
   return (
     <div className="pb-20">
-      {isEdit && <p className="text-xs text-gray-400 mb-5">修改後儲存即覆蓋原素材</p>}
-
-      {/* Edit-mode: project selector only (type is fixed — an image's 構圖/配色/語氣 are edited together) */}
-      {isEdit && (
-        <div className="mb-5 flex items-center gap-2 flex-wrap">
-          <label className="text-xs font-semibold text-gray-500 whitespace-nowrap">專案</label>
-          <select value={editClientId ?? ""} onChange={(e) => setEditClientId(e.target.value || null)}
-            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white">
-            <option value="">全部（無分類）</option>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-      )}
-
+      {/* 「修改後儲存即覆蓋原素材」提示文字搬咗去 quick-add/page.tsx 個標題正下方
+          （貼近標題先啱 UI/UX 慣例），呢度唔再重複顯示。 */}
       <div className="space-y-4">
         {/* Reference image upload + AI analyze — available in both create and edit mode */}
         <div>
@@ -428,7 +408,7 @@ export function QuickAddForm({ clientId, initialImageUrl, editComponent, prefill
           {imageUrl ? (
             <div className="relative group">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imageUrl} alt="preview" className="w-full h-40 object-contain rounded-xl border bg-gray-50" />
+              <img src={imageUrl} alt="preview" className="w-full max-h-96 object-contain rounded-xl border bg-gray-50" />
               <button onClick={() => setImageUrl(null)}
                 className="absolute top-2 right-2 bg-white/90 hover:bg-white p-1.5 rounded-lg shadow opacity-0 group-hover:opacity-100 transition-opacity">
                 <Trash2 className="h-3.5 w-3.5 text-red-500" />

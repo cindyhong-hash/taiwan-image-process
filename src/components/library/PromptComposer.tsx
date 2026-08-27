@@ -6,8 +6,9 @@
  */
 
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
+import { useUndoRedo } from "@/hooks/useUndoRedo";
 import {
-  X, Check, Sparkles, LayoutTemplate, SwatchBook, Mountain, Layers, RotateCcw,
+  X, Check, Sparkles, LayoutTemplate, SwatchBook, Mountain, Layers, RotateCcw, RotateCw,
   Loader2, Upload, Trash2, Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -161,6 +162,8 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
   // 由頭到尾都可編輯（唔再有「唯讀預覽」／「潤色先解鎖」兩個階段）。積木揀選會將
   // `構圖：...` 呢類一行插入呢個文字（冇方括號，睇落自然啲；同 ActivityForm.tsx 嘅 applyBlock 概念一致）。
   const [designText, setDesignText] = useState("");
+  // AI優化提示詞嘅上一步/重做棧（見 src/hooks/useUndoRedo.ts）。
+  const designTextHistory = useUndoRedo(designText, setDesignText);
   const [generating, setGenerating] = useState(false);
   const [bgAsImage, setBgAsImage] = useState(false); // 背景：false=作文字參考(預設) / true=直接用背景圖合成
   const [genError, setGenError] = useState<string | null>(null);
@@ -187,8 +190,6 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
   const [harmonize, setHarmonize] = useState(false);
   // #2 潤色寫手：擴寫 designText（直接覆寫，唔再係獨立 state）。
   const [polishing, setPolishing] = useState(false);
-  // 潤色前嘅快照，等「還原」可以一鍵返去潤色之前個版本（null = 未潤色過／已還原）。
-  const [prePolishText, setPrePolishText] = useState<string | null>(null);
   // Editable compiled prompt override
   const [activePreset, setActivePreset] = useState<string | null>(null);
 
@@ -274,6 +275,24 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
     return designText.replace(/^主體：.*$/m, "").replace(/\n{2,}/g, "\n").trim();
   }
 
+  // 潤色 AI 會將成段文字改寫做敘事段落，冇保證會保留「構圖：/配色：/背景：」呢啲標籤行
+  // （見過整段色碼喺潤色後消失）。潤色完之後強制按目前實際揀嘅積木/色板重新插番啲標籤，
+  // 唔理 AI 有冇原文保留——同揀積木/切換顏色用緊嗰套 replaceTag() 邏輯一致，確保唔會流失。
+  function reinjectStyleTags(text: string): string {
+    let t = text;
+    if (slots.layout) {
+      const body = (slots.layout.data?.description as string) || slots.layout.aiPromptText || slots.layout.name;
+      t = replaceTag(t, "構圖", body);
+    }
+    const colorBody = effRows.filter((r) => r.enabled).map((r) => `${r.label} ${r.hex}`).join("、");
+    if (colorBody) t = replaceTag(t, "配色", colorBody);
+    if (slots.background) {
+      const body = bgAsImage ? "" : ((slots.background.data?.description as string) || slots.background.aiPromptText || slots.background.name);
+      t = replaceTag(t, "背景", body);
+    }
+    return t;
+  }
+
   // 配色改做開關 chip（冇 hex 輸入，色碼要去素材庫改）：撳一下即刻反映入設計描述。
   function toggleColorEnabled(role: PaletteRole) {
     const newRows = effRows.map((r) => (r.role === role ? { ...r, enabled: !r.enabled } : r));
@@ -297,11 +316,10 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
     onPickSlot(makeComp("COPY_TONE", p.tone.name, { toneLabels: p.tone.toneLabels }, p.tone.aiPromptText));
   }
 
-  // #2 潤色寫手：擴寫目前 designText → 直接覆寫（唔再係獨立 state）；覆寫前留低快照畀「還原」用。
+  // #2 潤色寫手：擴寫目前 designText → 直接覆寫（唔再係獨立 state）；覆寫前推一步落 undo 棧。
   async function polishBrief() {
     const source = buildPolishSource();
     if (!source.trim()) return;
-    const snapshot = designText;
     setPolishing(true);
     setGenError(null);
     try {
@@ -316,25 +334,18 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "潤色失敗");
       const polished = (data.brief ?? source).trim();
-      setPrePolishText(snapshot);
       if (composite) {
         // 合成模式：source 冇包主體，攞返原本「主體：...」嗰行補返喺前面。
         const subjectTag = designText.match(/^主體：.*$/m)?.[0];
-        setDesignText(subjectTag ? `${subjectTag}\n${polished}` : polished);
+        designTextHistory.commit(reinjectStyleTags(subjectTag ? `${subjectTag}\n${polished}` : polished));
       } else {
-        setDesignText(polished);
+        designTextHistory.commit(reinjectStyleTags(polished));
       }
     } catch (e: unknown) {
       setGenError(e instanceof Error ? e.message : "潤色失敗");
     } finally {
       setPolishing(false);
     }
-  }
-
-  function revertPolish() {
-    if (prePolishText === null) return;
-    setDesignText(prePolishText);
-    setPrePolishText(null);
   }
 
 
@@ -488,7 +499,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
     setSeriesMode(false);
     setBgAsImage(false);
     setPaletteRows(null);
-    setPrePolishText(null);
+    designTextHistory.reset();
     (["layout", "color", "tone", "background"] as (keyof PromptSlots)[]).forEach((k) => onClearSlot(k));
   }
 
@@ -652,14 +663,14 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
               preview={enabledColors.length ? <div className="h-20"><ColorCards colors={enabledColors} height="h-20" interactive={false} showLock /></div> : null}
               onPick={() => setPickerCategory("COLOR_SCHEME")}
               onClear={() => { onClearSlot("color"); setPaletteRows(null); setDesignText((t) => replaceTag(t, "配色", "")); }} />
-            {/* 配色使用 chip：只顯示可以開關嘅顏色。主色已經喺上面色板圖用 🔒 標咗、一定會用，
-                呢度唔使再重複顯示主色（冇嘢好撳，顯示反而多餘）。 */}
+            {/* 配色開關 chip：只顯示可以開關嘅顏色。主色永遠鎖定必用，最多 4 個可撳 role
+                （輔色/強調色/中性色/點綴色），3 欄格仔闊度夠位一行擺晒。 */}
             {slots.color && (
-              <div className="flex flex-wrap gap-1 mt-1.5">
+              <div className="flex flex-wrap gap-0.5 mt-1.5">
                 {effRows.filter((r) => r.present && r.role !== "primary").map((r) => (
                   <button key={r.role} type="button" onClick={() => toggleColorEnabled(r.role)}
                     title="啟用／停用（色碼要到素材庫修改）"
-                    className={`flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full border transition-colors ${
+                    className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border transition-colors ${
                       r.enabled ? "bg-violet-50 border-violet-300 text-violet-700" : "bg-white border-gray-200 text-gray-400"}`}>
                     <span className={`w-2 h-2 rounded-full border border-black/10 shrink-0 ${r.enabled ? "" : "opacity-40"}`} style={{ background: r.hex }} />
                     {r.label}
@@ -667,7 +678,6 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
                 ))}
               </div>
             )}
-            {/* 配色說明：常駐一句，解釋 chip 嘅作用 */}
             {slots.color && (
               <p className="text-[10px] text-gray-400 leading-snug mt-1">
                 • 勾選：套用該顏色<br />
@@ -725,15 +735,28 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
                   : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
                 title="把目前描述擴寫成更完整的中文設計 brief（可再編輯）">
                 {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                {polishing ? "潤色中…" : "✨潤色"}
+                {polishing ? "AI優化提示詞中…" : "AI優化提示詞"}
               </button>
-              <button onClick={revertPolish} disabled={prePolishText === null}
-                className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                  prePolishText !== null ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
-                  : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
-                title="還原到潤色之前的版本">
-                <RotateCcw className="h-3 w-3" />還原
-              </button>
+              {/* 上一步/重做：一齊出現一齊收埋（未撳過 AI優化提示詞 之前完全唔顯示），
+                  唔會各自獨立顯示/隱藏——否則逐步 undo/redo 嗰陣兩粒掣會此消彼長咁跳位置。 */}
+              {(designTextHistory.canUndo || designTextHistory.canRedo) && (
+                <>
+                  <button onClick={designTextHistory.undo} disabled={!designTextHistory.canUndo}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                      designTextHistory.canUndo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
+                      : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                    title="上一步">
+                    <RotateCcw className="h-3 w-3" />上一步
+                  </button>
+                  <button onClick={designTextHistory.redo} disabled={!designTextHistory.canRedo}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                      designTextHistory.canRedo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
+                      : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                    title="重做">
+                    <RotateCw className="h-3 w-3" />重做
+                  </button>
+                </>
+              )}
             </div>
           </div>
           {/* 常駐提示：唔會好似 placeholder 咁一有內容就消失，等有主體/積木內容之後都仲提你可以補注意事項 */}

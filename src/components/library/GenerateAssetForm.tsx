@@ -13,7 +13,8 @@
  */
 
 import { useState, useRef, useEffect } from "react";
-import { Wand2, Loader2, Check, Save, Link2, Sparkles, Upload, RefreshCw, RotateCcw } from "lucide-react";
+import { Wand2, Loader2, Check, Save, Link2, Sparkles, Upload, RefreshCw, RotateCcw, RotateCw } from "lucide-react";
+import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { Button } from "@/components/ui/button";
 import { useRotatingHint } from "@/hooks/useRotatingHint";
 import { pollLibraryImage } from "@/lib/pollLibraryImage";
@@ -52,6 +53,8 @@ function SectionLabel({ step, title, hint }: { step: string; title: string; hint
 
 export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: Props) {
   const [description, setDescription] = useState(init?.description ?? "");
+  // AI優化提示詞嘅上一步/重做棧（見 src/hooks/useUndoRedo.ts）。
+  const descriptionHistory = useUndoRedo(description, setDescription);
   const [count, setCount] = useState(3);
   // 尺寸 — 8 比例（同活動圖/產品圖頁一致）+ 自訂；一律換算成確切 W×H 送 size:"custom"。
   const RATIO_DIMS: Record<string, { w: number; h: number }> = {
@@ -79,8 +82,6 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
   const [generating, setGenerating] = useState(false);
   const genHint = useRotatingHint(generating, GEN_HINTS);
   const [polishing, setPolishing] = useState(false);
-  // 潤色前嘅快照，等「還原」可以一鍵返去潤色之前個版本（null = 未潤色過／已還原）。
-  const [prePolishDescription, setPrePolishDescription] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<GeneratedItem[]>([]);
   const [saving, setSaving] = useState(false);
@@ -167,7 +168,6 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
     const hasRef = !!refImageUrl.trim();
     const hasDesc = !!description.trim();
     if (!hasDesc && !hasRef) return;
-    const snapshot = description;
     setPolishing(true);
     setError(null);
     try {
@@ -191,20 +191,13 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "潤色失敗");
-      setPrePolishDescription(snapshot);
-      setDescription(data.brief ?? currentDesc);
+      descriptionHistory.commit(data.brief ?? currentDesc);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "潤色失敗");
     } finally {
       setPolishing(false);
       setRefDescribing(false);
     }
-  }
-
-  function revertPolish() {
-    if (prePolishDescription === null) return;
-    setDescription(prePolishDescription);
-    setPrePolishDescription(null);
   }
 
   async function handleGenerate() {
@@ -315,7 +308,7 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
   return (
     <div className="space-y-5 pb-20">
       {/* ── 01 主體描述 ── */}
-      <SectionLabel step="01" title="主體描述" hint="主要輸入 · 可 AI 潤色" />
+      <SectionLabel step="01" title="主體描述" hint="主要輸入 · 可 AI 優化提示詞" />
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
@@ -340,15 +333,27 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
                 (description.trim() || refImageUrl.trim()) && !polishing && !refDescribing ? "bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100" : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
               title="把描述擴寫成簡潔有創意的生成 brief（可再編輯）">
               {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-              {polishing ? "潤色中…" : "潤色"}
+              {polishing ? "AI優化提示詞中…" : "AI優化提示詞"}
             </button>
-            <button onClick={revertPolish} disabled={prePolishDescription === null}
-              className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                prePolishDescription !== null ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
-                : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
-              title="還原到潤色之前的版本">
-              <RotateCcw className="h-3 w-3" />還原
-            </button>
+            {/* 上一步/重做：一齊出現一齊收埋，唔會各自獨立顯示/隱藏（見 PromptComposer 同一注釋）。 */}
+            {(descriptionHistory.canUndo || descriptionHistory.canRedo) && (
+              <>
+                <button onClick={descriptionHistory.undo} disabled={!descriptionHistory.canUndo}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                    descriptionHistory.canUndo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
+                    : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                  title="上一步">
+                  <RotateCcw className="h-3 w-3" />上一步
+                </button>
+                <button onClick={descriptionHistory.redo} disabled={!descriptionHistory.canRedo}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                    descriptionHistory.canRedo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
+                    : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                  title="重做">
+                  <RotateCw className="h-3 w-3" />重做
+                </button>
+              </>
+            )}
           </div>
         </div>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}

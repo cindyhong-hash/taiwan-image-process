@@ -38,6 +38,8 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
   const [detail, setDetail] = useState<ImageDetail | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const componentGridRef = useRef<ComponentGridHandle>(null);
+  // 下載檔名用（見 ImageDetailModal 嘅 clientName prop）。
+  const clientName = clients.find((c) => c.id === clientId)?.name ?? null;
 
   // clients list 仍需要：ComponentGrid（gallery 長按移到）+ QuickAddForm（編輯素材的「專案」下拉）用到。
   useEffect(() => {
@@ -204,6 +206,7 @@ export const LibraryWorkspace = forwardRef<LibraryWorkspaceHandle, { clientId: s
           sourceImages={(() => { try { const p = JSON.parse(detail.regenerateParams || "{}"); const arr = (Array.isArray(p.productImageUrls) && p.productImageUrls.length ? p.productImageUrls : (p.productImageUrl ? [p.productImageUrl] : [])) as string[]; return arr.filter(Boolean); } catch { return []; } })()}
           onOpenGenerateAsset={handleOpenGenerateAsset}
           onUseAsActivityRef={handleUseAsActivityRef}
+          clientName={clientName}
           injectedIds={injectedIds}
           onInject={handleInject}
           onInjectAll={handleInjectAll}

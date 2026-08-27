@@ -39,15 +39,24 @@ export default function NewLibraryAssetPage({ params }: { params: Promise<{ clie
   // 背景／人像／插畫用：重新生成/調整 帶入嘅初始值。
   const [assetInit, setAssetInit] = useState<{ description?: string; refImageUrl?: string; engine?: "flux" | "nano" }>({});
 
+  // consumeLibraryGenHandoff() 讀一次 sessionStorage 就清走（一次性交接）。Dev 環境 React
+  // Strict Mode 會將呢個 effect 嘅 setup 連續invoke 兩次（mount→cleanup→remount），第二次先
+  // 讀就已經俾第一次清空，交接資料會靜靜哋跌咗（生成頁見返一片空白，但唔會報錯）。用呢個
+  // ref 確保實際「讀走」呢個動作淨係做一次，Production build 冇呢個 dev-only 雙重invoke，
+  // 本身唔會撞到，但保留呢個 guard 更穩陣。
+  const handoffConsumedRef = useRef(false);
   useEffect(() => {
     params.then(({ clientId }) => setClientId(clientId));
     const sp = new URLSearchParams(window.location.search);
     const qType = sp.get("type") as AddAssetType | null;
     if (qType && qType in TYPE_META) setType(qType);
-    const handoff = consumeLibraryGenHandoff();
-    if (handoff.slots) setSlots(handoff.slots);
-    if (handoff.prefill) { setPrefill(handoff.prefill); setPrefillNonce((n) => n + 1); }
-    if (handoff.assetInit) setAssetInit(handoff.assetInit);
+    if (!handoffConsumedRef.current) {
+      handoffConsumedRef.current = true;
+      const handoff = consumeLibraryGenHandoff();
+      if (handoff.slots) setSlots(handoff.slots);
+      if (handoff.prefill) { setPrefill(handoff.prefill); setPrefillNonce((n) => n + 1); }
+      if (handoff.assetInit) setAssetInit(handoff.assetInit);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
