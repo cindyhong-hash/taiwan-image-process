@@ -5,8 +5,8 @@ import { Loader2, Pencil, SlidersHorizontal, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null };
-type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; variantCount?: number; generatedLayouts: GeneratedLayout[] };
+type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null; cellImageUrls?: string };
+type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string } };
 
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
   const [clientId, setClientId] = useState<string>("");
@@ -197,6 +197,7 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
         selectedId={selectedId}
         activityId={activityId}
         clientId={clientId}
+        clientName={activity.client?.name}
         onSelect={handleSelect}
       />
     </div>

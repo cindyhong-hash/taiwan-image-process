@@ -64,7 +64,7 @@ export default function EditActivityPage({
   if (!initial) return <div className="text-gray-400">載入中...</div>;
 
   return (
-    <div className="max-w-xl">
+    <div className="max-w-3xl">
       <div className="flex items-center gap-2 mb-6">
         <Link
           href={`/clients/${clientId}/activities/${activityId}`}
