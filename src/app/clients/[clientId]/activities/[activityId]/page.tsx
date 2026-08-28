@@ -151,7 +151,7 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
     <div>
       <Link
         href={`/clients/${clientId}`}
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 transition-colors mb-3"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 border border-gray-200 bg-white rounded-lg px-3 py-1.5 hover:bg-gray-50 hover:text-gray-800 transition-colors mb-6"
       >
         <ArrowLeft className="h-4 w-4" />返回活動列表
       </Link>
@@ -191,7 +191,7 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
           </Link>
         </div>
       </div>
-      <p className="text-gray-500 text-sm mb-6">{activity.focusPoint}</p>
+      <p className="text-gray-500 text-sm mb-6">選擇一款版型</p>
       <LayoutPicker
         layouts={activity.generatedLayouts}
         selectedId={selectedId}

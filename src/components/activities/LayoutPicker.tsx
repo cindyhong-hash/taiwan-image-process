@@ -152,9 +152,8 @@ export function LayoutPicker({ layouts, selectedId, clientName, onSelect }: Prop
   };
 
   return (
-    <div className="space-y-6">
-      <h2 className="font-medium text-gray-700">選擇一款版型</h2>
-      <div className="grid grid-cols-3 gap-4 items-start">
+    <div>
+      <div className="grid grid-cols-3 gap-5 items-start">
         {(layouts ?? []).map((layout) => {
           const singleMeta = LAYOUT_META[layout.layoutType];
           const multiMeta = singleMeta ? undefined : getMultiLayout(layout.layoutType);
@@ -172,8 +171,8 @@ export function LayoutPicker({ layouts, selectedId, clientName, onSelect }: Prop
             <div
               key={layout.id}
               onClick={() => onSelect(layout.id)}
-              className={`cursor-pointer rounded-xl border-2 overflow-hidden transition-all ${
-                isSelected ? "border-violet-500 shadow-lg" : "border-gray-200 hover:border-gray-400"
+              className={`cursor-pointer rounded-xl border overflow-hidden bg-white transition-all ${
+                isSelected ? "border-violet-500 ring-1 ring-violet-500 shadow-md" : "border-gray-200 hover:shadow-md hover:border-gray-300"
               }`}
             >
               <div className="relative">
@@ -193,30 +192,20 @@ export function LayoutPicker({ layouts, selectedId, clientName, onSelect }: Prop
                 )}
               </div>
 
-              <div className="p-3">
-                <div className="font-medium text-sm">
+              <div className="p-4">
+                <div className="font-semibold text-sm text-gray-800">
                   {isMulti ? (
                     <>{multiMeta?.label ?? layout.layoutType}{variant && ` · ${variant}`}</>
                   ) : isBaseVariant ? (
                     <>文字效果 {BASE_LETTER[layout.layoutType] ?? layout.layoutType}{effectLabel ? ` — ${effectLabel}` : ""}</>
                   ) : (
-                    <>設計 {layout.layoutType} — {singleMeta?.label}</>
+                    <>Layout {layout.layoutType} — {singleMeta?.label}</>
                   )}
                 </div>
 
-                {layout.textBurnedIn ? (
-                  // 文字已燒入圖片 → 顯示乾淨的文案摘要（不顯示原始標籤）
-                  <div className="mt-2 space-y-0.5">
-                    {headline && (
-                      <div className="text-xs font-semibold text-gray-800 line-clamp-1">{headline}</div>
-                    )}
-                    {subtitle && (
-                      <div className="text-xs text-gray-500 line-clamp-2">{subtitle}</div>
-                    )}
-                    {cta && <div className="text-xs text-gray-400">→ {cta}</div>}
-                  </div>
-                ) : (
-                  // 一般模式 → 顯示完整 copy（去掉標籤後）
+                {/* 文字已燒入圖片 → 跟 Figma step4 保持乾淨、唔再重複顯示文案；
+                    未燒入（舊資料）先顯示文案摘要，避免用戶睇唔到生成文字。 */}
+                {!layout.textBurnedIn && (headline || subtitle || cta) && (
                   <div className="text-xs text-gray-600 mt-2 space-y-0.5">
                     {headline && <div className="font-medium">{headline}</div>}
                     {subtitle && <div className="line-clamp-2">{subtitle}</div>}
@@ -275,7 +264,7 @@ export function LayoutPicker({ layouts, selectedId, clientName, onSelect }: Prop
                     <button
                       onClick={(e) => handleToggleLibrary(e, layout.id)}
                       disabled={savingId === layout.id}
-                      className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium border border-gray-200 text-gray-600 hover:border-gray-400 hover:bg-gray-50 rounded-lg py-2 transition-all disabled:opacity-50"
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium border border-violet-300 text-violet-600 hover:bg-violet-50 rounded-lg py-2 transition-all disabled:opacity-50"
                     >
                       {savingId === layout.id
                         ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
