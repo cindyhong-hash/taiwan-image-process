@@ -351,7 +351,7 @@ export function ActivityForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8 max-w-3xl pb-20">
+    <form onSubmit={handleSubmit} className="space-y-8 max-w-3xl pb-10">
 
       {/* ── 底圖模式 banner（成張相做背景，唔重新生圖）─────────── */}
       {isBaseMode && (
@@ -506,7 +506,7 @@ export function ActivityForm({
             onChange={(e) => set("imagePrompt", e.target.value)}
             rows={4}
             placeholder="例：精緻女生在辦公室，側臉仰頭噴霧，大片窗光，質感時尚"
-            className="w-full border border-input rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+            className="w-full bg-white border border-input rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
           />
           {editingPrompt && (
             <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
@@ -560,6 +560,7 @@ export function ActivityForm({
 
         <Field label="必放文字（選填）" hint="AI 文案會包含這些文字">
           <Input
+            className="bg-white"
             value={values.requiredText}
             onChange={(e) => set("requiredText", e.target.value)}
             placeholder="例：精緻女孩必帶✨ / 夏日清涼控油，一噴搞定"
@@ -714,7 +715,7 @@ export function ActivityForm({
                   )}
                 </div>
                 <button type="button" onClick={() => setPickerCat(cat)}
-                  className={`w-full rounded-xl border overflow-hidden text-left transition-all ${comp ? "border-violet-200" : "border-dashed border-gray-200 hover:border-violet-300"}`}>
+                  className={`w-full bg-white rounded-xl border overflow-hidden text-left transition-all ${comp ? "border-violet-200" : "border-dashed border-gray-200 hover:border-violet-300"}`}>
                   {comp ? (
                     <>
                       {/* 顏色：優先顯示色板（睇色 pattern）；其餘：優先顯示圖 */}
@@ -831,14 +832,13 @@ export function ActivityForm({
           ml-6（唔係 px-6）：呢個 fixed bar 唔經過 <MainLayout> 個 <main class="p-6">，
           冇跟到嗰 24px 嘅左邊距，所以要手動補返 ml-6，等個掣個左邊同真正內容欄
           （max-w-3xl 個 div，冇自己嘅左右 padding）啱啱好對齊，唔會偏咗。 ── */}
-      <div className="fixed bottom-0 left-60 right-0 z-30 bg-white border-t">
-        <div className="max-w-3xl ml-6 py-3">
-          <Button type="submit" disabled={loading || !canSubmit} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-6">
-            {loading
-              ? <><Loader2 className="h-4 w-4 animate-spin" />處理中…</>
-              : <><Zap className="h-4 w-4" />{isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel}</>}
-          </Button>
-        </div>
+      {/* AI 開始生成：跟 Figma 內嵌喺表單流程底部，靠左，唔用 fixed footer（避免 border-t 造成畫面斷層）。*/}
+      <div className="pt-2">
+        <Button type="submit" disabled={loading || !canSubmit} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-6">
+          {loading
+            ? <><Loader2 className="h-4 w-4 animate-spin" />處理中…</>
+            : <><Zap className="h-4 w-4" />{isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel}</>}
+        </Button>
       </div>
 
       {showLibPicker && (
