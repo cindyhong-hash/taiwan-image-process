@@ -18,10 +18,10 @@
 1. **重建入口頁** `/clients/[clientId]/activities`：
    - 標題「開始創作廣告圖」+ 副標「選擇創作方式，快速生成你的專屬素材」
    - **橫向品牌記憶列**：視覺基調色票 + 視覺風格 chips + 風格禁忌(紅) chips + 「編輯品牌設定」→ `/clients/[id]/settings`。資料沿用現有 client（primaryColor/secondaryColor/paletteColors/toneLabels/taboos）。
-   - **3 張創作卡**：
-     - 「全新生成」[推薦]（AI/violet）→ **開啟生成類型 Popup**（重用 `NewActivityModal`）→ 單圖 `/activities/new`、多圖 `/activities/new/multi?layout=…`
-     - 「套用素材底圖」（image）→ 開啟素材庫圖片挑選（重用 `LibraryImagePickerModal`）→ 選圖後 `sessionStorage.setItem(ACTIVITY_BASE_KEY, url)` + `router.push('/clients/[id]/activities/new')`（沿用現有底圖模式 handoff）
-     - 「自由排版」[NEW]（layout）→ `/magic-layers/compose?blank=1&clientId=[id]`（Phase 1 已做的空白畫布）
+   - **3 張創作卡（都畫出來對齊 Figma；本 Phase 只接第 1 張）**：
+     - 「全新生成」[推薦]（AI/violet）→ **開啟生成類型 Popup**（重用 `NewActivityModal`）→ 單圖 `/activities/new`、多圖 `/activities/new/multi?layout=…`。**← 本 Phase 接這個**
+     - 「套用素材底圖」（image）→ ⏸ **行為留白**（使用者之後詳細說明再接）。本 Phase 只做視覺卡；onClick 先不接（不做 library picker / 底圖 handoff）。
+     - 「自由排版」[NEW]（layout）→ ⏸ **行為留白**（使用者之後詳細說明再接）。本 Phase 只做視覺卡；先不接 blank 畫布連結（雖 Phase 1 已有,但使用者要重新定義,避免白做）。
    - **最近圖文列表**：沿用現有 `ActivityRow` + 搜尋(actSearch) + 狀態篩選(全部/已完成/生成中/生成失敗/草稿) + 刪除；重新排版對齊 Figma。
    - **移除** `BrandWorkspaceHeader`（廣告活動圖/素材庫 內部 tab，已與側欄 nav 重複）。
 
@@ -48,9 +48,10 @@
 
 ## 互動接線（驗收關鍵）
 - 全新生成 → 出 `NewActivityModal` popup（不直接跳表單）→ 選單圖→`/activities/new`、選多圖版型→`/activities/new/multi?layout=…`
-- 套用素材底圖 → `LibraryImagePickerModal` → 選圖 → 帶 ACTIVITY_BASE_KEY → `/activities/new`（進底圖模式）
-- 自由排版 → `/magic-layers/compose?blank=1&clientId=[id]`
+- 套用素材底圖 → ⏸ 行為留白（本 Phase 不接，等使用者詳述）
+- 自由排版 → ⏸ 行為留白（本 Phase 不接，等使用者詳述）
 - 最近圖文卡/列 → `/activities/[activityId]`（結果/詳情）
+- 重用元件 `LibraryImagePickerModal` / `ACTIVITY_BASE_KEY` / blank 畫布連結 → 本 Phase 不使用（留待兩卡後續 spec）。
 
 ## 邊界 / 錯誤
 - 0 活動 → 最近圖文空狀態。
