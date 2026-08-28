@@ -1,11 +1,12 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Check, Lock, RefreshCw } from "lucide-react";
-import { InspireButton } from "@/components/activities/InspireButton";
+import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Check, Lock, RefreshCw, RotateCcw, RotateCw } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
+import { InspireButton } from "@/components/activities/InspireButton";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
 import { getColors, PALETTE_ROLES } from "@/types/library";
 import { readableText } from "@/components/library/ColorCards";
@@ -316,6 +317,9 @@ export function ActivityForm({
   const set = <K extends keyof ActivityFormValues>(k: K, v: ActivityFormValues[K]) =>
     setValues((prev) => ({ ...prev, [k]: v }));
 
+  // 畫面描述 Prompt 嘅上一步/重做棧（AI 幫改／AI 優化提示詞都會記一步）。
+  const imagePromptHistory = useUndoRedo(values.imagePrompt, (v) => set("imagePrompt", v));
+
   // 揀比例 → 自動填 W×H；改 W×H → 鎖住當前比例算另一邊（活動圖模型只收已知比例，故 aspect 保持標準）。
   const pickRatio = (r: string) => setValues((prev) => ({ ...prev, imageRatio: r, customW: RATIO_DIMS[r]?.w ?? prev.customW, customH: RATIO_DIMS[r]?.h ?? prev.customH }));
   const changeDim = (which: "w" | "h", v: number) => setValues((prev) => {
@@ -356,7 +360,7 @@ export function ActivityForm({
       });
       const data = await res.json();
       if (data.optimizedPrompt) {
-        set("imagePrompt", data.optimizedPrompt);
+        imagePromptHistory.commit(data.optimizedPrompt);
       } else {
         alert(data.error ?? "優化失敗，請稍後再試");
       }
@@ -383,7 +387,7 @@ export function ActivityForm({
       });
       const data = await res.json();
       if (data.optimizedPrompt) {
-        set("imagePrompt", data.optimizedPrompt);
+        imagePromptHistory.commit(data.optimizedPrompt);
         setEditInstruction("");
         setEditingPrompt(false);
       } else {
@@ -571,6 +575,26 @@ export function ActivityForm({
                   : <Wand2 className="h-3 w-3" />}
                 {optimizingPrompt ? "優化中…" : "AI 優化提示詞"}
               </button>
+
+              {/* 上一步/重做：一齊出現一齊收埋，唔會各自獨立顯示/隱藏（見 PromptComposer 同一注釋）。 */}
+              {(imagePromptHistory.canUndo || imagePromptHistory.canRedo) && (
+                <>
+                  <button type="button" onClick={imagePromptHistory.undo} disabled={!imagePromptHistory.canUndo}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                      imagePromptHistory.canUndo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
+                      : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                    title="上一步">
+                    <RotateCcw className="h-3 w-3" />上一步
+                  </button>
+                  <button type="button" onClick={imagePromptHistory.redo} disabled={!imagePromptHistory.canRedo}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                      imagePromptHistory.canRedo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
+                      : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                    title="重做">
+                    <RotateCw className="h-3 w-3" />重做
+                  </button>
+                </>
+              )}
             </div>
           </div>
           <textarea
@@ -764,15 +788,16 @@ export function ActivityForm({
                     </div>
                   )}
                 </button>
-                {/* 配色開關 chip：只顯示可以開關嘅顏色。主色已經喺上面色板圖用 🔒 標咗、一定會用，
-                    呢度唔使再重複顯示，即時反映入畫面描述 */}
+                {/* 配色開關 chip：只顯示可以開關嘅顏色（主色已經 present:true 但唔會出現喺呢個
+                    filter，因為佢一定 enabled、唔使畀人撳）。主色永遠鎖定必用，最多 4 個可撳
+                    role（輔色/強調色/中性色/點綴色），3 欄格仔闊度夠位一行擺晒。 */}
                 {slot === "color" && comp && (
                   <>
-                    <div className="flex flex-wrap gap-1 mt-1.5">
+                    <div className="flex flex-wrap gap-0.5 mt-1.5">
                       {effRows.filter((r) => r.present && r.role !== "primary").map((r) => (
                         <button key={r.role} type="button" onClick={() => toggleColorEnabled(r.role)}
                           title="啟用／停用（色碼要到素材庫修改）"
-                          className={`flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full border transition-colors ${
+                          className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border transition-colors ${
                             r.enabled ? "bg-violet-50 border-violet-300 text-violet-700" : "bg-white border-gray-200 text-gray-400"}`}>
                           <span className={`w-2 h-2 rounded-full border border-black/10 shrink-0 ${r.enabled ? "" : "opacity-40"}`} style={{ background: r.hex }} />
                           {r.label}
