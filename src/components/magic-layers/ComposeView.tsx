@@ -13,6 +13,7 @@
    for AI 生成 (picked/uploaded backgrounds drive the canvas by their real size).
    ============================================================ */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { MagicLayersEditor, type SavedLayer } from "@/components/magic-layers/MagicLayersEditor.tsx";
 import type { LayerData, SemanticId } from "@/lib/magic-layers/types.ts";
 import { ML_COMPOSE_BG_KEY, ML_COMPOSE_CLIENT_KEY } from "@/components/activities/RolePickerModal";
@@ -51,6 +52,7 @@ function loadImg(url: string): Promise<HTMLImageElement> {
 }
 
 export function ComposeView({ clientId: clientIdProp }: { clientId?: string }) {
+  const searchParams = useSearchParams();
   const [bgMode, setBgMode] = useState<BgMode>(clientIdProp ? "library" : "ai");
   const [bgPrompt, setBgPrompt] = useState("典雅浴室，大理石檯面，柔和自然光，清新留白背景，無產品無文字");
   const [libUrl, setLibUrl] = useState<string>("");       // 選中的素材庫背景
@@ -81,6 +83,22 @@ export function ComposeView({ clientId: clientIdProp }: { clientId?: string }) {
       if (cid) { sessionStorage.removeItem(ML_COMPOSE_CLIENT_KEY); if (!clientIdProp) setClientId(cid); }
     } catch { /* ignore */ }
   }, [clientIdProp]);
+
+  // 首頁「自由排版」帶 ?blank=1 → 跳過表單，直接開一張空白畫布進編輯器。
+  useEffect(() => {
+    if (searchParams.get("blank") !== "1") return;
+    let cancelled = false;
+    (async () => {
+      const cid = searchParams.get("clientId");
+      if (cid && !clientIdProp) setClientId(cid);
+      const im = await blankImage(1200, 1200);
+      if (cancelled) return;
+      setImg(im);
+      setLayers([]);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 續編：網址帶 ?activity=<id>（草稿活動）或舊的 ?layout=<libraryImageId>
   // → 抓已存排版、還原成 LayerData[] + 空白尺寸圖 → 直接進編輯器。

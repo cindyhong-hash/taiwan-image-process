@@ -4,7 +4,7 @@ export function QuickStartCards({ clientId }: { clientId: string }) {
   const cards = [
     { title: "AI 廣告圖", sub: "IG / FB 廣告素材", icon: ShoppingBag, href: `/clients/${clientId}/activities/new`, tint: "bg-pink-100 text-pink-500" },
     { title: "產品情境", sub: "產品情境圖", icon: ImageIcon, href: `/clients/${clientId}/components/new`, tint: "bg-blue-100 text-blue-500" },
-    { title: "自由排版", sub: "探索所有模板", icon: LayoutTemplate, href: `/magic-layers`, tint: "bg-violet-100 text-violet-500" },
+    { title: "自由排版", sub: "探索所有模板", icon: LayoutTemplate, href: `/magic-layers/compose?blank=1&clientId=${clientId}`, tint: "bg-violet-100 text-violet-500" },
   ];
   return (
     <section>
