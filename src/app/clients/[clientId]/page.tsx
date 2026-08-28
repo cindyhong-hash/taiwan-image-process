@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { setLastClientId } from "@/lib/lastClient";
+import { HomeHero } from "@/components/home/HomeHero";
+import { QuickStartCards } from "@/components/home/QuickStartCards";
 
 type Client = {
   id: string;
@@ -44,8 +46,8 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
   return (
     <div className="flex gap-6">
       <div className="min-w-0 flex-1 space-y-8">
-        {/* Task 9 HomeHero */}
-        {/* Task 10 QuickStartCards */}
+        <HomeHero />
+        <QuickStartCards clientId={client.id} />
         {/* Task 11 RecentWorks */}
       </div>
       <div className="w-64 shrink-0 space-y-4">
