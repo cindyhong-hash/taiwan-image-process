@@ -649,7 +649,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
 
         {/* ── 02 套用風格積木 ── 3 欄小卡片（與活動圖頁一致），選取後即時加入下面設計描述；
             配色／背景的細節操作一律做成 checkbox（不再是常駐大面板），勾選後即時反映入設計描述 */}
-        <SectionLabel step="02" title="套用風格積木" hint="選填 · 選取後會加入下面設計描述" />
+        <SectionLabel step="02" title="參考過往貼文風格" hint="選填 · 選取後會加入下面設計描述" />
         <div className="grid grid-cols-3 gap-3">
           <div>
             <BlockCard label="構圖" icon={<LayoutTemplate className="h-4 w-4" />} component={slots.layout}

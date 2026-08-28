@@ -695,7 +695,7 @@ export function ActivityForm({
 
       {/* ── 03 套用風格積木（構圖 / 顏色 / 背景）→ 內容注入 AI Prompt ─────────── */}
       <div className="space-y-3">
-        <SectionLabel step="03" title="套用風格積木" hint="選填，揀咗會加入 AI Prompt 做生成參考" />
+        <SectionLabel step="03" title="參考過往貼文風格" hint="選填，揀咗會加入 AI Prompt 做生成參考" />
         <div className="grid grid-cols-3 gap-3">
           {([
             { cat: "COMPOSITION",  slot: "layout",     label: "構圖", icon: <LayoutTemplate className="h-4 w-4" /> },
