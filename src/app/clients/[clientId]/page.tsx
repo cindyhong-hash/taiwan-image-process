@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { setLastClientId } from "@/lib/lastClient";
 import { HomeHero } from "@/components/home/HomeHero";
 import { QuickStartCards } from "@/components/home/QuickStartCards";
+import { RecentWorks } from "@/components/home/RecentWorks";
 
 type Client = {
   id: string;
@@ -48,7 +49,7 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
       <div className="min-w-0 flex-1 space-y-8">
         <HomeHero />
         <QuickStartCards clientId={client.id} />
-        {/* Task 11 RecentWorks */}
+        <RecentWorks clientId={client.id} activities={client.activities ?? []} />
       </div>
       <div className="w-64 shrink-0 space-y-4">
         {/* Task 12 BrandMemoryPanel / AiLearnedCard */}
