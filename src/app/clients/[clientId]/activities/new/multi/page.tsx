@@ -547,7 +547,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                 onChange={(e) => setTheme(e.target.value)}
                 rows={4}
                 placeholder="例：日系文青風的夏季芒果冰新品上市，整體色彩明亮、有清涼消暑感。"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300"
+                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300"
               />
               {/* AI 幫改：指令式修改主題 Prompt */}
               {editingPrompt && (
@@ -607,6 +607,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             <SectionLabel step="02" title="必放文字" />
             <Field label="必放文字（預設套用至主圖）" hint="AI 文案會包含這些文字">
               <Input
+                className="bg-white"
                 value={mustText}
                 onChange={(e) => setMustText(e.target.value)}
                 placeholder="例：Title: 盛夏芒果慶典 / Sub: 第二杯半價 / 日期: 2026/06/15"
@@ -645,7 +646,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             const isMain = i === 0;
             const isLast = i === cells.length - 1 && cells.length > 1;
             return (
-              <div key={i} className="rounded-xl border border-gray-200 p-4 space-y-3">
+              <div key={i} className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-700">圖 {i + 1}</span>
                   <div className="flex items-center gap-1.5">
@@ -689,7 +690,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                     onChange={(e) => updateCell(i, { description: e.target.value })}
                     rows={2}
                     placeholder="描述這一格的畫面…"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300"
+                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300"
                   />
                   {cellEditingIdx === i && (
                     <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-2 space-y-1.5">
@@ -720,6 +721,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                 <div className="space-y-1">
                   <Label className="text-xs text-gray-500">必放文字</Label>
                   <Input
+                    className="bg-white"
                     value={cell.mustText}
                     onChange={(e) => updateCell(i, { mustText: e.target.value })}
                     placeholder="留白＝不放文字"
@@ -861,7 +863,7 @@ function AssetStrip({
         </div>
       )}
       {showBigEmptyZone ? (
-        <label className="w-full h-32 flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 hover:border-violet-300 hover:bg-violet-50/30 cursor-pointer transition-colors">
+        <label className="w-full h-32 flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 bg-white hover:border-violet-300 hover:bg-violet-50/30 cursor-pointer transition-colors">
           {busy ? <Loader2 className="h-5 w-5 text-gray-300 animate-spin" /> : <ImagePlus className="h-5 w-5 text-gray-300" />}
           <span className="text-xs text-gray-400">點擊或拖曳上傳</span>
           <span className="text-[10px] text-gray-300">{urls.length}/{max}</span>
@@ -881,7 +883,7 @@ function AssetStrip({
             </div>
           ))}
           {urls.length < max && (
-            <label className="flex flex-col items-center justify-center gap-1 w-14 h-14 rounded-lg border-2 border-dashed border-gray-200 hover:border-violet-300 cursor-pointer">
+            <label className="flex flex-col items-center justify-center gap-1 w-14 h-14 rounded-lg border-2 border-dashed border-gray-200 bg-white hover:border-violet-300 cursor-pointer">
               {busy ? <Loader2 className="h-4 w-4 text-gray-300 animate-spin" /> : <ImagePlus className="h-4 w-4 text-gray-300" />}
               <span className="text-[9px] text-gray-300">{urls.length}/{max}</span>
               <input type="file" accept="image/*" multiple className="hidden"
