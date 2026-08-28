@@ -2,8 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, Search, CheckCircle2, Circle, X, Image as ImageIcon } from "lucide-react";
-import { BrandWorkspaceHeader } from "@/components/layout/BrandWorkspaceHeader";
-import { BrandMemoryCards } from "@/components/clients/BrandMemoryCards";
+import { AdCreationHeader } from "@/components/adcreation/AdCreationHeader";
+import { BrandMemoryBar } from "@/components/adcreation/BrandMemoryBar";
+import { CreationCards } from "@/components/adcreation/CreationCards";
+import { NewActivityModal } from "@/components/activities/NewActivityModal";
 import { getMultiLayout } from "@/types/multiLayout";
 import { setLastClientTab } from "@/lib/lastClientTab";
 
@@ -130,6 +132,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
+  const [showTypeModal, setShowTypeModal] = useState(false);
 
   useEffect(() => {
     params.then(({ clientId }) => {
@@ -194,14 +197,25 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   if (!client) return <div className="text-gray-400">載入中...</div>;
 
   return (
-    <div>
-      <BrandWorkspaceHeader clientId={clientId} activeTab="activities" name={client.name} />
+    <div className="max-w-6xl mx-auto">
+      <AdCreationHeader />
 
-      <BrandMemoryCards clientId={clientId} data={client} />
+      <BrandMemoryBar
+        clientId={clientId}
+        primaryColor={client.primaryColor}
+        secondaryColor={client.secondaryColor}
+        paletteColors={client.paletteColors}
+        toneLabels={client.toneLabels}
+        taboos={client.taboos}
+      />
+
+      <CreationCards onNewGenerate={() => setShowTypeModal(true)} />
+
+      <h2 className="text-lg font-semibold text-gray-900 mb-3">最近圖文</h2>
 
       {client.activities.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
-          還沒有活動，點右上角「新增活動」開始
+          還沒有活動，點上方「全新生成」開始
         </div>
       ) : (
         <>
@@ -295,6 +309,10 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
             );
           })()}
         </>
+      )}
+
+      {showTypeModal && (
+        <NewActivityModal clientId={clientId} onClose={() => setShowTypeModal(false)} />
       )}
     </div>
   );
