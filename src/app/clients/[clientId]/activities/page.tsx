@@ -5,7 +5,7 @@ import { Trash2, Search, CheckCircle2, Circle, X, Image as ImageIcon } from "luc
 import { AdCreationHeader } from "@/components/adcreation/AdCreationHeader";
 import { BrandMemoryBar } from "@/components/adcreation/BrandMemoryBar";
 import { CreationCards } from "@/components/adcreation/CreationCards";
-import { NewActivityModal } from "@/components/activities/NewActivityModal";
+import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
 import { getMultiLayout } from "@/types/multiLayout";
 import { setLastClientTab } from "@/lib/lastClientTab";
 
@@ -133,6 +133,13 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   const [batchBusy, setBatchBusy] = useState(false);
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
+
+  // 全新生成 → 直接選版型：單張→單圖表單；其餘→多圖表單(帶 layout)
+  const handleLayout = (id: string) => {
+    setShowTypeModal(false);
+    if (id === "single") router.push(`/clients/${clientId}/activities/new`);
+    else router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
+  };
 
   useEffect(() => {
     params.then(({ clientId }) => {
@@ -312,7 +319,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
       )}
 
       {showTypeModal && (
-        <NewActivityModal clientId={clientId} onClose={() => setShowTypeModal(false)} />
+        <MultiLayoutPicker selectedId="single" onSelect={handleLayout} onClose={() => setShowTypeModal(false)} />
       )}
     </div>
   );
