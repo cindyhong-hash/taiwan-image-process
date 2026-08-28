@@ -1,4 +1,4 @@
-import { Sparkles, Image as ImageIcon, LayoutTemplate, ArrowRight } from "lucide-react";
+import { Image as ImageIcon, LayoutTemplate, ArrowRight } from "lucide-react";
 
 export function CreationCards({ onNewGenerate }: { onNewGenerate: () => void }) {
   return (

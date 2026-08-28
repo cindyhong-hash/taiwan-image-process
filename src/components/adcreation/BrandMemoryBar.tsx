@@ -20,10 +20,12 @@ export function BrandMemoryBar({ clientId, primaryColor, secondaryColor, palette
           <div className="text-[11px] text-gray-400">已套用你的品牌設定</div>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-500">視覺基調</span>
-        <div className="flex gap-1.5">{swatches.map((c, i) => <span key={i} className="h-7 w-7 rounded-md border border-gray-100" style={{ background: c }} />)}</div>
-      </div>
+      {swatches.length > 0 && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">視覺基調</span>
+          <div className="flex gap-1.5">{swatches.map((c, i) => <span key={i} className="h-7 w-7 rounded-md border border-gray-100" style={{ background: c }} />)}</div>
+        </div>
+      )}
       {toneLabels.length > 0 && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">視覺風格</span>
