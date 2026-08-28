@@ -4,9 +4,10 @@ import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Loader2, Wand2, Pencil, Trash2, Images, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Check, Lock, RefreshCw, RotateCcw, RotateCw, UploadCloud, Zap } from "lucide-react";
+import { X, Loader2, Wand2, Pencil, Trash2, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Lock, RefreshCw, RotateCcw, RotateCw, Zap } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { InspireButton } from "@/components/activities/InspireButton";
+import { SectionLabel, Field, AssetUploadCards } from "@/components/activities/formParts";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
 import { getColors, PALETTE_ROLES } from "@/types/library";
 import { readableText } from "@/components/library/ColorCards";
@@ -574,123 +575,21 @@ export function ActivityForm({
       <div className="space-y-4">
         <SectionLabel step="02" title="素材上傳" />
 
-        <div className="grid grid-cols-3 gap-4 items-stretch">
-          {/* 欄 1：產品主圖 */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
-            <UploadCloud className="h-7 w-7 text-gray-400" />
-            <div>
-              <p className="text-sm font-bold text-gray-800">產品主圖 最多 5 張<span className="text-xs text-gray-400 font-normal ml-1">（選填）</span></p>
-              <p className="text-xs text-gray-400 mt-0.5">去背產品圖效果更佳</p>
-            </div>
-            {(values.productImageUrls.length > 0 || uploadingProduct) && (
-              <div className="flex gap-1.5 flex-wrap justify-center">
-                {values.productImageUrls.map((url, i) => (
-                  <div key={i} className="relative w-12 h-12 shrink-0 group/thumb">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="w-12 h-12 object-cover rounded-lg border border-gray-200" />
-                    <button type="button" onClick={() => removeImage("product", i)}
-                      className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
-                      <X className="h-2.5 w-2.5 text-gray-500" />
-                    </button>
-                  </div>
-                ))}
-                {uploadingProduct && <Loader2 className="h-5 w-5 text-gray-300 animate-spin self-center" />}
-              </div>
-            )}
-            <div className="flex items-center gap-2 w-full mt-auto">
-              <label className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium rounded-lg py-1.5 border transition-colors
-                ${values.productImageUrls.length >= 5 ? "border-gray-100 text-gray-300 cursor-not-allowed" : "border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"}`}>
-                上傳圖片
-                {values.productImageUrls.length < 5 && (
-                  <input type="file" accept="image/*" multiple className="hidden"
-                    onChange={(e) => e.target.files && addImages("product", e.target.files, 5, values.productImageUrls)} />
-                )}
-              </label>
-              <button type="button" onClick={() => setShowProductLibPicker(true)}
-                disabled={values.productImageUrls.length >= 5}
-                className="flex-1 flex items-center justify-center gap-1 text-xs font-medium text-violet-600 border border-violet-200 rounded-lg py-1.5 hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                <Images className="h-3 w-3" />從素材庫選擇
-              </button>
-            </div>
-          </div>
-
-          {/* 欄 2：風格參考圖 */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
-            <UploadCloud className="h-7 w-7 text-gray-400" />
-            <div>
-              <p className="text-sm font-bold text-gray-800">風格參考圖 1 張<span className="text-xs text-gray-400 font-normal ml-1">（選填）</span></p>
-              <p className="text-xs text-gray-400 mt-0.5">指定你想要的排版或氛圍</p>
-            </div>
-            {(values.referenceImageUrls.length > 0 || uploadingRef) && (
-              <div className="flex gap-1.5 flex-wrap justify-center">
-                {values.referenceImageUrls.map((url, i) => (
-                  <div key={i} className="relative w-12 h-12 shrink-0 group/thumb">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="w-12 h-12 object-cover rounded-lg border border-gray-200" />
-                    <button type="button" onClick={() => removeImage("ref", i)}
-                      className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
-                      <X className="h-2.5 w-2.5 text-gray-500" />
-                    </button>
-                  </div>
-                ))}
-                {uploadingRef && <Loader2 className="h-5 w-5 text-gray-300 animate-spin self-center" />}
-              </div>
-            )}
-            <div className="flex items-center gap-2 w-full mt-auto">
-              <label className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium rounded-lg py-1.5 border transition-colors
-                ${values.referenceImageUrls.length >= 1 ? "border-gray-100 text-gray-300 cursor-not-allowed" : "border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"}`}>
-                上傳圖片
-                {values.referenceImageUrls.length < 1 && (
-                  <input type="file" accept="image/*" multiple className="hidden"
-                    onChange={(e) => e.target.files && addImages("ref", e.target.files, 1, values.referenceImageUrls)} />
-                )}
-              </label>
-              <button type="button" onClick={() => setShowLibPicker(true)}
-                className="flex-1 flex items-center justify-center gap-1 text-xs font-medium text-violet-600 border border-violet-200 rounded-lg py-1.5 hover:bg-violet-50 transition-colors">
-                <Images className="h-3 w-3" />從素材庫選擇
-              </button>
-            </div>
-          </div>
-
-          {/* 欄 3：AI 反推提示詞 */}
-          <button
-            type="button"
-            onClick={() => handleAnalyzeStyle()}
-            disabled={!hasRefImages || analyzingImage}
-            className={`rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center gap-3 transition-all
-              ${analyzedDone && !analyzingImage
-                ? "border-emerald-300 bg-emerald-50/40 cursor-pointer"
-                : hasRefImages && !analyzingImage
-                ? "border-violet-300 hover:bg-violet-50 cursor-pointer"
-                : "border-violet-100 bg-gray-50 cursor-not-allowed"}`}
-          >
-            {analyzingImage ? (
-              <>
-                <Loader2 className="h-7 w-7 text-violet-500 animate-spin" />
-                <div>
-                  <p className="text-sm font-bold text-gray-800">AI 反推提示詞</p>
-                  <p className="text-xs text-violet-500 mt-0.5">分析中…</p>
-                </div>
-              </>
-            ) : analyzedDone ? (
-              <>
-                <Check className="h-7 w-7 text-emerald-500" />
-                <div>
-                  <p className="text-sm font-bold text-gray-800">AI 反推提示詞</p>
-                  <p className="text-xs text-emerald-600 mt-0.5">已帶入提示詞，可再撳重新帶入</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <RefreshCw className={`h-7 w-7 ${hasRefImages ? "text-violet-400" : "text-gray-300"}`} />
-                <div>
-                  <p className={`text-sm font-bold ${hasRefImages ? "text-gray-800" : "text-gray-400"}`}>AI 反推提示詞</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{hasRefImages ? "從參考圖智能分析風格並套用" : "需先加風格參考圖"}</p>
-                </div>
-              </>
-            )}
-          </button>
-        </div>
+        <AssetUploadCards
+          productUrls={values.productImageUrls}
+          refUrls={values.referenceImageUrls}
+          onAddProduct={(files) => addImages("product", files, 5, values.productImageUrls)}
+          onRemoveProduct={(i) => removeImage("product", i)}
+          onPickProductLibrary={() => setShowProductLibPicker(true)}
+          onAddRef={(files) => addImages("ref", files, 1, values.referenceImageUrls)}
+          onRemoveRef={(i) => removeImage("ref", i)}
+          onPickRefLibrary={() => setShowLibPicker(true)}
+          uploadingProduct={uploadingProduct}
+          uploadingRef={uploadingRef}
+          analyzeState={analyzingImage ? "analyzing" : analyzedDone ? "done" : "idle"}
+          onAnalyze={() => handleAnalyzeStyle()}
+          canAnalyze={hasRefImages}
+        />
       </div>
 
       {/* ── 03 套用風格積木（構圖 / 顏色 / 背景）→ 內容注入 AI Prompt ─────────── */}
@@ -891,41 +790,5 @@ export function ActivityForm({
         />
       )}
     </form>
-  );
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function SectionLabel({ step, title, hint, required }: { step: string; title: string; hint?: string; required?: boolean }) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
-          {step}
-        </span>
-        <span className="text-sm font-bold text-gray-800">{title}</span>
-        {required
-          ? <span className="text-red-500 font-semibold">*</span>
-          : <span className="text-xs text-gray-400">（選填）</span>}
-        {hint && <span className="text-xs text-gray-400 font-normal">{hint}</span>}
-      </div>
-      <div className="border-b border-gray-200" />
-    </div>
-  );
-}
-
-function Field({ label, hint, required, optional, children }: {
-  label: string; hint?: string; required?: boolean; optional?: boolean; children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-red-500 ml-0.5">*</span>}
-        {optional && <span className="text-xs text-gray-400 font-normal ml-1">（選填）</span>}
-        {hint && <span className="text-gray-400 font-normal ml-1.5 text-xs">{hint}</span>}
-      </Label>
-      {children}
-    </div>
   );
 }

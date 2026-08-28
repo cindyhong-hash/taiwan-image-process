@@ -2,13 +2,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, ImagePlus, X, ChevronDown, ChevronLeft, Sparkles, LayoutGrid, Wand2, Pencil, Trash2 } from "lucide-react";
+import { Loader2, ImagePlus, X, ChevronDown, ChevronLeft, Sparkles, LayoutGrid, Pencil, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiLayoutPicker, LayoutThumb } from "@/components/activities/MultiLayoutPicker";
 import { InspireButton } from "@/components/activities/InspireButton";
 import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
+import { SectionLabel, Field, AssetUploadCards } from "@/components/activities/formParts";
+import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { getMultiLayout } from "@/types/multiLayout";
 import { useUnsavedGuard } from "@/components/common/UnsavedGuard";
 
@@ -48,7 +50,12 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   const [optimizing, setOptimizing] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzedDone, setAnalyzedDone] = useState(false); // AI 反推提示詞：分析完成狀態（同單圖版 AssetUploadCards 一致）
   const [saving, setSaving] = useState(false);
+  const [uploadingProduct, setUploadingProduct] = useState(false);
+  const [uploadingRef, setUploadingRef] = useState(false);
+  const [showProductLibPicker, setShowProductLibPicker] = useState(false); // 從素材庫揀產品主圖
+  const [showRefLibPicker, setShowRefLibPicker] = useState(false); // 從素材庫揀風格參考圖
   // AI 幫改（指令式修改主題 Prompt）
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [editInstruction, setEditInstruction] = useState("");
@@ -183,6 +190,19 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
     setter([...current, ...urls]);
   };
 
+  // 04 素材上傳卡：產品主圖 / 風格參考圖上傳（wrap addAssets，補 busy 狀態俾 AssetUploadCards）
+  const onAddProductAsset = async (files: FileList) => {
+    setUploadingProduct(true);
+    try { await addAssets(files, 5, productUrls, setProductUrls); }
+    finally { setUploadingProduct(false); }
+  };
+  const onAddRefAsset = async (files: FileList) => {
+    setUploadingRef(true);
+    setAnalyzedDone(false);
+    try { await addAssets(files, 1, refUrls, setRefUrls); }
+    finally { setUploadingRef(false); }
+  };
+
   // 模式 B 單格上傳
   const addCellAsset = async (idx: number, files: FileList) => {
     const current = cells[idx]?.assetUrls ?? [];
@@ -315,23 +335,30 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   };
 
   // AI 反推提示詞：分析風格參考圖 → 內容直貼進主題 Prompt
-  const analyzeRef = async () => {
-    const refUrl = refUrls[0];
+  // opts.url / opts.prompt：由「揀完參考圖自動觸發」傳（state 未更新，直接用），手撳就讀 state（同單圖版 handleAnalyzeStyle 一致）。
+  const analyzeRef = async (opts?: { url?: string; prompt?: string }) => {
+    const refUrl = opts?.url ?? refUrls[0];
     if (!refUrl) return;
+    const preset = (opts?.prompt ?? "").trim();
+    setAnalyzedDone(false);
     setAnalyzing(true);
     try {
-      const res = await fetch("/api/ai/analyze-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: refUrl }),
-      });
-      const data = await res.json();
-      if (data.styleDescription) {
-        const sep = theme.trim() ? "\n\n風格參考：" : "風格參考：";
-        setTheme(theme + sep + data.styleDescription);
+      let desc = preset;
+      if (!desc) {
+        const res = await fetch("/api/ai/analyze-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: refUrl }),
+        });
+        const data = await res.json();
+        desc = data.styleDescription ?? "";
+        if (!desc) { alert(data.error ?? "解析失敗，請稍後再試"); return; }
       } else {
-        alert(data.error ?? "解析失敗，請稍後再試");
+        await new Promise((r) => setTimeout(r, 450));
       }
+      const sep = theme.trim() ? "\n\n風格參考：" : "風格參考：";
+      setTheme(theme + sep + desc);
+      setAnalyzedDone(true);
     } catch {
       alert("網路錯誤，請稍後再試");
     } finally {
@@ -402,7 +429,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
     : cells.length > 0 && cells.every((c) => c.description.trim().length > 0 || c.assetUrls.length > 0);
 
   return (
-    <div className="max-w-3xl space-y-8 pb-20">
+    <div className="max-w-3xl space-y-8 pb-10">
       {draftDialog}
       <div>
         {/* 標題（左）+ 版型標示／重選（右）— 與單圖編輯頁一致 */}
@@ -442,191 +469,195 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         )}
       </div>
 
-      {/* 生成模式切換 */}
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">生成模式</Label>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setGenMode("unified")}
-            className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-              genMode === "unified" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
-            }`}
-          >
-            統一主題（AI 自動分鏡）
-          </button>
-          <button
-            type="button"
-            onClick={() => { setGenMode("perCell"); setVariantChoice("A"); }}
-            className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-              genMode === "perCell" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
-            }`}
-          >
-            各圖獨立填寫（進階）
-          </button>
-        </div>
-      </div>
+      {/* ── 01 生成設定 ─────────────────────────────────────── */}
+      <div className="space-y-4">
+        <SectionLabel step="01" title="生成設定" required />
 
-      {/* 生成款式：統一主題 A 導購/B 敘事係真正唔同文案內容，先開放揀款；
-          各圖獨立填寫嘅內容本身由用戶逐格手動填，A/B 冇實質分別，唔顯示（一律 A）。
-          暫時只開放一次生成一款（同時生成 2 款會逾時），想要另一款可以再新增一次活動生成。 */}
-      {genMode === "unified" && (
+        {/* 生成模式切換 */}
         <div className="space-y-2">
-          <Label className="text-sm font-medium">生成款式</Label>
+          <Label className="text-sm font-medium">生成模式</Label>
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => { setVariantCount(1); setVariantChoice("A"); }}
+              onClick={() => setGenMode("unified")}
               className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                variantChoice === "A" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                genMode === "unified" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
               }`}
             >
-              A 導購版
+              統一主題（AI 自動分鏡）
             </button>
             <button
               type="button"
-              onClick={() => { setVariantCount(1); setVariantChoice("B"); }}
+              onClick={() => { setGenMode("perCell"); setVariantChoice("A"); }}
               className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                variantChoice === "B" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                genMode === "perCell" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
               }`}
             >
-              B 敘事版
+              各圖獨立填寫（進階）
             </button>
           </div>
         </div>
-      )}
+
+        {/* 生成款式：統一主題 A 導購/B 敘事係真正唔同文案內容，先開放揀款；
+            各圖獨立填寫嘅內容本身由用戶逐格手動填，A/B 冇實質分別，唔顯示（一律 A）。
+            暫時只開放一次生成一款（同時生成 2 款會逾時），想要另一款可以再新增一次活動生成。 */}
+        {genMode === "unified" && (
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">生成款式</Label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setVariantCount(1); setVariantChoice("A"); }}
+                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
+                  variantChoice === "A" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                }`}
+              >
+                A 導購版
+              </button>
+              <button
+                type="button"
+                onClick={() => { setVariantCount(1); setVariantChoice("B"); }}
+                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
+                  variantChoice === "B" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                }`}
+              >
+                B 敘事版
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ── 模式 A：統一主題 ── */}
       {genMode === "unified" && (
-        <div className="space-y-5">
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">活動核心主題 Prompt</Label>
-              <div className="flex items-center gap-1.5">
-                {/* 靈感：依品牌想選題，點了直接填入核心主題 */}
-                <InspireButton
-                  clientId={clientId}
-                  field="theme"
-                  onPick={(text) => setTheme(text)}
-                />
-                {/* AI 幫改 */}
-                <button
-                  type="button"
-                  onClick={() => { setEditingPrompt((v) => !v); setEditInstruction(""); }}
-                  disabled={!theme.trim()}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                    !theme.trim()
-                      ? "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"
-                      : editingPrompt
-                      ? "border-blue-300 text-blue-600 bg-blue-50"
-                      : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                  }`}
-                >
-                  <Pencil className="h-3 w-3" />
-                  AI 幫改
-                </button>
-                {/* AI 優化提示詞 */}
-                <button
-                  type="button"
-                  onClick={optimizeTheme}
-                  disabled={optimizing || !theme.trim()}
-                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-violet-300 text-violet-600 hover:bg-violet-50 disabled:opacity-40"
-                >
-                  {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                  <span>AI 幫我優化提示詞</span>
-                </button>
-              </div>
-            </div>
-            <textarea
-              value={theme}
-              onChange={(e) => setTheme(e.target.value)}
-              rows={4}
-              placeholder="例：日系文青風的夏季芒果冰新品上市，整體色彩明亮、有清涼消暑感。"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300"
-            />
-            {/* AI 幫改：指令式修改主題 Prompt */}
-            {editingPrompt && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
-                <p className="text-xs font-medium text-blue-700">✏️ 想怎麼改？</p>
-                <input
-                  type="text"
-                  value={editInstruction}
-                  onChange={(e) => setEditInstruction(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleEditPrompt(); } }}
-                  placeholder="例：品牌改為 Apple / 加入黃金時段光線"
-                  className="w-full border border-blue-200 rounded-md px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 placeholder:text-gray-400"
-                  autoFocus
-                />
-                <div className="flex items-center justify-between">
+        <div className="space-y-8">
+          {/* ── 02 活動核心主題 Prompt ─────────────────────────── */}
+          <div className="space-y-4">
+            <SectionLabel step="02" title="活動核心主題 Prompt" required />
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">畫面描述 Prompt</Label>
+                <div className="flex items-center gap-1.5">
+                  {/* 靈感：依品牌想選題，點了直接填入核心主題 */}
+                  <InspireButton
+                    clientId={clientId}
+                    field="theme"
+                    onPick={(text) => setTheme(text)}
+                  />
+                  {/* AI 幫改 */}
                   <button
                     type="button"
-                    onClick={() => { setEditingPrompt(false); setEditInstruction(""); }}
-                    className="p-1 text-gray-400 hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleEditPrompt}
-                    disabled={applyingEdit || !editInstruction.trim()}
-                    className={`flex items-center gap-1 text-xs px-3 py-1 rounded-md transition-all ${
-                      applyingEdit || !editInstruction.trim()
-                        ? "opacity-40 cursor-not-allowed bg-blue-300 text-white"
-                        : "bg-blue-500 text-white hover:bg-blue-600"
+                    onClick={() => { setEditingPrompt((v) => !v); setEditInstruction(""); }}
+                    disabled={!theme.trim()}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                      !theme.trim()
+                        ? "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"
+                        : editingPrompt
+                        ? "border-blue-300 text-blue-600 bg-blue-50"
+                        : "border-gray-200 text-gray-500 hover:bg-gray-50"
                     }`}
                   >
-                    {applyingEdit ? <><Loader2 className="h-3 w-3 animate-spin" />套用中…</> : "應用"}
+                    <Pencil className="h-3 w-3" />
+                    AI 幫改
+                  </button>
+                  {/* AI 優化提示詞 */}
+                  <button
+                    type="button"
+                    onClick={optimizeTheme}
+                    disabled={optimizing || !theme.trim()}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-violet-300 text-violet-600 hover:bg-violet-50 disabled:opacity-40"
+                  >
+                    {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                    <span>AI 幫我優化提示詞</span>
                   </button>
                 </div>
               </div>
-            )}
-            {/* 幫我拆解：AI 依版型格數分鏡，帶入各圖並切換至模式 B */}
-            <button
-              type="button"
-              onClick={splitToCells}
-              disabled={splitting || !theme.trim()}
-              className="mt-1.5 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-            >
-              {splitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LayoutGrid className="h-3.5 w-3.5" />}
-              <span>{splitting ? "AI 拆解中…" : `幫我拆解並切換至各圖獨立填寫（${layout.count} 格）`}</span>
-            </button>
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-sm font-medium">必放文字（預設套用至主圖）</Label>
-            <Input
-              value={mustText}
-              onChange={(e) => setMustText(e.target.value)}
-              placeholder="例：Title: 盛夏芒果慶典 / Sub: 第二杯半價 / 日期: 2026/06/15"
-            />
-          </div>
-
-
-          <div className="grid grid-cols-3 gap-4">
-            <AssetStrip label="產品主圖" sub="最多 5 張（選填）" urls={productUrls} max={5} size="lg"
-              onAdd={(f) => addAssets(f, 5, productUrls, setProductUrls)}
-              onRemove={(i) => setProductUrls(productUrls.filter((_, x) => x !== i))} />
-            <AssetStrip label="風格參考圖" sub="1 張（選填）" urls={refUrls} max={1} size="lg"
-              onAdd={(f) => addAssets(f, 1, refUrls, setRefUrls)}
-              onRemove={(i) => setRefUrls(refUrls.filter((_, x) => x !== i))} />
-            {/* AI 反推提示詞：分析風格參考圖 → 直貼進主題 Prompt */}
-            <div className="space-y-1.5">
-              <div>
-                <span className="text-xs font-medium text-gray-600">AI 反推提示詞</span>
-                <span className="text-[10px] text-gray-400 ml-1">從參考圖分析風格</span>
-              </div>
+              <textarea
+                value={theme}
+                onChange={(e) => setTheme(e.target.value)}
+                rows={4}
+                placeholder="例：日系文青風的夏季芒果冰新品上市，整體色彩明亮、有清涼消暑感。"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300"
+              />
+              {/* AI 幫改：指令式修改主題 Prompt */}
+              {editingPrompt && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+                  <p className="text-xs font-medium text-blue-700">✏️ 想怎麼改？</p>
+                  <input
+                    type="text"
+                    value={editInstruction}
+                    onChange={(e) => setEditInstruction(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleEditPrompt(); } }}
+                    placeholder="例：品牌改為 Apple / 加入黃金時段光線"
+                    className="w-full border border-blue-200 rounded-md px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 placeholder:text-gray-400"
+                    autoFocus
+                  />
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => { setEditingPrompt(false); setEditInstruction(""); }}
+                      className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEditPrompt}
+                      disabled={applyingEdit || !editInstruction.trim()}
+                      className={`flex items-center gap-1 text-xs px-3 py-1 rounded-md transition-all ${
+                        applyingEdit || !editInstruction.trim()
+                          ? "opacity-40 cursor-not-allowed bg-blue-300 text-white"
+                          : "bg-blue-500 text-white hover:bg-blue-600"
+                      }`}
+                    >
+                      {applyingEdit ? <><Loader2 className="h-3 w-3 animate-spin" />套用中…</> : "應用"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {/* 幫我拆解：AI 依版型格數分鏡，帶入各圖並切換至模式 B */}
               <button
                 type="button"
-                onClick={analyzeRef}
-                disabled={analyzing || refUrls.length === 0}
-                className="w-full h-32 flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 hover:border-violet-300 hover:text-violet-600 disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:text-gray-400"
+                onClick={splitToCells}
+                disabled={splitting || !theme.trim()}
+                className="mt-1.5 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
               >
-                {analyzing
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : <Wand2 className="h-4 w-4" />}
-                <span className="text-[10px]">{refUrls.length === 0 ? "需先上傳風格參考圖" : "分析並貼入"}</span>
+                {splitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+                <span>{splitting ? "AI 拆解中…" : `幫我拆解並切換至各圖獨立填寫（${layout.count} 格）`}</span>
               </button>
             </div>
+          </div>
+
+          {/* ── 03 必放文字 ────────────────────────────────────── */}
+          <div className="space-y-4">
+            <SectionLabel step="03" title="必放文字" />
+            <Field label="必放文字（預設套用至主圖）" hint="AI 文案會包含這些文字">
+              <Input
+                value={mustText}
+                onChange={(e) => setMustText(e.target.value)}
+                placeholder="例：Title: 盛夏芒果慶典 / Sub: 第二杯半價 / 日期: 2026/06/15"
+              />
+            </Field>
+          </div>
+
+          {/* ── 04 素材上傳 ────────────────────────────────────── */}
+          <div className="space-y-4">
+            <SectionLabel step="04" title="素材上傳" />
+            <AssetUploadCards
+              productUrls={productUrls}
+              refUrls={refUrls}
+              onAddProduct={onAddProductAsset}
+              onRemoveProduct={(i) => setProductUrls(productUrls.filter((_, x) => x !== i))}
+              onPickProductLibrary={() => setShowProductLibPicker(true)}
+              onAddRef={onAddRefAsset}
+              onRemoveRef={(i) => { setRefUrls(refUrls.filter((_, x) => x !== i)); setAnalyzedDone(false); }}
+              onPickRefLibrary={() => setShowRefLibPicker(true)}
+              uploadingProduct={uploadingProduct}
+              uploadingRef={uploadingRef}
+              analyzeState={analyzing ? "analyzing" : analyzedDone ? "done" : "idle"}
+              onAnalyze={() => analyzeRef()}
+              canAnalyze={refUrls.length > 0}
+            />
           </div>
         </div>
       )}
@@ -743,16 +774,44 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         </div>
       )}
 
-      <div className="fixed bottom-0 left-60 right-0 z-30 bg-white border-t">
-        <div className="max-w-3xl ml-6 py-3">
-          <Button onClick={handleSubmit} disabled={saving || !canSubmit} className="w-full bg-violet-600 hover:bg-violet-700 text-white">
-            {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /><span>處理中…</span></> : (editId ? "儲存並重新生成" : "建立活動並生成")}
-          </Button>
-        </div>
+      {/* AI 開始生成：跟單圖版一致——內嵌喺表單流程底部，靠左，唔用 fixed footer。 */}
+      <div className="pt-2">
+        <Button type="button" onClick={handleSubmit} disabled={saving || !canSubmit} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-6">
+          {saving
+            ? <><Loader2 className="h-4 w-4 animate-spin" />處理中…</>
+            : <><Zap className="h-4 w-4" />{editId ? "儲存並重新生成" : "AI 開始生成"}</>}
+        </Button>
       </div>
 
       {showPicker && (
         <MultiLayoutPicker selectedId={layoutId} onSelect={handlePickLayout} onClose={() => setShowPicker(false)} />
+      )}
+
+      {/* 從素材庫選取產品主圖（最多 5 張，逐張加入）*/}
+      {showProductLibPicker && (
+        <LibraryImagePickerModal
+          clientId={clientId}
+          title="從素材庫選取產品主圖"
+          onPick={(url) => {
+            setProductUrls([...productUrls, url].slice(0, 5));
+            setShowProductLibPicker(false);
+          }}
+          onClose={() => setShowProductLibPicker(false)}
+        />
+      )}
+
+      {/* 從素材庫選取風格參考圖：揀完自動反推提示詞（同單圖版一致）*/}
+      {showRefLibPicker && (
+        <LibraryImagePickerModal
+          clientId={clientId}
+          title="從素材庫選取參考圖"
+          onPick={(url, promptText) => {
+            setRefUrls([url]);
+            setShowRefLibPicker(false);
+            analyzeRef({ url, prompt: promptText ?? "" });
+          }}
+          onClose={() => setShowRefLibPicker(false)}
+        />
       )}
     </div>
   );
