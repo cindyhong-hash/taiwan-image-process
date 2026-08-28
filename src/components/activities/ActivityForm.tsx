@@ -558,7 +558,7 @@ export function ActivityForm({
           )}
         </div>
 
-        <Field label="必放文字（選填）" hint="AI 文案會包含這些文字">
+        <Field label="必放文字" optional hint="AI 文案會包含這些文字">
           <Input
             className="bg-white"
             value={values.requiredText}
@@ -579,7 +579,7 @@ export function ActivityForm({
           <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
             <UploadCloud className="h-7 w-7 text-gray-400" />
             <div>
-              <p className="text-sm font-bold text-gray-800">產品主圖 最多 5 張 (選填)</p>
+              <p className="text-sm font-bold text-gray-800">產品主圖 最多 5 張<span className="text-xs text-gray-400 font-normal ml-1">（選填）</span></p>
               <p className="text-xs text-gray-400 mt-0.5">去背產品圖效果更佳</p>
             </div>
             {(values.productImageUrls.length > 0 || uploadingProduct) && (
@@ -618,7 +618,7 @@ export function ActivityForm({
           <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
             <UploadCloud className="h-7 w-7 text-gray-400" />
             <div>
-              <p className="text-sm font-bold text-gray-800">風格參考圖 1 張 (選填)</p>
+              <p className="text-sm font-bold text-gray-800">風格參考圖 1 張<span className="text-xs text-gray-400 font-normal ml-1">（選填）</span></p>
               <p className="text-xs text-gray-400 mt-0.5">指定你想要的排版或氛圍</p>
             </div>
             {(values.referenceImageUrls.length > 0 || uploadingRef) && (
@@ -657,7 +657,7 @@ export function ActivityForm({
             type="button"
             onClick={() => handleAnalyzeStyle()}
             disabled={!hasRefImages || analyzingImage}
-            className={`rounded-xl border-2 border-dashed p-5 flex flex-col items-center text-center gap-3 transition-all
+            className={`rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center gap-3 transition-all
               ${analyzedDone && !analyzingImage
                 ? "border-emerald-300 bg-emerald-50/40 cursor-pointer"
                 : hasRefImages && !analyzingImage
@@ -914,14 +914,15 @@ function SectionLabel({ step, title, hint, required }: { step: string; title: st
   );
 }
 
-function Field({ label, hint, required, children }: {
-  label: string; hint?: string; required?: boolean; children: React.ReactNode;
+function Field({ label, hint, required, optional, children }: {
+  label: string; hint?: string; required?: boolean; optional?: boolean; children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1">
       <Label className="text-sm font-medium">
         {label}
         {required && <span className="text-red-500 ml-0.5">*</span>}
+        {optional && <span className="text-xs text-gray-400 font-normal ml-1">（選填）</span>}
         {hint && <span className="text-gray-400 font-normal ml-1.5 text-xs">{hint}</span>}
       </Label>
       {children}
