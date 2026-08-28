@@ -485,7 +485,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
               type="button"
               onClick={() => setGenMode("unified")}
               className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                genMode === "unified" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                genMode === "unified" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500"
               }`}
             >
               統一主題（AI 自動分鏡）
@@ -494,7 +494,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
               type="button"
               onClick={() => { setGenMode("perCell"); setVariantChoice("A"); }}
               className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                genMode === "perCell" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                genMode === "perCell" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500"
               }`}
             >
               各圖獨立填寫（進階）
@@ -761,7 +761,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                 type="button"
                 onClick={() => { setVariantCount(1); setVariantChoice("A"); }}
                 className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                  variantChoice === "A" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                  variantChoice === "A" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500"
                 }`}
               >
                 A 導購版
@@ -770,7 +770,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                 type="button"
                 onClick={() => { setVariantCount(1); setVariantChoice("B"); }}
                 className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                  variantChoice === "B" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                  variantChoice === "B" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500"
                 }`}
               >
                 B 敘事版
