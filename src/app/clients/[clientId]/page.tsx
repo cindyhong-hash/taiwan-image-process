@@ -1,6 +1,57 @@
-import { redirect } from "next/navigation";
+"use client";
+import { useEffect, useState } from "react";
+import { setLastClientId } from "@/lib/lastClient";
 
-export default async function ClientHome({ params }: { params: Promise<{ clientId: string }> }) {
-  const { clientId } = await params;
-  redirect(`/clients/${clientId}/activities`);
+type Client = {
+  id: string;
+  name: string;
+  primaryColor?: string;
+  secondaryColor?: string | null;
+  paletteColors?: unknown;
+  toneLabels?: string[];
+  taboos?: string[];
+  logoUrls?: unknown[];
+  pastPostUrls?: unknown[];
+  activities?: {
+    id: string;
+    theme: string;
+    focusPoint: string;
+    status: string;
+    createdAt: string;
+    imageRatio?: string;
+    customW?: number;
+    customH?: number;
+    layoutId?: string;
+    generatedLayouts?: { imageUrl: string; isSelected?: boolean }[];
+  }[];
+};
+
+export default function DashboardPage({ params }: { params: Promise<{ clientId: string }> }) {
+  const [client, setClient] = useState<Client | null>(null);
+
+  useEffect(() => {
+    params.then(({ clientId }) => {
+      setLastClientId(clientId);
+      fetch(`/api/clients/${clientId}`)
+        .then((r) => r.json())
+        .then(setClient)
+        .catch(() => {});
+    });
+  }, [params]);
+
+  if (!client) return <div className="text-gray-400">載入中…</div>;
+
+  return (
+    <div className="flex gap-6">
+      <div className="min-w-0 flex-1 space-y-8">
+        {/* Task 9 HomeHero */}
+        {/* Task 10 QuickStartCards */}
+        {/* Task 11 RecentWorks */}
+      </div>
+      <div className="w-64 shrink-0 space-y-4">
+        {/* Task 12 BrandMemoryPanel / AiLearnedCard */}
+        {/* Task 13 ReuseRecommendCard */}
+      </div>
+    </div>
+  );
 }
