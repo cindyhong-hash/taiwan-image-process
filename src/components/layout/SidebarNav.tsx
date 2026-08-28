@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, ShoppingBag, Image as ImageIcon, Settings } from "lucide-react";
 
-export function SidebarNav({ currentClientId }: { currentClientId: string }) {
+export function SidebarNav({ currentClientId, collapsed }: { currentClientId: string; collapsed?: boolean }) {
   const pathname = usePathname();
   const base = `/clients/${currentClientId}`;
   const items = [
@@ -12,6 +12,21 @@ export function SidebarNav({ currentClientId }: { currentClientId: string }) {
     { label: "素材庫", href: `${base}/components`, icon: ImageIcon, match: (p: string) => p.startsWith(`${base}/components`) },
     { label: "品牌設定", href: `${base}/settings`, icon: Settings, match: (p: string) => p.startsWith(`${base}/settings`) },
   ];
+  if (collapsed) {
+    return (
+      <nav className="flex flex-col items-center gap-1">
+        {items.map(({ label, href, icon: Icon, match }) => {
+          const active = match(pathname);
+          return (
+            <Link key={label} href={href} title={label}
+              className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${active ? "bg-violet-50" : "hover:bg-gray-50"}`}>
+              <Icon className={`h-5 w-5 ${active ? "text-violet-600" : "text-gray-400"}`} />
+            </Link>
+          );
+        })}
+      </nav>
+    );
+  }
   return (
     <nav className="flex flex-col gap-1">
       {items.map(({ label, href, icon: Icon, match }) => {
