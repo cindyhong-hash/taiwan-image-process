@@ -7,6 +7,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   GENERATING: { label: "生成中", cls: "bg-violet-100 text-violet-700" },
   DONE: { label: "已完成", cls: "bg-emerald-100 text-emerald-700" },
   PENDING: { label: "草稿", cls: "bg-gray-100 text-gray-600" },
+  DRAFT: { label: "草稿", cls: "bg-gray-100 text-gray-600" },
   FAILED: { label: "生成失敗", cls: "bg-red-100 text-red-600" },
 };
 export function WorkCard({ act, clientId }: { act: Activity; clientId: string }) {

@@ -2,7 +2,7 @@
 /**
  * BrandWorkspaceHeader — wireframe v2 ③⑤⑥ 統一品牌工作區 header。
  * 右邊內容區頂部一致：switch-tab [廣告活動圖 | 風格組件]（左）+ 品牌設定（右上）。
- * 用喺 /clients/[clientId]（廣告活動圖）同 /clients/[clientId]/components（風格組件）兩個 tab 頁。
+ * 用喺 /clients/[clientId]/activities（廣告活動圖）同 /clients/[clientId]/components（風格組件）兩個 tab 頁。
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -37,7 +37,7 @@ export function BrandWorkspaceHeader({
   }, [clientId, nameProp]);
 
   const tabs: { key: Tab; label: string; href: string; icon: React.ReactNode }[] = [
-    { key: "activities", label: "廣告活動圖", href: `/clients/${clientId}`, icon: <Target className="h-4 w-4" /> },
+    { key: "activities", label: "廣告活動圖", href: `/clients/${clientId}/activities`, icon: <Target className="h-4 w-4" /> },
     { key: "components", label: "素材庫", href: `/clients/${clientId}/components`, icon: <Layers className="h-4 w-4" /> },
   ];
 
