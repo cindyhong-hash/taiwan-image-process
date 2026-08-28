@@ -7,6 +7,7 @@ const HIDE_ON = [
   /\/activities\/new/,              // 單圖 / 多圖 生成表單
   /\/activities\/[^/]+\/edit/,      // 編輯
   /\/activities\/[^/]+\/editor/,    // 微調編輯器
+  /\/activities\/[^/]+$/,           // 生成結果 / 版型選擇（step4-generation-results）
   /\/magic-layers/,                 // Magic Layers 編輯器
 ];
 
