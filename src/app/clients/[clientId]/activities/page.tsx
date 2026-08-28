@@ -197,7 +197,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   if (!client) return <div className="text-gray-400">載入中...</div>;
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="w-full">
       <AdCreationHeader />
 
       <BrandMemoryBar
