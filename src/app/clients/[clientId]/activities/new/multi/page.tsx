@@ -10,6 +10,7 @@ import { MultiLayoutPicker, LayoutThumb } from "@/components/activities/MultiLay
 import { InspireButton } from "@/components/activities/InspireButton";
 import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { SectionLabel, Field, AssetUploadCards } from "@/components/activities/formParts";
+import { IMAGE_MODELS } from "@/components/activities/ActivityForm";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { getMultiLayout } from "@/types/multiLayout";
 import { useUnsavedGuard } from "@/components/common/UnsavedGuard";
@@ -43,6 +44,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   const [mustText, setMustText] = useState("");
   const [productUrls, setProductUrls] = useState<string[]>([]);
   const [refUrls, setRefUrls] = useState<string[]>([]);
+  const [imageModel, setImageModel] = useState("google/gemini-3-pro-image-preview");
 
   // 模式 B（各圖獨立）
   const [cells, setCells] = useState<Cell[]>([]);
@@ -84,6 +86,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         setMustText(a.titleText || a.focusPoint || "");
         setProductUrls(Array.isArray(a.productImageUrls) ? a.productImageUrls : []);
         setRefUrls(Array.isArray(a.referenceImageUrls) ? a.referenceImageUrls : []);
+        setImageModel(a.imageModel || "google/gemini-3-pro-image-preview");
         setVariantCount(a.variantCount === 2 ? 2 : 1);
         setVariantChoice(a.variantChoice === "B" ? "B" : "A");
         let parsed: Cell[] = [];
@@ -130,7 +133,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
     const mcells = genMode === "perCell" ? cells : [];
     await fetch("/api/activities", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId, layoutId, genMode, variantCount, variantChoice, imagePrompt: mp, requiredText: mt, productImageUrls: mprod, referenceImageUrls: mrefs, cells: mcells, status: "DRAFT" }),
+      body: JSON.stringify({ clientId, layoutId, genMode, variantCount, variantChoice, imageModel, imagePrompt: mp, requiredText: mt, productImageUrls: mprod, referenceImageUrls: mrefs, cells: mcells, status: "DRAFT" }),
     });
   };
   const { dialog: draftDialog } = useUnsavedGuard(draftDirty, saveDraft);
@@ -387,6 +390,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             imagePrompt: mappedPrompt,
             layoutId, genMode,
             variantCount, variantChoice,
+            imageModel,
             productImageUrls: mappedProducts,
             referenceImageUrls: mappedRefs,
             cells: mappedCells,
@@ -404,6 +408,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         body: JSON.stringify({
           clientId, layoutId, genMode,
           variantCount, variantChoice,
+          imageModel,
           imagePrompt: mappedPrompt,
           requiredText: mappedText,
           productImageUrls: mappedProducts,
@@ -469,13 +474,12 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         )}
       </div>
 
-      {/* ── 01 生成設定 ─────────────────────────────────────── */}
+      {/* ── 01 活動核心主題 Prompt（含生成模式切換）───────────────── */}
       <div className="space-y-4">
-        <SectionLabel step="01" title="生成設定" required />
+        <SectionLabel step="01" title="活動核心主題 Prompt" required />
 
-        {/* 生成模式切換 */}
+        {/* 生成模式切換（統一主題 / 各圖獨立填寫）*/}
         <div className="space-y-2">
-          <Label className="text-sm font-medium">生成模式</Label>
           <div className="flex gap-2">
             <button
               type="button"
@@ -498,42 +502,8 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
           </div>
         </div>
 
-        {/* 生成款式：統一主題 A 導購/B 敘事係真正唔同文案內容，先開放揀款；
-            各圖獨立填寫嘅內容本身由用戶逐格手動填，A/B 冇實質分別，唔顯示（一律 A）。
-            暫時只開放一次生成一款（同時生成 2 款會逾時），想要另一款可以再新增一次活動生成。 */}
+        {/* 統一主題 → 畫面描述 Prompt 直接接喺模式切換下面（同 Figma 01 一體） */}
         {genMode === "unified" && (
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">生成款式</Label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => { setVariantCount(1); setVariantChoice("A"); }}
-                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                  variantChoice === "A" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
-                }`}
-              >
-                A 導購版
-              </button>
-              <button
-                type="button"
-                onClick={() => { setVariantCount(1); setVariantChoice("B"); }}
-                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                  variantChoice === "B" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
-                }`}
-              >
-                B 敘事版
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── 模式 A：統一主題 ── */}
-      {genMode === "unified" && (
-        <div className="space-y-8">
-          {/* ── 02 活動核心主題 Prompt ─────────────────────────── */}
-          <div className="space-y-4">
-            <SectionLabel step="02" title="活動核心主題 Prompt" required />
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-medium">畫面描述 Prompt</Label>
@@ -626,11 +596,15 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                 <span>{splitting ? "AI 拆解中…" : `幫我拆解並切換至各圖獨立填寫（${layout.count} 格）`}</span>
               </button>
             </div>
-          </div>
+        )}
+      </div>
 
-          {/* ── 03 必放文字 ────────────────────────────────────── */}
+      {/* ── 統一主題：02 必放文字 + 03 素材上傳 ── */}
+      {genMode === "unified" && (
+        <>
+          {/* ── 02 必放文字 ────────────────────────────────────── */}
           <div className="space-y-4">
-            <SectionLabel step="03" title="必放文字" />
+            <SectionLabel step="02" title="必放文字" />
             <Field label="必放文字（預設套用至主圖）" hint="AI 文案會包含這些文字">
               <Input
                 value={mustText}
@@ -640,9 +614,9 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             </Field>
           </div>
 
-          {/* ── 04 素材上傳 ────────────────────────────────────── */}
+          {/* ── 03 素材上傳 ────────────────────────────────────── */}
           <div className="space-y-4">
-            <SectionLabel step="04" title="素材上傳" />
+            <SectionLabel step="03" title="素材上傳" />
             <AssetUploadCards
               productUrls={productUrls}
               refUrls={refUrls}
@@ -659,7 +633,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
               canAnalyze={refUrls.length > 0}
             />
           </div>
-        </div>
+        </>
       )}
 
       {/* ── 模式 B：各圖獨立 ── */}
@@ -773,6 +747,49 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
           )}
         </div>
       )}
+
+      {/* ── 生成設定：生成款式（統一主題才有）+ 生圖模型 ── */}
+      <div className="space-y-4">
+        <SectionLabel step={genMode === "unified" ? "04" : "02"} title="生成設定" required />
+        {genMode === "unified" && (
+          <div className="space-y-1">
+            <Label className="text-sm font-medium">生成款式</Label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setVariantCount(1); setVariantChoice("A"); }}
+                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
+                  variantChoice === "A" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                }`}
+              >
+                A 導購版
+              </button>
+              <button
+                type="button"
+                onClick={() => { setVariantCount(1); setVariantChoice("B"); }}
+                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
+                  variantChoice === "B" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500"
+                }`}
+              >
+                B 敘事版
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="space-y-1">
+          <Label className="text-sm font-medium">生圖模型</Label>
+          <select
+            value={imageModel}
+            onChange={(e) => setImageModel(e.target.value)}
+            className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer"
+          >
+            {IMAGE_MODELS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-400 mt-0.5">{IMAGE_MODELS.find((m) => m.value === imageModel)?.hint}</p>
+        </div>
+      </div>
 
       {/* AI 開始生成：跟單圖版一致——內嵌喺表單流程底部，靠左，唔用 fixed footer。 */}
       <div className="pt-2">
