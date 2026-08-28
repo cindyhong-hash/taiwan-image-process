@@ -4,7 +4,7 @@ import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Loader2, ImagePlus, Wand2, Sparkles, Pencil, Trash2, Images, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Check, Lock, RefreshCw, RotateCcw, RotateCw } from "lucide-react";
+import { X, Loader2, Wand2, Pencil, Trash2, Images, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Check, Lock, RefreshCw, RotateCcw, RotateCw, UploadCloud, Zap } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { InspireButton } from "@/components/activities/InspireButton";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
@@ -38,15 +38,12 @@ export const IMAGE_MODELS: { value: string; label: string; hint: string }[] = [
 
 // ── Ratio selector ────────────────────────────────────────────────────────────
 
-const RATIOS: { value: string; label: string; w: number; h: number }[] = [
-  { value: "1:1",  label: "1:1",  w: 20, h: 20 },
-  { value: "4:5",  label: "4:5",  w: 16, h: 20 },
-  { value: "3:4",  label: "3:4",  w: 15, h: 20 },
-  { value: "2:3",  label: "2:3",  w: 13, h: 20 },
-  { value: "9:16", label: "9:16", w: 11, h: 20 },
-  { value: "4:3",  label: "4:3",  w: 20, h: 15 },
-  { value: "3:2",  label: "3:2",  w: 20, h: 13 },
-  { value: "16:9", label: "16:9", w: 20, h: 11 },
+// 圖片尺寸比例 pills（step3-creation-form 設計：四個常用比例，取代舊 select + 自訂 W×H）。
+const RATIO_PILLS: { value: string; label: string }[] = [
+  { value: "1:1",  label: "1:1 正方形" },
+  { value: "4:5",  label: "4:5 直式貼文" },
+  { value: "16:9", label: "16:9 橫式廣告" },
+  { value: "9:16", label: "9:16 限動/Reels" },
 ];
 
 // 比例 → 實際輸出尺寸（同產品圖生成台一致）；W×H 可改，改時鎖住比例。
@@ -78,101 +75,12 @@ async function uploadFile(file: File): Promise<string> {
   return (await res.json()).url;
 }
 
-// ── Compact image upload strip ────────────────────────────────────────────────
-
-function UploadZone({
-  urls, max, uploading, onRemove, onAdd, disabled,
-}: {
-  urls: string[]; max: number; uploading: boolean;
-  onRemove: (i: number) => void;
-  onAdd: (files: FileList) => void;
-  disabled?: boolean;
-}) {
-  const isEmpty = urls.length === 0;
-  const [preview, setPreview] = useState<string | null>(null);
-  return (
-    <div className="space-y-2">
-      {urls.length > 0 && (
-        <div className="flex gap-1.5 flex-wrap px-1">
-          {urls.map((url, i) => (
-            <div key={i} className="relative w-14 h-14 shrink-0 group/thumb">
-              <img
-                src={url}
-                alt=""
-                onClick={() => setPreview(url)}
-                className="w-14 h-14 object-cover rounded-lg border border-gray-200 cursor-zoom-in transition-opacity group-hover/thumb:opacity-90"
-              />
-              <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(i); }}
-                className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
-                <X className="h-2.5 w-2.5 text-gray-500" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 放大預覽 lightbox */}
-      {preview && (
-        <div
-          onClick={() => setPreview(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-6 cursor-zoom-out"
-        >
-          <img
-            src={preview}
-            alt="放大預覽"
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[85vh] max-w-[85vw] rounded-lg shadow-2xl object-contain cursor-default"
-          />
-          <button
-            type="button"
-            onClick={() => setPreview(null)}
-            className="absolute top-4 right-4 bg-white/90 hover:bg-white rounded-full p-1.5 shadow"
-          >
-            <X className="h-5 w-5 text-gray-700" />
-          </button>
-        </div>
-      )}
-      {urls.length < max && (
-        <label className={`flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed transition-colors cursor-pointer
-          ${disabled ? "border-gray-100 bg-gray-50 cursor-not-allowed" : "border-gray-200 hover:border-violet-300 hover:bg-violet-50/30"}
-          ${isEmpty ? "h-32" : "h-16"}`}>
-          {uploading
-            ? <Loader2 className="h-5 w-5 text-gray-300 animate-spin" />
-            : <ImagePlus className={`h-5 w-5 ${disabled ? "text-gray-200" : "text-gray-300"}`} />}
-          {isEmpty && (
-            <span className={`text-xs ${disabled ? "text-gray-300" : "text-gray-400"}`}>
-              點擊或拖曳上傳
-            </span>
-          )}
-          <span className="text-[10px] text-gray-300">{urls.length}/{max}</span>
-          {!disabled && (
-            <input type="file" accept="image/*" multiple className="hidden"
-              onChange={(e) => e.target.files && onAdd(e.target.files)} />
-          )}
-        </label>
-      )}
-      {urls.length >= max && (
-        <div className="text-[11px] text-gray-400 text-center">已上傳 {max}/{max} 張</div>
-      )}
-    </div>
-  );
-}
-
-function ColLabel({ title, sub }: { title: string; sub: string }) {
-  return (
-    <div>
-      <span className="text-xs font-medium text-gray-600">{title}</span>
-      {sub && <span className="text-[11px] text-gray-400 ml-1">{sub}</span>}
-    </div>
-  );
-}
-
 // ── Main form ─────────────────────────────────────────────────────────────────
 
 export function ActivityForm({
   clientId,
   initialValues,
-  submitLabel = "建立活動並生成圖片",
+  submitLabel = "AI 開始生成",
   onSubmit,
   onBaseModeChange,
   onValuesChange,
@@ -205,6 +113,7 @@ export function ActivityForm({
   const [uploadingRef,     setUploadingRef]     = useState(false);
   const [loading,          setLoading]          = useState(false);
   const [showLibPicker,    setShowLibPicker]    = useState(false); // 從素材庫揀參考圖
+  const [showProductLibPicker, setShowProductLibPicker] = useState(false); // 從素材庫揀產品主圖
   const [showBasePicker,   setShowBasePicker]   = useState(false); // 底圖模式：重新揀另一張底圖（唔會跌落空白模式）
   const [confirmRemoveBase, setConfirmRemoveBase] = useState(false); // 移除底圖模式前要確認（避免手滑跌落空白模式）
   const [previewBase,      setPreviewBase]      = useState(false); // 底圖模式 banner 圖：click 放大
@@ -322,11 +231,6 @@ export function ActivityForm({
 
   // 揀比例 → 自動填 W×H；改 W×H → 鎖住當前比例算另一邊（活動圖模型只收已知比例，故 aspect 保持標準）。
   const pickRatio = (r: string) => setValues((prev) => ({ ...prev, imageRatio: r, customW: RATIO_DIMS[r]?.w ?? prev.customW, customH: RATIO_DIMS[r]?.h ?? prev.customH }));
-  const changeDim = (which: "w" | "h", v: number) => setValues((prev) => {
-    const rd = RATIO_DIMS[prev.imageRatio];
-    if (which === "w") return { ...prev, customW: v, customH: rd ? Math.round(v * rd.h / rd.w) : prev.customH };
-    return { ...prev, customH: v, customW: rd ? Math.round(v * rd.w / rd.h) : prev.customW };
-  });
 
   const addImages = async (kind: "product" | "ref", files: FileList, max: number, current: string[]) => {
     const toUpload = Array.from(files).slice(0, max - current.length);
@@ -523,7 +427,7 @@ export function ActivityForm({
 
       {/* ── 01 基本資訊 ─────────────────────────────────────── */}
       <div className="space-y-4">
-        <SectionLabel step="01" title="基本資訊" />
+        <SectionLabel step="01" title="基本資訊" required />
 
         {/* 畫面描述 + AI 優化按鈕 */}
         <div className="space-y-1">
@@ -602,7 +506,7 @@ export function ActivityForm({
             onChange={(e) => set("imagePrompt", e.target.value)}
             rows={4}
             placeholder="例：精緻女生在辦公室，側臉仰頭噴霧，大片窗光，質感時尚"
-            className="w-full border border-input rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+            className="w-full border border-input rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
           />
           {editingPrompt && (
             <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
@@ -669,74 +573,128 @@ export function ActivityForm({
       <div className="space-y-4">
         <SectionLabel step="02" title="素材上傳" />
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-4 items-stretch">
           {/* 欄 1：產品主圖 */}
-          <div className="space-y-2">
-            <div className="h-10">
-              <span className="text-xs font-medium text-gray-600">產品主圖</span>
-              <p className="text-[11px] text-gray-400 leading-snug mt-0.5">最多 5 張（選填）</p>
+          <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
+            <UploadCloud className="h-7 w-7 text-gray-400" />
+            <div>
+              <p className="text-sm font-bold text-gray-800">產品主圖 最多 5 張 (選填)</p>
+              <p className="text-xs text-gray-400 mt-0.5">去背產品圖效果更佳</p>
             </div>
-            <UploadZone
-              urls={values.productImageUrls} max={5} uploading={uploadingProduct}
-              onRemove={(i) => removeImage("product", i)}
-              onAdd={(f) => addImages("product", f, 5, values.productImageUrls)}
-            />
+            {(values.productImageUrls.length > 0 || uploadingProduct) && (
+              <div className="flex gap-1.5 flex-wrap justify-center">
+                {values.productImageUrls.map((url, i) => (
+                  <div key={i} className="relative w-12 h-12 shrink-0 group/thumb">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="" className="w-12 h-12 object-cover rounded-lg border border-gray-200" />
+                    <button type="button" onClick={() => removeImage("product", i)}
+                      className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
+                      <X className="h-2.5 w-2.5 text-gray-500" />
+                    </button>
+                  </div>
+                ))}
+                {uploadingProduct && <Loader2 className="h-5 w-5 text-gray-300 animate-spin self-center" />}
+              </div>
+            )}
+            <div className="flex items-center gap-2 w-full mt-auto">
+              <label className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium rounded-lg py-1.5 border transition-colors
+                ${values.productImageUrls.length >= 5 ? "border-gray-100 text-gray-300 cursor-not-allowed" : "border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"}`}>
+                上傳圖片
+                {values.productImageUrls.length < 5 && (
+                  <input type="file" accept="image/*" multiple className="hidden"
+                    onChange={(e) => e.target.files && addImages("product", e.target.files, 5, values.productImageUrls)} />
+                )}
+              </label>
+              <button type="button" onClick={() => setShowProductLibPicker(true)}
+                disabled={values.productImageUrls.length >= 5}
+                className="flex-1 flex items-center justify-center gap-1 text-xs font-medium text-violet-600 border border-violet-200 rounded-lg py-1.5 hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <Images className="h-3 w-3" />從素材庫選擇
+              </button>
+            </div>
           </div>
 
           {/* 欄 2：風格參考圖 */}
-          <div className="space-y-2">
-            <div className="h-10">
-              <span className="text-xs font-medium text-gray-600">風格參考圖</span>
-              <p className="text-[11px] text-gray-400 leading-snug mt-0.5">1 張（選填）</p>
+          <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
+            <UploadCloud className="h-7 w-7 text-gray-400" />
+            <div>
+              <p className="text-sm font-bold text-gray-800">風格參考圖 1 張 (選填)</p>
+              <p className="text-xs text-gray-400 mt-0.5">指定你想要的排版或氛圍</p>
             </div>
-            <UploadZone
-              urls={values.referenceImageUrls} max={1} uploading={uploadingRef}
-              onRemove={(i) => removeImage("ref", i)}
-              onAdd={(f) => addImages("ref", f, 1, values.referenceImageUrls)}
-            />
-            {/* 除咗上傳，仲可以由素材庫揀一張現有圖做參考 */}
-            <button type="button" onClick={() => setShowLibPicker(true)}
-              className="w-full flex items-center justify-center gap-1 text-[11px] font-medium text-violet-600 border border-violet-200 rounded-lg py-1.5 hover:bg-violet-50 transition-colors">
-              <Images className="h-3 w-3" />從素材庫選取
-            </button>
+            {(values.referenceImageUrls.length > 0 || uploadingRef) && (
+              <div className="flex gap-1.5 flex-wrap justify-center">
+                {values.referenceImageUrls.map((url, i) => (
+                  <div key={i} className="relative w-12 h-12 shrink-0 group/thumb">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="" className="w-12 h-12 object-cover rounded-lg border border-gray-200" />
+                    <button type="button" onClick={() => removeImage("ref", i)}
+                      className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
+                      <X className="h-2.5 w-2.5 text-gray-500" />
+                    </button>
+                  </div>
+                ))}
+                {uploadingRef && <Loader2 className="h-5 w-5 text-gray-300 animate-spin self-center" />}
+              </div>
+            )}
+            <div className="flex items-center gap-2 w-full mt-auto">
+              <label className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium rounded-lg py-1.5 border transition-colors
+                ${values.referenceImageUrls.length >= 1 ? "border-gray-100 text-gray-300 cursor-not-allowed" : "border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"}`}>
+                上傳圖片
+                {values.referenceImageUrls.length < 1 && (
+                  <input type="file" accept="image/*" multiple className="hidden"
+                    onChange={(e) => e.target.files && addImages("ref", e.target.files, 1, values.referenceImageUrls)} />
+                )}
+              </label>
+              <button type="button" onClick={() => setShowLibPicker(true)}
+                className="flex-1 flex items-center justify-center gap-1 text-xs font-medium text-violet-600 border border-violet-200 rounded-lg py-1.5 hover:bg-violet-50 transition-colors">
+                <Images className="h-3 w-3" />從素材庫選擇
+              </button>
+            </div>
           </div>
 
           {/* 欄 3：AI 反推提示詞 */}
-          <div className="space-y-2">
-            <div className="h-10">
-              <div className="flex items-center gap-1.5">
-                <ColLabel title="AI 反推提示詞" sub="" />
-                <span className="text-[10px] bg-violet-100 text-violet-600 font-semibold px-1.5 py-0.5 rounded-full">AI</span>
-              </div>
-              <p className="text-[11px] text-gray-400 leading-snug mt-0.5 truncate">從參考圖分析風格</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleAnalyzeStyle()}
-              disabled={!hasRefImages || analyzingImage}
-              className={`w-full flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed transition-all h-32
-                ${analyzedDone && !analyzingImage
-                  ? "border-emerald-300 text-emerald-600 bg-emerald-50/40 cursor-pointer"
-                  : hasRefImages && !analyzingImage
-                  ? "border-violet-300 text-violet-600 hover:bg-violet-50 cursor-pointer"
-                  : "border-gray-100 text-gray-300 cursor-not-allowed bg-gray-50"}`}
-            >
-              {analyzingImage ? (
-                <><Loader2 className="h-5 w-5 animate-spin text-violet-500" /><span className="text-xs text-violet-500">分析中…</span></>
-              ) : analyzedDone ? (
-                <><Check className="h-5 w-5 text-emerald-500" /><span className="text-xs text-emerald-600 font-medium">已帶入提示詞</span><span className="text-[10px] text-emerald-500/70">可再撳重新帶入</span></>
-              ) : (
-                <><Sparkles className={`h-5 w-5 ${hasRefImages ? "text-violet-400" : "text-gray-200"}`} />
-                <span className="text-xs font-medium">{!hasRefImages ? "需先加風格參考圖" : refStylePrompt.trim() ? "帶入參考圖提示詞" : "分析風格，帶入提示詞"}</span></>
-              )}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => handleAnalyzeStyle()}
+            disabled={!hasRefImages || analyzingImage}
+            className={`rounded-xl border-2 border-dashed p-5 flex flex-col items-center text-center gap-3 transition-all
+              ${analyzedDone && !analyzingImage
+                ? "border-emerald-300 bg-emerald-50/40 cursor-pointer"
+                : hasRefImages && !analyzingImage
+                ? "border-violet-300 hover:bg-violet-50 cursor-pointer"
+                : "border-violet-100 bg-gray-50 cursor-not-allowed"}`}
+          >
+            {analyzingImage ? (
+              <>
+                <Loader2 className="h-7 w-7 text-violet-500 animate-spin" />
+                <div>
+                  <p className="text-sm font-bold text-gray-800">AI 反推提示詞</p>
+                  <p className="text-xs text-violet-500 mt-0.5">分析中…</p>
+                </div>
+              </>
+            ) : analyzedDone ? (
+              <>
+                <Check className="h-7 w-7 text-emerald-500" />
+                <div>
+                  <p className="text-sm font-bold text-gray-800">AI 反推提示詞</p>
+                  <p className="text-xs text-emerald-600 mt-0.5">已帶入提示詞，可再撳重新帶入</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <RefreshCw className={`h-7 w-7 ${hasRefImages ? "text-violet-400" : "text-gray-300"}`} />
+                <div>
+                  <p className={`text-sm font-bold ${hasRefImages ? "text-gray-800" : "text-gray-400"}`}>AI 反推提示詞</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{hasRefImages ? "從參考圖智能分析風格並套用" : "需先加風格參考圖"}</p>
+                </div>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
       {/* ── 03 套用風格積木（構圖 / 顏色 / 背景）→ 內容注入 AI Prompt ─────────── */}
       <div className="space-y-3">
-        <SectionLabel step="03" title="套用風格積木" hint="選填 · 選取後會加入 AI Prompt 做生成參考" />
+        <SectionLabel step="03" title="套用風格積木" hint="選填，揀咗會加入 AI Prompt 做生成參考" />
         <div className="grid grid-cols-3 gap-3">
           {([
             { cat: "COMPOSITION",  slot: "layout",     label: "構圖", icon: <LayoutTemplate className="h-4 w-4" /> },
@@ -783,7 +741,7 @@ export function ActivityForm({
                     </>
                   ) : (
                     <div className="h-[109px] flex flex-col items-center justify-center gap-1 text-gray-400">
-                      <span className="text-lg">＋</span>
+                      <span className="text-lg text-violet-500 font-semibold">＋</span>
                       <span className="text-[11px]">點擊選取{label}</span>
                     </div>
                   )}
@@ -821,55 +779,48 @@ export function ActivityForm({
 
       {/* ── 04 圖片尺寸比例（底圖模式冇 02/03 → 順延做 02）─────────── */}
       <div className="space-y-4">
-        <SectionLabel step={isBaseMode ? "02" : "04"} title="圖片尺寸比例" />
+        <SectionLabel step={isBaseMode ? "02" : "04"} title="圖片尺寸比例" required />
+        <div className="flex flex-wrap gap-2">
+          {RATIO_PILLS.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => pickRatio(r.value)}
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                values.imageRatio === r.value
+                  ? "bg-violet-50 border-violet-300 text-violet-700"
+                  : "border-gray-200 text-gray-600 hover:border-gray-300"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── 05 生圖模型（底圖模式唔重新生圖 → 唔顯示）─────────── */}
+      {!isBaseMode && (
+      <div className="space-y-2">
+        <SectionLabel step="05" title="生圖模型" required />
         <div className="relative w-full max-w-md">
           <select
-            value={values.imageRatio}
-            onChange={(e) => pickRatio(e.target.value)}
+            value={values.imageModel}
+            onChange={(e) => set("imageModel", e.target.value)}
             className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer"
           >
-            {RATIOS.map((r) => (
-              <option key={r.value} value={r.value}>{r.label}（{RATIO_DIMS[r.value]?.w}×{RATIO_DIMS[r.value]?.h}）</option>
+            {IMAGE_MODELS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
             ))}
           </select>
           <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </div>
-        {/* 可改實際輸出尺寸（維持所選比例）；生成會按此尺寸輸出 */}
-        <div className="flex items-center gap-2">
-          <input type="number" min={256} max={2400} value={values.customW} onChange={(e) => changeDim("w", Number(e.target.value))}
-            className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" />
-          <span className="text-xs text-gray-400">×</span>
-          <input type="number" min={256} max={2400} value={values.customH} onChange={(e) => changeDim("h", Number(e.target.value))}
-            className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" />
-          <span className="text-[11px] text-gray-400">px · 改任一邊自動鎖 {values.imageRatio} 比例</span>
-        </div>
-
-        {/* 生圖模型（底圖模式唔重新生圖 → 唔顯示）*/}
-        {!isBaseMode && (
-        <div className="space-y-1">
-          <Label className="text-sm font-medium">生圖模型</Label>
-          <div className="relative w-full max-w-md">
-            <select
-              value={values.imageModel}
-              onChange={(e) => set("imageModel", e.target.value)}
-              className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer"
-            >
-              {IMAGE_MODELS.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-            <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-          <p className="text-xs text-gray-400">
-            {IMAGE_MODELS.find((m) => m.value === values.imageModel)?.hint ?? ""}
-          </p>
-        </div>
-        )}
+        <p className="text-xs text-gray-400">
+          {IMAGE_MODELS.find((m) => m.value === values.imageModel)?.hint ?? ""}
+        </p>
       </div>
+      )}
 
       {/* ── Submit — fixed 貼實 viewport 底（跟其他生成 flow 同一套 pattern，
           外層 <main class="overflow-auto"> 令 sticky 失效，見 QuickAddForm 註解）。
@@ -882,10 +833,10 @@ export function ActivityForm({
           （max-w-3xl 個 div，冇自己嘅左右 padding）啱啱好對齊，唔會偏咗。 ── */}
       <div className="fixed bottom-0 left-60 right-0 z-30 bg-white border-t">
         <div className="max-w-3xl ml-6 py-3">
-          <Button type="submit" disabled={loading || !canSubmit} className="w-full bg-violet-600 hover:bg-violet-700 text-white">
+          <Button type="submit" disabled={loading || !canSubmit} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-6">
             {loading
-              ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />處理中…</>
-              : (isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel)}
+              ? <><Loader2 className="h-4 w-4 animate-spin" />處理中…</>
+              : <><Zap className="h-4 w-4" />{isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel}</>}
           </Button>
         </div>
       </div>
@@ -901,6 +852,19 @@ export function ActivityForm({
             handleAnalyzeStyle({ url, prompt: promptText ?? "" }); // 揀完自動反推提示詞
           }}
           onClose={() => setShowLibPicker(false)}
+        />
+      )}
+
+      {/* 從素材庫選取產品主圖（最多 5 張，逐張加入）*/}
+      {showProductLibPicker && (
+        <LibraryImagePickerModal
+          clientId={clientId}
+          title="從素材庫選取產品主圖"
+          onPick={(url) => {
+            set("productImageUrls", [...values.productImageUrls, url].slice(0, 5));
+            setShowProductLibPicker(false);
+          }}
+          onClose={() => setShowProductLibPicker(false)}
         />
       )}
 
@@ -932,12 +896,20 @@ export function ActivityForm({
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function SectionLabel({ step, title, hint }: { step: string; title: string; hint?: string }) {
+function SectionLabel({ step, title, hint, required }: { step: string; title: string; hint?: string; required?: boolean }) {
   return (
-    <div className="flex items-baseline gap-2 border-b pb-1.5">
-      <span className="text-[10px] font-bold text-gray-400 tracking-widest">{step}</span>
-      <span className="text-sm font-semibold text-gray-800">{title}</span>
-      {hint && <span className="text-xs text-gray-400 font-normal">{hint}</span>}
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
+          {step}
+        </span>
+        <span className="text-sm font-bold text-gray-800">{title}</span>
+        {required
+          ? <span className="text-red-500 font-semibold">*</span>
+          : <span className="text-xs text-gray-400">（選填）</span>}
+        {hint && <span className="text-xs text-gray-400 font-normal">{hint}</span>}
+      </div>
+      <div className="border-b border-gray-200" />
     </div>
   );
 }
