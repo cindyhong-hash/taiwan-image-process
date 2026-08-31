@@ -140,19 +140,17 @@ export function FreeLayoutWizard({ clientId, onClose }: { clientId: string; onCl
 
         {step === "method" && (
           <div className="p-6">
-            <div className="relative flex items-center justify-center mb-6">
-              <WizardSteps activeIndex={1} />
-              <button type="button" onClick={onClose} className="absolute right-0 top-0 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+            <button type="button" onClick={onClose} className="absolute right-4 top-4 z-20 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+              <X className="h-4 w-4" />
+            </button>
+            <WizardSteps activeIndex={1} />
             <h2 className="flex items-center gap-2 text-2xl font-bold text-gray-900">建立自由排版 <Sparkles className="h-5 w-5 text-violet-500" /></h2>
             <p className="mt-1 mb-6 text-sm text-gray-400">選擇一個起點，進入畫布後都可以自由加入圖片、產品與文字。</p>
             <div className="grid grid-cols-3 gap-4">
               {[
-                { key: "blank", title: "空白開始", sub: "建立全新空白畫布", badge: "最自由設計", icon: <FileIcon className="h-6 w-6" />, iconCls: "bg-violet-600 text-white", badgeCls: "bg-violet-600 text-white", onClick: () => { router.push(`/clients/${clientId}/magic-layers/compose?blank=1`); onClose(); } },
-                { key: "material", title: "從素材開始", sub: "選一張素材作為底圖", badge: "已有商品圖片", icon: <ImageIcon className="h-6 w-6" />, iconCls: "bg-gray-100 text-gray-500", badgeCls: "bg-gray-100 text-gray-500", onClick: () => { setBranch("material"); setStep("material"); } },
-                { key: "ai", title: "AI 幫我建立底圖", sub: "描述想要的背景圖案", badge: "快速建立場景", icon: <Sparkles className="h-6 w-6" />, iconCls: "bg-violet-100 text-violet-500", badgeCls: "bg-gray-100 text-gray-500", onClick: () => { setBranch("ai"); setStep("aiPrompt"); } },
+                { key: "blank", title: "空白開始", sub: "建立全新空白畫布", badge: "最自由設計", icon: <FileIcon className="h-7 w-7" />, iconCls: "bg-violet-600 text-white", badgeCls: "bg-violet-600 text-white", onClick: () => { router.push(`/clients/${clientId}/magic-layers/compose?blank=1`); onClose(); } },
+                { key: "material", title: "從素材開始", sub: "選一張素材作為底圖", badge: "已有商品圖片", icon: <ImageIcon className="h-7 w-7" />, iconCls: "bg-violet-100 text-violet-500", badgeCls: "bg-gray-100 text-gray-500", onClick: () => { setBranch("material"); setStep("material"); } },
+                { key: "ai", title: "AI 幫我建立底圖", sub: "描述想要的背景圖案", badge: "快速建立場景", icon: <Sparkles className="h-7 w-7" />, iconCls: "bg-violet-100 text-violet-500", badgeCls: "bg-gray-100 text-gray-500", onClick: () => { setBranch("ai"); setStep("aiPrompt"); } },
               ].map((c) => (
                 <button
                   key={c.key}
@@ -161,7 +159,7 @@ export function FreeLayoutWizard({ clientId, onClose }: { clientId: string; onCl
                   className="group flex flex-col rounded-2xl border border-gray-200 p-5 text-left transition-all hover:border-violet-400 hover:bg-violet-50/40"
                 >
                   <div className="mb-4 flex items-start justify-between">
-                    <span className={`flex h-12 w-12 items-center justify-center rounded-xl ${c.iconCls}`}>{c.icon}</span>
+                    <span className={`flex h-14 w-14 items-center justify-center rounded-2xl ${c.iconCls}`}>{c.icon}</span>
                     <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${c.badgeCls}`}>{c.badge}</span>
                   </div>
                   <div className="text-lg font-bold text-gray-900">{c.title}</div>
@@ -442,26 +440,29 @@ export function FreeLayoutWizard({ clientId, onClose }: { clientId: string; onCl
   );
 }
 
-// 頂部小步驟指示：1 選擇開始方式 ﹥ 2 畫布內容。activeIndex 1 = 第一步驟頁；2 = 第二步驟頁。
+// 頂部步驟指示：① 選擇開始方式 ﹥ ② 畫布內容（圓形數字徽章＋粗體字＋底線分隔）。
 function WizardSteps({ activeIndex }: { activeIndex: 1 | 2 }) {
-  const pill = (n: 1 | 2, label: string) => {
-    const done = activeIndex > n;
+  const step = (n: 1 | 2, label: string) => {
     const active = activeIndex === n;
+    const done = activeIndex > n;
     return (
-      <span
-        className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
-          active ? "bg-violet-600 text-white" : done ? "text-violet-600 bg-violet-50" : "bg-gray-100 text-gray-400"
-        }`}
-      >
-        {done ? "✓" : n} {label}
-      </span>
+      <div className="flex items-center gap-2.5">
+        <span className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ${
+          active || done ? "bg-violet-600 text-white" : "bg-gray-200 text-gray-500"}`}>
+          {n}
+        </span>
+        <span className={`text-lg font-bold ${active ? "text-violet-600" : done ? "text-gray-400" : "text-gray-800"}`}>{label}</span>
+      </div>
     );
   };
   return (
-    <div className="flex items-center gap-2 mb-4 text-gray-300">
-      {pill(1, "選擇開始方式")}
-      <span>﹥</span>
-      {pill(2, "畫布內容")}
+    <div className="mb-6">
+      <div className="flex items-center gap-4">
+        {step(1, "選擇開始方式")}
+        <ChevronRight className="h-5 w-5 text-gray-300" />
+        {step(2, "畫布內容")}
+      </div>
+      <div className="mt-4 border-b border-gray-100" />
     </div>
   );
 }
