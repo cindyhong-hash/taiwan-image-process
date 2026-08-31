@@ -13,8 +13,8 @@ import { useEffect, useState, useCallback, useImperativeHandle, forwardRef, useR
 import {
   ArrowRightCircle, LayoutTemplate, Palette, MessageSquare,
   LayoutGrid, Plus, Trash2, Mountain,
-  Paperclip, UserRound, Package, Sparkles, Search, ArrowUpDown,
-  CheckCircle2, Circle, X, ImagePlus,
+  Paperclip, UserRound, Package, Sparkles, Search, SlidersHorizontal,
+  CheckCircle2, Circle, X, ImagePlus, List,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { StyleComponent, ComponentCategory, PromptSlots, GalleryItem, ImageDetail } from "@/types/library";
@@ -143,8 +143,17 @@ function sizeTag(w: number, h: number): string {
   return diff / bestVal < 0.03 ? bestLabel : `${w}×${h}`;
 }
 
-// ─── Gallery tile ────────────────────────────────────────────────────────────
-function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSelect, onLongPress }: {
+// 卡片頁腳／清單列標題＋日期。
+function itemTitle(item: GalleryItem): string {
+  if (item.kind === "generated") return item.subject || "未命名素材";
+  return item.name || "未命名素材";
+}
+function itemDateStr(item: GalleryItem): string {
+  try { return new Date(item.createdAt).toLocaleDateString("zh-TW"); } catch { return ""; }
+}
+
+// ─── Gallery tile（grid 卡片 / list 列，共用同一套點擊·長按·多選·刪除邏輯） ──
+function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSelect, onLongPress, view = "grid" }: {
   item: GalleryItem;
   onOpen: (item: GalleryItem) => void;
   onDelete: (item: GalleryItem) => void;
@@ -152,6 +161,7 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
   selected: boolean;
   onToggleSelect: () => void;
   onLongPress: () => void;
+  view?: "grid" | "list";
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [dims, setDims] = useState("");
@@ -187,9 +197,51 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
     }
   };
 
+  const meta = FILTER_META[tileFilterKey(item)];
+  const Icon = meta.Icon;
+  const model = item.kind === "generated"
+    ? engineLabel(item.paramsJson)
+    : item.kind === "material"
+      ? (item.mode ? (engineLabel(JSON.stringify({ mode: item.mode })) ?? "AI生成") : "AI生成")
+      : null;
+  const badge = (
+    <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${meta.badge}`}>
+      <Icon className="h-3 w-3" />{meta.label}
+    </span>
+  );
+
   if (isGenerating || isFailed) {
+    if (view === "list") {
+      return (
+        <div className={`relative flex items-center gap-4 p-3 border-b bg-gray-50 ${isFailed ? "border-red-100" : "border-gray-100"}`}>
+          <div className="h-14 w-14 shrink-0 rounded-lg border border-gray-200 bg-white flex items-center justify-center">
+            {isGenerating
+              ? <div className="h-5 w-5 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin" />
+              : <span className="text-red-400 text-lg">!</span>}
+          </div>
+          <div className="min-w-0 flex-1">
+            {isGenerating
+              ? <span className="text-xs text-gray-500">生成中…</span>
+              : (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-red-500 truncate">{item.errorMessage || "生成失敗"}</span>
+                  <button onClick={retry} disabled={retrying}
+                    className="shrink-0 text-xs px-2 py-0.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+                    {retrying ? "重試中…" : "重試"}
+                  </button>
+                </div>
+              )}
+          </div>
+          <button onClick={() => onDelete(item)}
+            className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+            title="移除">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      );
+    }
     return (
-      <div className={`relative rounded-xl overflow-hidden border bg-gray-50 aspect-square flex flex-col items-center justify-center gap-2 ${isFailed ? "border-red-200" : "border-gray-200"}`}>
+      <div className={`relative rounded-2xl overflow-hidden border bg-white flex flex-col items-center justify-center gap-2 aspect-square ${isFailed ? "border-red-200" : "border-gray-200"}`}>
         {isGenerating ? (
           <>
             <div className="h-6 w-6 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin" />
@@ -214,78 +266,118 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
     );
   }
 
-  return (
-    <div className={`group relative rounded-xl overflow-hidden border bg-gray-50 transition-all select-none ${selected ? "border-violet-500 ring-2 ring-violet-400" : "border-gray-200 hover:shadow-md hover:border-gray-300"}`}>
-      <button
-        onPointerDown={startPress}
-        onPointerUp={cancelPress}
-        onPointerLeave={cancelPress}
-        onPointerCancel={cancelPress}
-        onContextMenu={(e) => e.preventDefault()}
-        onClick={() => {
-          // 長按啱啱觸發過 → 食咗呢下 click，唔好開大圖
-          if (longFired.current) { longFired.current = false; return; }
-          if (selectMode) onToggleSelect(); else onOpen(item);
-        }}
-        className="w-full text-left"
-        style={{ touchAction: "manipulation" }}>
-        {/* Show the FULL image (no crop) — object-contain, letterboxed in a square box.
-            淡入而唔係一出現就即刻硬切（尤其生成中 → 完成嗰刻剛好由佔位卡換成呢個 tile）。 */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={item.imageUrl} alt="brand" loading="lazy" decoding="async"
-          ref={(el) => { if (el?.complete) setImgLoaded(true); }}
-          onLoad={(e) => { const t = e.currentTarget; setDims((d) => d || sizeTag(t.naturalWidth, t.naturalHeight)); setImgLoaded(true); }}
-          className={`w-full aspect-square object-contain transition-opacity duration-500 ${imgLoaded ? "opacity-100" : "opacity-0"}`} />
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
-      </button>
-      {dims && (
-        <span className="absolute bottom-2 right-2 text-[10px] font-medium bg-black/55 text-white px-1.5 py-0.5 rounded shadow pointer-events-none">{dims}</span>
-      )}
-      {/* 統一標籤：類型 icon pill；AI 生成圖另加 model 標（背景亦標 AI生成，一致呈現）。 */}
-      {(() => {
-        const meta = FILTER_META[tileFilterKey(item)];
-        const Icon = meta.Icon;
-        const model = item.kind === "generated"
-          ? engineLabel(item.paramsJson)
-          : item.kind === "material"
-            ? (item.mode ? (engineLabel(JSON.stringify({ mode: item.mode })) ?? "AI生成") : "AI生成")
-            : null;
-        return (
-          <div className="absolute top-2 left-2 flex items-center gap-1 pointer-events-none">
-            <span className={`flex items-center gap-1 text-[10px] font-semibold ${meta.cls} text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap`}>
-              <Icon className="h-2.5 w-2.5" />{meta.label}
-            </span>
-            {model && (
-              <span className="flex items-center gap-0.5 text-[10px] font-medium bg-black/55 text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap">
-                <Sparkles className="h-2.5 w-2.5" />{model}
-              </span>
-            )}
+  const selectAffordance = selectMode ? (
+    <button onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+      className="shrink-0 rounded-full bg-white shadow"
+      title={selected ? "取消選取" : "選取"}>
+      {selected
+        ? <CheckCircle2 className="h-5 w-5 text-violet-600" />
+        : <Circle className="h-5 w-5 text-gray-400" />}
+    </button>
+  ) : (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        if (confirmDel) { onDelete(item); }
+        else { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 3000); }
+      }}
+      className={`shrink-0 p-1.5 rounded-lg transition-colors
+        ${confirmDel ? "bg-red-500 text-white" : "text-gray-400 hover:bg-red-50 hover:text-red-500"}`}
+      title={confirmDel ? "再按確認刪除" : "刪除"}>
+      <Trash2 className="h-3.5 w-3.5" />
+    </button>
+  );
+
+  const pressHandlers = {
+    onPointerDown: startPress,
+    onPointerUp: cancelPress,
+    onPointerLeave: cancelPress,
+    onPointerCancel: cancelPress,
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+    onClick: () => {
+      // 長按啱啱觸發過 → 食咗呢下 click，唔好開大圖
+      if (longFired.current) { longFired.current = false; return; }
+      if (selectMode) onToggleSelect(); else onOpen(item);
+    },
+  };
+
+  if (view === "list") {
+    return (
+      <div className={`group flex items-center gap-4 p-3 border-b transition-colors select-none ${selected ? "border-violet-200 bg-violet-50/40 ring-1 ring-inset ring-violet-500" : "border-gray-100 hover:bg-gray-50"}`}>
+        <button {...pressHandlers} className="flex items-center gap-4 flex-1 min-w-0 text-left" style={{ touchAction: "manipulation" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={item.imageUrl} alt="brand" loading="lazy" decoding="async"
+            onLoad={(e) => { const t = e.currentTarget; setDims((d) => d || sizeTag(t.naturalWidth, t.naturalHeight)); }}
+            className="h-14 w-14 shrink-0 rounded-lg object-cover border border-gray-200 bg-gray-50" />
+          {badge}
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-gray-800 truncate">{itemTitle(item)}</div>
+            <div className="text-xs text-gray-400 truncate">{[itemDateStr(item), dims].filter(Boolean).join(" · ")}</div>
           </div>
-        );
-      })()}
-      {/* 選取模式：右上角勾選圈（取代逐張刪除掣） */}
-      {selectMode ? (
-        <button onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
-          className="absolute top-2 right-2 rounded-full bg-white/90 shadow"
-          title={selected ? "取消選取" : "選取"}>
-          {selected
-            ? <CheckCircle2 className="h-5 w-5 text-violet-600" />
-            : <Circle className="h-5 w-5 text-gray-400" />}
         </button>
-      ) : (
-        /* Delete button */
+        {selectAffordance}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`group relative rounded-2xl overflow-hidden border bg-white transition-all select-none flex flex-col ${selected ? "border-violet-500 ring-1 ring-violet-500" : "border-gray-200 hover:shadow-md hover:border-gray-300"}`}>
+      <div className="relative">
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (confirmDel) { onDelete(item); }
-            else { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 3000); }
-          }}
-          className={`absolute top-2 right-2 p-1 rounded-lg text-[10px] shadow transition-all opacity-0 group-hover:opacity-100
-            ${confirmDel ? "bg-red-500 text-white" : "bg-white/90 text-gray-500 hover:bg-red-50 hover:text-red-500"}`}
-          title={confirmDel ? "再按確認刪除" : "刪除"}>
-          <Trash2 className="h-3 w-3" />
+          {...pressHandlers}
+          className="w-full text-left"
+          style={{ touchAction: "manipulation" }}>
+          {/* Show the FULL image (no crop) — object-contain, letterboxed in a square box.
+              淡入而唔係一出現就即刻硬切（尤其生成中 → 完成嗰刻剛好由佔位卡換成呢個 tile）。 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={item.imageUrl} alt="brand" loading="lazy" decoding="async"
+            ref={(el) => { if (el?.complete) setImgLoaded(true); }}
+            onLoad={(e) => { const t = e.currentTarget; setDims((d) => d || sizeTag(t.naturalWidth, t.naturalHeight)); setImgLoaded(true); }}
+            className={`w-full aspect-square object-contain bg-gray-50 transition-opacity duration-500 ${imgLoaded ? "opacity-100" : "opacity-0"}`} />
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
         </button>
-      )}
+        {dims && (
+          <span className="absolute bottom-2 right-2 text-[10px] font-medium bg-black/55 text-white px-1.5 py-0.5 rounded shadow pointer-events-none">{dims}</span>
+        )}
+        {/* pastel 分類標籤；AI 生成圖另加 model 深色小 pill。 */}
+        <div className="absolute top-2 left-2 flex items-center gap-1 pointer-events-none">
+          <span className={`shadow-sm ${meta.badge} inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap`}>
+            <Icon className="h-3 w-3" />{meta.label}
+          </span>
+          {model && (
+            <span className="flex items-center gap-0.5 text-[10px] font-medium bg-black/55 text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap">
+              <Sparkles className="h-2.5 w-2.5" />{model}
+            </span>
+          )}
+        </div>
+        {/* 選取模式：右上角勾選圈（取代逐張刪除掣） */}
+        {selectMode ? (
+          <button onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+            className="absolute top-2 right-2 rounded-full bg-white/90 shadow"
+            title={selected ? "取消選取" : "選取"}>
+            {selected
+              ? <CheckCircle2 className="h-5 w-5 text-violet-600" />
+              : <Circle className="h-5 w-5 text-gray-400" />}
+          </button>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirmDel) { onDelete(item); }
+              else { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 3000); }
+            }}
+            className={`absolute top-2 right-2 p-1 rounded-lg text-[10px] shadow transition-all opacity-0 group-hover:opacity-100
+              ${confirmDel ? "bg-red-500 text-white" : "bg-white/90 text-gray-500 hover:bg-red-50 hover:text-red-500"}`}
+            title={confirmDel ? "再按確認刪除" : "刪除"}>
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+      {/* 白色頁腳：標題 + 日期·尺寸 */}
+      <div className="p-3">
+        <div className="text-sm font-semibold text-gray-800 line-clamp-1">{itemTitle(item)}</div>
+        <div className="text-xs text-gray-400 mt-0.5">{[itemDateStr(item), dims].filter(Boolean).join(" · ")}</div>
+      </div>
     </div>
   );
 }
@@ -295,14 +387,15 @@ export type ComponentGridHandle = { refresh: () => void };
 
 type GalleryFilter = "ALL" | "uploaded" | "material" | "person" | "illustration" | "product";
 
-// 用 lucide icon（取代 emoji）+ 每類一個底色（pill 用 cls，filter 選中用 activeCls）。
-const FILTER_META: Record<GalleryFilter, { label: string; Icon: LucideIcon; cls: string; activeCls: string }> = {
-  ALL:          { label: "全部",     Icon: LayoutGrid, cls: "bg-gray-700",   activeCls: "bg-violet-600 text-white border-violet-600" },
-  uploaded:     { label: "參考圖",   Icon: Paperclip,  cls: "bg-blue-500",   activeCls: "bg-blue-500 text-white border-blue-500" },
-  material:     { label: "背景",     Icon: Mountain,   cls: "bg-teal-600",   activeCls: "bg-teal-600 text-white border-teal-600" },
-  person:       { label: "人像",     Icon: UserRound,  cls: "bg-rose-500",   activeCls: "bg-rose-500 text-white border-rose-500" },
-  illustration: { label: "插畫",     Icon: Palette,    cls: "bg-amber-500",  activeCls: "bg-amber-500 text-white border-amber-500" },
-  product:      { label: "產品成圖", Icon: Package,    cls: "bg-[#C9A227]", activeCls: "bg-[#C9A227] text-white border-[#C9A227]" },
+// 用 lucide icon（取代 emoji）。分類 chip 已統一用同一套紫色（active/inactive），
+// 呢度淨留返 badge（每類 pastel 底色，貼喺卡片/列上做類型標籤）+ cls（生成中 tile 舊式深色 pill，保留兼容）。
+const FILTER_META: Record<GalleryFilter, { label: string; Icon: LucideIcon; cls: string; badge: string }> = {
+  ALL:          { label: "全部",     Icon: LayoutGrid, cls: "bg-gray-700",  badge: "bg-gray-100 text-gray-600" },
+  uploaded:     { label: "參考圖",   Icon: Paperclip,  cls: "bg-blue-500",  badge: "bg-blue-100 text-blue-600" },
+  material:     { label: "背景",     Icon: Mountain,   cls: "bg-teal-600",  badge: "bg-emerald-100 text-emerald-700" },
+  person:       { label: "人像",     Icon: UserRound,  cls: "bg-rose-500",  badge: "bg-violet-100 text-violet-700" },
+  illustration: { label: "插畫",     Icon: Palette,    cls: "bg-amber-500", badge: "bg-rose-100 text-rose-600" },
+  product:      { label: "產品成圖", Icon: Package,    cls: "bg-[#C9A227]", badge: "bg-gray-100 text-gray-600" },
 };
 
 /** #4 系列圖成圖（mode=paste-template）—— 報告期間隱藏。 */
@@ -364,6 +457,7 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
   const [gallerySearch, setGallerySearch] = useState("");
   const [galleryEngine, setGalleryEngine] = useState<string>("ALL");
   const [gallerySort, setGallerySort] = useState<"newest" | "oldest">("newest");
+  const [view, setView] = useState<"grid" | "list">("grid");
 
   // Internal tick for imperative refresh (via ref.refresh())
   const [localTick, setLocalTick] = useState(0);
@@ -546,13 +640,13 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
         <>
           {/* 搜尋 / 引擎 / 排序（wireframe ⑦：日期 range 拎走，改輕量排序） */}
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex-1 min-w-[180px] flex items-center gap-1.5 bg-white border border-gray-300 rounded-full px-3.5 py-1.5">
-              <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+            <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-white border border-gray-300 rounded-xl px-3.5 py-2">
+              <Search className="h-4 w-4 text-gray-400 shrink-0" />
               <input
                 value={gallerySearch}
                 onChange={(e) => setGallerySearch(e.target.value)}
-                placeholder="搜尋標題 / 內文 / Prompt…"
-                className="flex-1 text-xs bg-transparent outline-none placeholder:text-gray-400"
+                placeholder="搜尋標題、內文或 Prompt…"
+                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400"
               />
             </div>
             {galleryEngines.length > 0 && (
@@ -560,7 +654,7 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
                 <select
                   value={galleryEngine}
                   onChange={(e) => setGalleryEngine(e.target.value)}
-                  className="appearance-none text-xs bg-white border border-gray-300 rounded-full pl-3.5 pr-8 py-1.5 outline-none cursor-pointer"
+                  className="appearance-none text-xs bg-white border border-gray-300 rounded-xl pl-3.5 pr-8 py-2 outline-none cursor-pointer"
                 >
                   <option value="ALL">引擎：全部</option>
                   {galleryEngines.map((e) => <option key={e} value={e}>{e}</option>)}
@@ -572,9 +666,9 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
             )}
             <button
               onClick={() => setGallerySort((s) => (s === "newest" ? "oldest" : "newest"))}
-              className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1.5 hover:bg-blue-100 transition-colors"
+              className="flex items-center gap-1 text-xs font-medium bg-white text-violet-600 border border-violet-300 rounded-full px-3 py-1.5 hover:bg-violet-50 transition-colors shrink-0"
             >
-              <ArrowUpDown className="h-3 w-3" />排序：{gallerySort === "newest" ? "最新先" : "最舊先"}
+              <SlidersHorizontal className="h-3 w-3" />排序：{gallerySort === "newest" ? "最新先" : "最舊先"}
             </button>
           </div>
 
@@ -620,8 +714,8 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
               const empty = cnt === 0 && f !== "ALL";  // [UX] 空類別淡化＋停用，減少雜訊
               return (
                 <button key={f} onClick={() => { if (!empty) setGalleryFilter(f); }} disabled={empty}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                    empty ? "bg-white text-gray-300 border-gray-100 cursor-default" : active ? meta.activeCls : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"}`}>
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full border transition-colors ${
+                    empty ? "bg-white text-gray-300 border-gray-100 cursor-default" : active ? "bg-violet-600 text-white border-violet-600" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"}`}>
                   <Icon className="h-3 w-3" />{meta.label} <span className="opacity-60">{cnt}</span>
                 </button>
               );
@@ -642,15 +736,34 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
           {!selectMode && gallery.length > 0 && (
             <p className="text-[11px] text-gray-400">提示：長按任何圖片即可進入多選，批次移到客戶 / 移入未分類 / 刪除。</p>
           )}
+          {/* 所有素材 + 已選取 + 格狀/清單切換 */}
+          {gallery.length > 0 && (
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-900">所有素材</h2>
+              <div className="flex items-center gap-3">
+                {selectMode && <span className="text-xs text-gray-400">已選取 {selectedItems.length} 個素材</span>}
+                <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 p-0.5">
+                  <button type="button" onClick={() => setView("grid")} title="格狀檢視"
+                    className={`p-1.5 rounded-md transition-colors ${view === "grid" ? "bg-violet-100 text-violet-600" : "text-gray-400 hover:text-gray-600"}`}>
+                    <LayoutGrid className="h-4 w-4" />
+                  </button>
+                  <button type="button" onClick={() => setView("list")} title="清單檢視"
+                    className={`p-1.5 rounded-md transition-colors ${view === "list" ? "bg-violet-100 text-violet-600" : "text-gray-400 hover:text-gray-600"}`}>
+                    <List className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {gallery.length === 0 ? (
             <EmptyState onOpenQuickAdd={onOpenQuickAdd}
               text={clientId ? "此客戶還沒有圖片" : "還沒有任何圖片"} hint="上傳圖片分析，或在「生成圖片」分頁產生新圖" />
           ) : visibleGallery.length === 0 ? (
             <div className="text-center py-16 text-gray-400 text-sm">找不到符合條件的圖片</div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+            <div className={view === "list" ? "space-y-2" : "grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3"}>
               {visibleGallery.map((item) => (
-                <GalleryTile key={itemKey(item)} item={item}
+                <GalleryTile key={itemKey(item)} item={item} view={view}
                   onOpen={openFromGallery} onDelete={handleDeleteGalleryItem}
                   selectMode={selectMode} selected={selectedKeys.has(itemKey(item))}
                   onToggleSelect={() => toggleSelect(itemKey(item))}
