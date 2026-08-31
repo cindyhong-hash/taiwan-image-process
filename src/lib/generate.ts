@@ -171,7 +171,7 @@ export async function translateBriefToEnglishPrompt(brief: string): Promise<stri
       },
       body: JSON.stringify({
         model: OPENROUTER_TEXT_MODEL,
-        max_tokens: 300,
+        max_tokens: 120, // 圖片 prompt 很短；壓低以在低額度下仍可成功（原 300 常因額度不足 402）
         messages: [
           { role: "system", content: sys },
           { role: "user", content: user },

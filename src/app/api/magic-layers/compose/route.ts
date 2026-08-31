@@ -9,7 +9,7 @@
    ============================================================ */
 import { NextResponse } from "next/server";
 import { buildCompositionLayers, type ComposeInput } from "@/lib/magic-layers/compose-layers.ts";
-import { generateImageFal } from "@/lib/fal";
+import { translateBriefToEnglishPrompt, generateImage, falSceneFromRef } from "@/lib/generate";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 import sharp from "sharp";
 
@@ -32,8 +32,23 @@ export async function POST(request: Request) {
     let backgroundUrl = body.backgroundUrl;
     const bgProvided = !!backgroundUrl;   // supplied (upload / 素材庫) vs AI-generated
     if (!backgroundUrl && body.backgroundPrompt) {
-      // backgroundRefUrl（選填）＝參考圖：交給 FAL 的 image_prompt 影響生成風格/構圖。
-      backgroundUrl = await generateImageFal({ prompt: body.backgroundPrompt, imageRatio: ratio, seed: `ml-bg-${canvasWidth}x${canvasHeight}`, styleReferenceUrl: body.backgroundRefUrl || undefined });
+      // 沿用素材庫背景生成路徑：中文描述 → 優化英文 prompt → generateImage(fal.ai flux-scene)。
+      // 直接把原生中文丟 flux 會亂生成/燒中文字，故一定要先翻譯（OpenRouter）。有參考圖 →
+      // falSceneFromRef(nano-banana 以參考圖為風格導引)，失敗（nano 內容過濾誤判）則回落 flux。
+      const brief = `${body.backgroundPrompt}。乾淨簡約、適合作為廣告底圖的背景，無產品、無文字。`;
+      const enPrompt = (await translateBriefToEnglishPrompt(brief)) || brief;
+      const [bw, bh] = RATIO_SIZE[ratio] ?? [1024, 1024];
+      let gen;
+      if (body.backgroundRefUrl) {
+        try {
+          gen = await falSceneFromRef({ refDataUri: body.backgroundRefUrl, sceneDescription: enPrompt, aspectRatio: ratio });
+        } catch {
+          gen = await generateImage({ prompt: enPrompt, width: bw, height: bh });
+        }
+      } else {
+        gen = await generateImage({ prompt: enPrompt, width: bw, height: bh });
+      }
+      backgroundUrl = await saveBuffer(gen.buffer, gen.contentType.includes("png") ? "png" : "jpg", "ml-bg-ai-");
     }
     if (!backgroundUrl) return NextResponse.json({ error: "需要 backgroundUrl 或 backgroundPrompt" }, { status: 400 });
 
