@@ -530,7 +530,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
   /* ---------- insert tools: image / upload / text / logo ---------- */
   const FONT = "'Noto Sans TC',system-ui,sans-serif";
   // 插入一張圖片圖層（不去背）：素材庫 / 上傳圖片 / Logo 共用
-  const pushImageLayer = useCallback(async (url: string, nm: string, type: "object" | "product" = "object") => {
+  const pushImageLayer = useCallback(async (url: string, nm: string, type: "object" | "product" = "object", at?: { cx: number; cy: number }) => {
     const canvas = await loadToCanvas(url);
     if (!canvas) { alert("讀取圖片失敗"); return; }
     const ar = canvas.width / (canvas.height || 1);
@@ -541,7 +541,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
       name: nm, type, semanticId: type, instanceId: null, confidence: 1, editable: true, source: "generated",
       isText: false, text: "", color: "#241f47", fontSize: 24, fontFamily: FONT, fontWeight: 700, align: "center",
       shape: null, canvas, naturalW: canvas.width, naturalH: canvas.height, src: url,
-      cx: doc.w / 2, cy: doc.h / 2, w, h, rotation: 0, visible: true, locked: false, opacity: 1, embeddedText: [], thumb: null,
+      cx: at ? at.cx : doc.w / 2, cy: at ? at.cy : doc.h / 2, w, h, rotation: 0, visible: true, locked: false, opacity: 1, embeddedText: [], thumb: null,
     };
     el.thumb = makeThumb(el); layersRef.current.push(el); selectOnly(el.id); markDirty(); refresh(); render();
   }, [doc.w, doc.h, markDirty, refresh, render]);
@@ -895,7 +895,8 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
               {bgOpen && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, maxHeight: 168, overflowY: "auto" }}>
                   {backgrounds.map((b, i) => (
-                    <img key={i} src={b.url} alt={b.label ?? ""} title={b.label ?? ""} onClick={() => replaceBackground(b.url)}
+                    <img key={i} src={b.url} alt={b.label ?? ""} title={(b.label ?? "") + "（點擊替換背景／拖到畫布加成圖層）"} onClick={() => replaceBackground(b.url)}
+                         draggable onDragStart={(e) => { e.dataTransfer.setData("text/ml-image-url", b.url); e.dataTransfer.effectAllowed = "copy"; }}
                          style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8, border: "1px solid #e5e7eb", cursor: "pointer" }} />
                   ))}
                 </div>
@@ -967,7 +968,15 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
           </div>
         </aside>
 
-        <div ref={wrapRef} style={S.stage}>
+        <div ref={wrapRef} style={S.stage}
+          onDragOver={(e) => { if (e.dataTransfer.types.includes("text/ml-image-url")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
+          onDrop={(e) => {
+            const url = e.dataTransfer.getData("text/ml-image-url"); if (!url) return;
+            e.preventDefault();
+            const r = canvasRef.current!.getBoundingClientRect();
+            const d = s2d(e.clientX - r.left, e.clientY - r.top);   // 落點（文件座標）
+            pushImageLayer(url, "背景圖", "object", { cx: d.x, cy: d.y });
+          }}>
           <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, touchAction: "none" }} />
         </div>
 
@@ -1485,7 +1494,7 @@ const S: Record<string, React.CSSProperties> = {
   name: { fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#1f2937" },
   sub: { fontSize: 11, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 },
   icon: { width: 26, height: 26, border: "none", background: "transparent", color: "#9ca3af", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
-  stage: { flex: 1, position: "relative", minWidth: 0, overflow: "hidden", background: "#f3f4f6" },
+  stage: { flex: 1, position: "relative", minWidth: 0, overflow: "hidden", background: "#ffffff" },
   textPanel: { position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 20, display: "flex", gap: 6, alignItems: "center", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "6px 8px", boxShadow: "0 8px 24px rgba(0,0,0,.12)" },
   tpInput: { width: 170, background: "#ffffff", border: "1px solid #e5e7eb", color: "#1f2937", borderRadius: 8, padding: "6px 8px", fontSize: 13 },
   tpColor: { width: 30, height: 30, padding: 0, border: "1px solid #e5e7eb", borderRadius: 8, background: "transparent", cursor: "pointer" },
