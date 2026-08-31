@@ -711,11 +711,11 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
               const Icon = meta.Icon;
               const cnt = gallery.filter((g) => matchesGalleryFilter(g, f)).length;
               const active = galleryFilter === f;
-              const empty = cnt === 0 && f !== "ALL";  // [UX] 空類別淡化＋停用，減少雜訊
+              // 空類別不再淡化/停用（會被誤會成壞掉）；一律可點，點了下面顯示空狀態即可。
               return (
-                <button key={f} onClick={() => { if (!empty) setGalleryFilter(f); }} disabled={empty}
+                <button key={f} onClick={() => setGalleryFilter(f)}
                   className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full border transition-colors ${
-                    empty ? "bg-white text-gray-300 border-gray-100 cursor-default" : active ? "bg-violet-600 text-white border-violet-600" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"}`}>
+                    active ? "bg-violet-600 text-white border-violet-600" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"}`}>
                   <Icon className="h-3 w-3" />{meta.label} <span className="opacity-60">{cnt}</span>
                 </button>
               );
