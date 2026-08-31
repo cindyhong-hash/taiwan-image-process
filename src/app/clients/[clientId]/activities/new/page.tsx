@@ -1,9 +1,9 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronLeft } from "lucide-react";
+import { ChevronDown, ChevronLeft, AlertTriangle, X } from "lucide-react";
 import { ActivityForm, type ActivityFormValues } from "@/components/activities/ActivityForm";
-import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
+import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, ACTIVITY_HANDOFF_KEY, ACTIVITY_UPDATE_FLAGS_KEY } from "@/components/activities/RolePickerModal";
 import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
 import { useUnsavedGuard } from "@/components/common/UnsavedGuard";
 
@@ -18,6 +18,15 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   // （多圖頁完全冇 baseImageUrl 呢個概念）。跟 ActivityForm 嘅 live 狀態（唔淨係
   // 初始值）：用戶喺表單入面撳「移除底圖」跌返做一般生成模式時，切換器要即刻再顯示。
   const [isBaseMode, setIsBaseMode] = useState(false);
+  // [過往活動再利用] 複製舊活動進來時，規則偵測到「可能需要更新」的項目 → 表單上方 banner。
+  const [updateFlags, setUpdateFlags] = useState<{ text: string; reason: string }[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = sessionStorage.getItem(ACTIVITY_UPDATE_FLAGS_KEY);
+      if (raw) { sessionStorage.removeItem(ACTIVITY_UPDATE_FLAGS_KEY); return JSON.parse(raw); }
+    } catch { /* ignore */ }
+    return [];
+  });
   const [dirty, setDirty] = useState(false);       // 表單有改動 → 離開時攔截
   const seenChange = useRef(false);                // 略過 mount 時的第一次 onValuesChange
 
@@ -119,6 +128,28 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
           </button>
         )}
       </div>
+      {updateFlags.length > 0 && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-amber-800">已複製自舊活動 · 這些內容可能需要更新</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {updateFlags.map((f, i) => (
+                    <span key={i} className="text-xs bg-white border border-amber-200 text-amber-700 rounded-full px-2 py-0.5">
+                      {f.text} <span className="text-amber-400">· {f.reason}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <button type="button" onClick={() => setUpdateFlags([])} className="shrink-0 text-amber-400 hover:text-amber-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
       <ActivityForm clientId={clientId} onSubmit={handleSubmit}
         onBaseModeChange={setIsBaseMode}
         onValuesChange={captureValues}

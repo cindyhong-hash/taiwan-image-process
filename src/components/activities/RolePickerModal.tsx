@@ -23,6 +23,9 @@ export const ML_COMPOSE_CLIENT_KEY = "mlComposeClient";
 // [自由排版精靈] compose() 完成後把 {layers, docW, docH, clientId, title, subtitle} 經
 // sessionStorage 傳去 /magic-layers/compose?seed=1，畫面一開即直接落地編輯器（跳過表單）。
 export const ML_WIZARD_SEED_KEY = "mlWizardSeed";
+// [過往活動再利用] 再次使用舊活動時，把偵測到「可能需要更新」的項目經 sessionStorage 傳去
+// 新增活動頁，表單上方顯示提示 banner。JSON: [{text, reason}]
+export const ACTIVITY_UPDATE_FLAGS_KEY = "activityUpdateFlags";
 
 export function RolePickerModal({
   imageUrl,
