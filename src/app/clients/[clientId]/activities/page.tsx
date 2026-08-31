@@ -233,7 +233,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
         taboos={client.taboos}
       />
 
-      <CreationCards onNewGenerate={() => setShowTypeModal(true)} onApplyBase={() => setShowBasePicker(true)} />
+      <CreationCards onNewGenerate={() => setShowTypeModal(true)} onApplyBase={() => setShowBasePicker(true)} clientId={clientId} />
 
       <h2 className="text-lg font-semibold text-gray-900 mb-3">最近圖文</h2>
 
