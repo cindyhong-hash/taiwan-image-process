@@ -131,7 +131,7 @@ function BlockCard({
         )}
       </div>
       <button type="button" onClick={onPick}
-        className={`w-full rounded-xl border overflow-hidden text-left transition-all ${filled ? "border-violet-200" : "border-dashed border-gray-200 hover:border-violet-300"}`}>
+        className={`w-full bg-white rounded-xl border overflow-hidden text-left transition-all ${filled ? "border-violet-200" : "border-dashed border-gray-200 hover:border-violet-300"}`}>
         {filled ? (
           <>
             {preview ?? <div className="h-20 bg-violet-50" />}
@@ -594,7 +594,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
 
         {/* ── 01 產品圖片 ── */}
         <SectionLabel step="01" title="產品圖片" hint="選填 · AI 可代讀圖填入下面設計描述" />
-        <div className="rounded-xl border border-violet-200 bg-violet-50/30 p-3 transition-all">
+        <div className="rounded-xl border border-gray-200 bg-white p-3 transition-all">
           <input id="composer-product" type="file" accept="image/*" className="hidden"
             onChange={(e) => { if (e.target.files?.[0]) uploadProduct(e.target.files[0]); e.currentTarget.value = ""; }} />
           {productUrls.length === 0 ? (
@@ -754,7 +754,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
           <p className="text-[11px] text-gray-400 mt-0.5 mb-1.5">其他注意事項（例如：不要加入紅色、營造溫暖放鬆感）也可以直接寫在下面的文字框裡。</p>
           <textarea value={designText} onChange={(e) => setDesignText(e.target.value)} rows={5}
             placeholder="例：秋冬保濕面霜，質地清爽好推開……（可直接打字，或上傳產品圖片／選取風格積木自動幫你填入）"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-gray-300 placeholder:text-gray-400 whitespace-pre-wrap" />
+            className="w-full bg-white rounded-md border border-gray-300 px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-gray-300 placeholder:text-gray-400 whitespace-pre-wrap" />
           {/* Composite info — NOT part of the brief / not translated, just explains what will happen.
               背景狀態喺 02 checkbox 隔籬已經即時反映一次；呢度做「生成前總覽」，兩處保留（唔同時刻，唔算重複）。
               擺喺警告上面：先睇「已經設定咗咩」，最後先見「仲欠咩先撳得掣」，貼近生成掣個位。 */}

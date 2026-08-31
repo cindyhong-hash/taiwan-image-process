@@ -349,7 +349,7 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
         </div>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
           placeholder={meta.placeholder}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 transition" />
+          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 transition" />
       </div>
 
       {/* 人像：亞裔優先（緊貼主體描述） */}
@@ -381,7 +381,7 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
               if (url.startsWith("http")) handleDescribeRef(url, false);
             }}
             placeholder="貼上圖片網址（https://…）"
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400 transition"
+            className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400 transition"
           />
           <button onClick={() => fileInputRef.current?.click()} disabled={refUploading}
             title="從電腦上傳圖片"
