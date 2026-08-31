@@ -303,7 +303,7 @@ function GalleryTile({ item, onOpen, onDelete, selectMode, selected, onToggleSel
 
   if (view === "list") {
     return (
-      <div className={`group flex items-center gap-4 p-3 border-b transition-colors select-none ${selected ? "border-violet-200 bg-violet-50/40 ring-1 ring-inset ring-violet-500" : "border-gray-100 hover:bg-gray-50"}`}>
+      <div className={`group flex items-center gap-4 p-4 transition-colors select-none ${selected ? "bg-violet-50/40 ring-2 ring-inset ring-violet-500" : "bg-white hover:bg-gray-50"}`}>
         <button {...pressHandlers} className="flex items-center gap-4 flex-1 min-w-0 text-left" style={{ touchAction: "manipulation" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={item.imageUrl} alt="brand" loading="lazy" decoding="async"
@@ -761,7 +761,7 @@ export const ComponentGrid = forwardRef<ComponentGridHandle, Props>(function Com
           ) : visibleGallery.length === 0 ? (
             <div className="text-center py-16 text-gray-400 text-sm">找不到符合條件的圖片</div>
           ) : (
-            <div className={view === "list" ? "space-y-2" : "grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3"}>
+            <div className={view === "list" ? "rounded-2xl border border-gray-200 bg-white overflow-hidden divide-y divide-gray-100" : "grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3"}>
               {visibleGallery.map((item) => (
                 <GalleryTile key={itemKey(item)} item={item} view={view}
                   onOpen={openFromGallery} onDelete={handleDeleteGalleryItem}
