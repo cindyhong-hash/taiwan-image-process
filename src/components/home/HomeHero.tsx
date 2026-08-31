@@ -2,8 +2,8 @@
 import { useState } from "react";
 import { Search, Sparkles } from "lucide-react";
 
-// 網站搜尋：搜現有活動 + 素材（標題 / 內文 / Prompt）。chips = 快速搜尋詞。
-const CHIPS = ["貼文", "情境圖", "圖片去背", "品牌形象海報"];
+// 網站搜尋：搜現有活動 + 素材（標題 / 內文 / Prompt）。chips = 快速搜尋範例詞。
+const CHIPS = ["貼文", "產品圖", "背景", "海報"];
 
 export function HomeHero({ query, onSearch }: { query: string; onSearch: (q: string) => void }) {
   const [q, setQ] = useState(query);
@@ -12,10 +12,10 @@ export function HomeHero({ query, onSearch }: { query: string; onSearch: (q: str
     <section className="space-y-6">
       <div>
         <h1 className="flex items-center gap-2 text-3xl font-bold text-gray-900">
-          今天，想找什麼 <span className="text-violet-600">素材</span>呢？
+          今天，想做什麼 <span className="text-violet-600">素材</span>呢？
           <Sparkles className="h-6 w-6 text-violet-500" />
         </h1>
-        <p className="mt-2 text-sm text-gray-400">搜尋你的活動與素材（標題、內文、Prompt）</p>
+        <p className="mt-2 text-sm text-gray-400">描述需求、貼上參考，AI 會依照品牌記憶自動生成素材</p>
       </div>
       <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white p-2 pl-4 shadow-sm">
         <Search className="h-4 w-4 shrink-0 text-gray-400" />
