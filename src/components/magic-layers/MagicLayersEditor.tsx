@@ -1494,7 +1494,7 @@ const S: Record<string, React.CSSProperties> = {
   name: { fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#1f2937" },
   sub: { fontSize: 11, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 },
   icon: { width: 26, height: 26, border: "none", background: "transparent", color: "#9ca3af", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
-  stage: { flex: 1, position: "relative", minWidth: 0, overflow: "hidden", background: "#ffffff" },
+  stage: { flex: 1, position: "relative", minWidth: 0, overflow: "hidden", background: "#F8F9FC" },
   textPanel: { position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 20, display: "flex", gap: 6, alignItems: "center", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "6px 8px", boxShadow: "0 8px 24px rgba(0,0,0,.12)" },
   tpInput: { width: 170, background: "#ffffff", border: "1px solid #e5e7eb", color: "#1f2937", borderRadius: 8, padding: "6px 8px", fontSize: 13 },
   tpColor: { width: 30, height: 30, padding: 0, border: "1px solid #e5e7eb", borderRadius: 8, background: "transparent", cursor: "pointer" },
