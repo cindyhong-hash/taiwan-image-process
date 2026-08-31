@@ -21,14 +21,22 @@ type Client = {
 };
 type ClientOption = { id: string; name: string };
 
-// 狀態標籤：按狀態上色（補返 FAILED；唔好再用黑色 default badge）。
+// 顯示分類（非 DB 原始狀態）：自由排版檔（layoutId=magic-layers）= 設計稿；
+// 待生成(PENDING)併入草稿；其餘沿用。badge 與篩選都用 statusKey 對齊。
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  DRAFT:      { label: "草稿", cls: "bg-slate-100 text-slate-600 border-slate-200" },
-  PENDING:    { label: "待生成", cls: "bg-gray-100 text-gray-600 border-gray-200" },
-  GENERATING: { label: "生成中", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-  DONE:       { label: "已完成", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  DRAFT:      { label: "草稿",     cls: "bg-slate-100 text-slate-600 border-slate-200" },
+  DESIGN:     { label: "設計稿",   cls: "bg-violet-50 text-violet-700 border-violet-200" },
+  GENERATING: { label: "生成中",   cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  DONE:       { label: "已完成",   cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   FAILED:     { label: "生成失敗", cls: "bg-red-50 text-red-600 border-red-200" },
 };
+
+// DB 原始狀態 → 顯示分類 key。自由排版檔一律「設計稿」；待生成當「草稿」。
+function statusKey(a: { status: string; layoutId?: string }): string {
+  if (a.layoutId === "magic-layers") return "DESIGN";
+  if (a.status === "PENDING") return "DRAFT";
+  return a.status;
+}
 
 // 長按（~0.5s）入多選：同素材庫畫廊嗰套一致嘅手勢。pointer 事件兼容滑鼠 + 觸控。
 function ActivityRow({
@@ -88,7 +96,11 @@ function ActivityRow({
           <span className="text-xs text-gray-400">
             {new Date(act.createdAt).toLocaleDateString("zh-TW")}
           </span>
-          {act.layoutId && act.layoutId !== "single" ? (
+          {act.layoutId === "magic-layers" ? (
+            <span className="text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+              自由排版
+            </span>
+          ) : act.layoutId && act.layoutId !== "single" ? (
             <span className="text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
               多圖・{getMultiLayout(act.layoutId)?.label ?? act.layoutId}
             </span>
@@ -102,7 +114,7 @@ function ActivityRow({
       </div>
       <div className="flex items-center gap-2">
         {(() => {
-          const s = STATUS_META[act.status] ?? { label: act.status || "—", cls: "bg-gray-100 text-gray-500 border-gray-200" };
+          const s = STATUS_META[statusKey(act)] ?? { label: act.status || "—", cls: "bg-gray-100 text-gray-500 border-gray-200" };
           return <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium whitespace-nowrap ${s.cls}`}>{s.label}</span>;
         })()}
         {!selectMode && (
@@ -255,7 +267,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
             </div>
             <div className="flex gap-1.5 flex-wrap">
               {/* 揀中時用返狀態 tag 嘅顏色（同列表 badge 一致）；全部=黑；未揀=白 */}
-              {[{ k: "ALL", label: "全部" }, { k: "DRAFT", label: "草稿" }, { k: "DONE", label: "已完成" }, { k: "GENERATING", label: "生成中" }, { k: "FAILED", label: "生成失敗" }, { k: "PENDING", label: "待生成" }].map((f) => {
+              {[{ k: "ALL", label: "全部" }, { k: "DRAFT", label: "草稿" }, { k: "DESIGN", label: "設計稿" }, { k: "DONE", label: "已完成" }, { k: "GENERATING", label: "生成中" }, { k: "FAILED", label: "生成失敗" }].map((f) => {
                 const selected = actStatus === f.k;
                 const selCls = f.k === "ALL" ? "bg-violet-600 text-white border-violet-600" : (STATUS_META[f.k]?.cls ?? "bg-violet-600 text-white border-violet-600");
                 return (
@@ -271,7 +283,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
           {/* 批次操作工具列（多選後出現）：全選 / 移到其他品牌 / 批次刪除 / 完成 */}
           {selectMode && (() => {
             const acts0 = client.activities.filter((a) =>
-              (actStatus === "ALL" || a.status === actStatus) &&
+              (actStatus === "ALL" || statusKey(a) === actStatus) &&
               (!actSearch.trim() || `${a.theme} ${a.focusPoint}`.toLowerCase().includes(actSearch.toLowerCase())));
             const allVisibleSelected = acts0.length > 0 && acts0.every((a) => selectedIds.has(a.id));
             const otherClients = clientsList.filter((c) => c.id !== clientId);
@@ -310,7 +322,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
           )}
           {(() => {
             const acts = client.activities.filter((a) =>
-              (actStatus === "ALL" || a.status === actStatus) &&
+              (actStatus === "ALL" || statusKey(a) === actStatus) &&
               (!actSearch.trim() || `${a.theme} ${a.focusPoint}`.toLowerCase().includes(actSearch.toLowerCase())));
             if (acts.length === 0) return <div className="text-center py-16 text-gray-400 text-sm">找不到符合條件的活動</div>;
             return (
