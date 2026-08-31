@@ -80,7 +80,7 @@ export function InspireButton({
         }`}
       >
         <Lightbulb className="h-3 w-3" />
-        靈感
+        給我靈感
       </button>
 
       {open && (

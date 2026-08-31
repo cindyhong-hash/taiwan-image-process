@@ -514,40 +514,49 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                     field="theme"
                     onPick={(text) => setTheme(text)}
                   />
-                  {/* AI 幫改 */}
-                  <button
-                    type="button"
-                    onClick={() => { setEditingPrompt((v) => !v); setEditInstruction(""); }}
-                    disabled={!theme.trim()}
-                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                      !theme.trim()
-                        ? "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"
-                        : editingPrompt
-                        ? "border-blue-300 text-blue-600 bg-blue-50"
-                        : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                    }`}
-                  >
-                    <Pencil className="h-3 w-3" />
-                    AI 幫改
-                  </button>
-                  {/* AI 優化提示詞 */}
-                  <button
-                    type="button"
-                    onClick={optimizeTheme}
-                    disabled={optimizing || !theme.trim()}
-                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-violet-300 text-violet-600 hover:bg-violet-50 disabled:opacity-40"
-                  >
-                    {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                    <span>AI 幫我優化提示詞</span>
-                  </button>
+                  {/* AI 改寫（要有 Prompt 先可用；disabled 時外層 span 帶 tooltip）*/}
+                  <span title={!theme.trim() ? "輸入畫面描述後即可使用" : undefined} className="inline-flex">
+                    <button
+                      type="button"
+                      onClick={() => { setEditingPrompt((v) => !v); setEditInstruction(""); }}
+                      disabled={!theme.trim()}
+                      className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                        !theme.trim()
+                          ? "cursor-not-allowed border-[#E5E7EB] text-[#9CA3AF] bg-[#F8F9FB]"
+                          : editingPrompt
+                          ? "border-violet-400 text-violet-700 bg-violet-50 cursor-pointer"
+                          : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
+                      }`}
+                    >
+                      <Pencil className="h-3 w-3" />
+                      AI 改寫
+                    </button>
+                  </span>
+                  {/* 優化 Prompt */}
+                  <span title={!theme.trim() ? "輸入畫面描述後即可使用" : undefined} className="inline-flex">
+                    <button
+                      type="button"
+                      onClick={optimizeTheme}
+                      disabled={optimizing || !theme.trim()}
+                      className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                        optimizing || !theme.trim()
+                          ? "cursor-not-allowed border-[#E5E7EB] text-[#9CA3AF] bg-[#F8F9FB]"
+                          : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
+                      }`}
+                    >
+                      {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      <span>優化 Prompt</span>
+                    </button>
+                  </span>
                 </div>
               </div>
+              <p className="text-xs text-gray-400">先描述你想要的畫面，也可以輸入後使用 AI 幫你改寫或優化。</p>
               <textarea
                 value={theme}
                 onChange={(e) => setTheme(e.target.value)}
                 rows={4}
                 placeholder="例：日系文青風的夏季芒果冰新品上市，整體色彩明亮、有清涼消暑感。"
-                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300"
+                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {/* AI 幫改：指令式修改主題 Prompt */}
               {editingPrompt && (
@@ -690,7 +699,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                     onChange={(e) => updateCell(i, { description: e.target.value })}
                     rows={2}
                     placeholder="描述這一格的畫面…"
-                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300"
+                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                   {cellEditingIdx === i && (
                     <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-2 space-y-1.5">

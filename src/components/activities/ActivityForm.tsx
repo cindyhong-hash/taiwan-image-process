@@ -444,42 +444,46 @@ export function ActivityForm({
                 field="scene"
                 onPick={(text) => set("imagePrompt", text)}
               />
-              {/* AI 幫改 */}
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingPrompt((prev) => !prev);
-                  setEditInstruction("");
-                }}
-                disabled={!values.imagePrompt.trim()}
-                className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                  !values.imagePrompt.trim()
-                    ? "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"
-                    : editingPrompt
-                    ? "border-blue-300 text-blue-600 bg-blue-50"
-                    : "border-gray-200 text-gray-500 hover:bg-gray-50 cursor-pointer"
-                }`}
-              >
-                <Pencil className="h-3 w-3" />
-                AI 幫改
-              </button>
+              {/* AI 改寫（要有 Prompt 先可用；disabled 時外層 span 帶 tooltip）*/}
+              <span title={!values.imagePrompt.trim() ? "輸入畫面描述後即可使用" : undefined} className="inline-flex">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingPrompt((prev) => !prev);
+                    setEditInstruction("");
+                  }}
+                  disabled={!values.imagePrompt.trim()}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                    !values.imagePrompt.trim()
+                      ? "cursor-not-allowed border-[#E5E7EB] text-[#9CA3AF] bg-[#F8F9FB]"
+                      : editingPrompt
+                      ? "border-violet-400 text-violet-700 bg-violet-50 cursor-pointer"
+                      : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
+                  }`}
+                >
+                  <Pencil className="h-3 w-3" />
+                  AI 改寫
+                </button>
+              </span>
 
-              {/* AI 優化提示詞 */}
-              <button
-                type="button"
-                onClick={handleOptimizePrompt}
-                disabled={optimizingPrompt || !values.imagePrompt.trim()}
-                className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                  optimizingPrompt || !values.imagePrompt.trim()
-                    ? "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"
-                    : "border-violet-300 text-violet-600 hover:bg-violet-50 cursor-pointer"
-                }`}
-              >
-                {optimizingPrompt
-                  ? <Loader2 className="h-3 w-3 animate-spin" />
-                  : <Wand2 className="h-3 w-3" />}
-                {optimizingPrompt ? "優化中…" : "AI 優化提示詞"}
-              </button>
+              {/* 優化 Prompt */}
+              <span title={!values.imagePrompt.trim() ? "輸入畫面描述後即可使用" : undefined} className="inline-flex">
+                <button
+                  type="button"
+                  onClick={handleOptimizePrompt}
+                  disabled={optimizingPrompt || !values.imagePrompt.trim()}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                    optimizingPrompt || !values.imagePrompt.trim()
+                      ? "cursor-not-allowed border-[#E5E7EB] text-[#9CA3AF] bg-[#F8F9FB]"
+                      : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
+                  }`}
+                >
+                  {optimizingPrompt
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <Wand2 className="h-3 w-3" />}
+                  {optimizingPrompt ? "優化中…" : "優化 Prompt"}
+                </button>
+              </span>
 
               {/* 上一步/重做：一齊出現一齊收埋，唔會各自獨立顯示/隱藏（見 PromptComposer 同一注釋）。 */}
               {(imagePromptHistory.canUndo || imagePromptHistory.canRedo) && (
@@ -502,6 +506,7 @@ export function ActivityForm({
               )}
             </div>
           </div>
+          <p className="text-xs text-gray-400">先描述你想要的畫面，也可以輸入後使用 AI 幫你改寫或優化。</p>
           <textarea
             value={values.imagePrompt}
             onChange={(e) => set("imagePrompt", e.target.value)}
