@@ -344,7 +344,7 @@ const S: Record<string, React.CSSProperties> = {
   // fills the padded <main> content area (no fixed overlay → sidebar stays visible)
   wrap: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 48px)", fontFamily: "'Manrope','Noto Sans TC',system-ui,sans-serif" },
   card: { width: "min(680px,100%)", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 20, padding: 28, color: "#1f2937", boxShadow: "0 10px 40px rgba(0,0,0,.06)" },
-  editorPanel: { height: "calc(100vh - 48px)", borderRadius: 14, overflow: "hidden", border: "1px solid #e5e7eb", boxShadow: "0 10px 40px rgba(0,0,0,.06)", background: "#fff" },
+  editorPanel: { height: "100%", overflow: "hidden", background: "#fff" },
   hint: { color: "#6b7280", fontSize: 13, lineHeight: 1.6, margin: "8px 0 18px" },
   label: { display: "block", fontSize: 12, color: "#6b7280", margin: "0 0 4px", fontWeight: 600 },
   input: { width: "100%", background: "#ffffff", border: "1px solid #e5e7eb", color: "#1f2937", borderRadius: 10, padding: "9px 11px", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" },
