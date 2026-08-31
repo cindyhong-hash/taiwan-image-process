@@ -6,6 +6,8 @@ import { AdCreationHeader } from "@/components/adcreation/AdCreationHeader";
 import { BrandMemoryBar } from "@/components/adcreation/BrandMemoryBar";
 import { CreationCards } from "@/components/adcreation/CreationCards";
 import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
+import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
+import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
 import { getMultiLayout } from "@/types/multiLayout";
 import { setLastClientTab } from "@/lib/lastClientTab";
 
@@ -133,12 +135,27 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   const [batchBusy, setBatchBusy] = useState(false);
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
+  const [showBasePicker, setShowBasePicker] = useState(false); // 套用素材底圖：從素材庫揀底圖
 
   // 全新生成 → 直接選版型：單張→單圖表單；其餘→多圖表單(帶 layout)
   const handleLayout = (id: string) => {
     setShowTypeModal(false);
     if (id === "single") router.push(`/clients/${clientId}/activities/new`);
     else router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
+  };
+
+  // 套用素材底圖 → 揀一張圖做底圖 → 進單圖底圖模式表單（沿用 NewActivityModal 既有底圖交接：
+  // 把圖存 sessionStorage(ACTIVITY_BASE_KEY)，/activities/new 讀到就進底圖模式，功能不變）。
+  const handlePickedBase = (url: string, promptText?: string) => {
+    try {
+      sessionStorage.removeItem(ACTIVITY_REF_KEY);
+      sessionStorage.removeItem(ACTIVITY_BASE_KEY);
+      sessionStorage.removeItem(ACTIVITY_IMAGE_PROMPT_KEY);
+      sessionStorage.setItem(ACTIVITY_BASE_KEY, url);
+      if (promptText?.trim()) sessionStorage.setItem(ACTIVITY_IMAGE_PROMPT_KEY, promptText.trim());
+    } catch { /* ignore */ }
+    setShowBasePicker(false);
+    router.push(`/clients/${clientId}/activities/new`);
   };
 
   useEffect(() => {
@@ -216,7 +233,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
         taboos={client.taboos}
       />
 
-      <CreationCards onNewGenerate={() => setShowTypeModal(true)} />
+      <CreationCards onNewGenerate={() => setShowTypeModal(true)} onApplyBase={() => setShowBasePicker(true)} />
 
       <h2 className="text-lg font-semibold text-gray-900 mb-3">最近圖文</h2>
 
@@ -318,6 +335,14 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
         </>
       )}
 
+      {showBasePicker && (
+        <LibraryImagePickerModal
+          clientId={clientId}
+          title="從素材庫選底圖"
+          onPick={handlePickedBase}
+          onClose={() => setShowBasePicker(false)}
+        />
+      )}
       {showTypeModal && (
         <MultiLayoutPicker selectedId="single" onSelect={handleLayout} onClose={() => setShowTypeModal(false)} />
       )}

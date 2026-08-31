@@ -1,6 +1,6 @@
 import { Image as ImageIcon, LayoutTemplate, ArrowRight } from "lucide-react";
 
-export function CreationCards({ onNewGenerate }: { onNewGenerate: () => void }) {
+export function CreationCards({ onNewGenerate, onApplyBase }: { onNewGenerate: () => void; onApplyBase: () => void }) {
   return (
     <div className="mb-8 grid grid-cols-3 gap-4">
       {/* 卡1 全新生成（推薦，violet 虛線框）— 本 Phase 接 popup */}
@@ -13,12 +13,12 @@ export function CreationCards({ onNewGenerate }: { onNewGenerate: () => void }) 
           開始創作 <ArrowRight className="h-4 w-4" />
         </button>
       </div>
-      {/* 卡2 套用素材底圖 — 本 Phase 視覺卡，onClick 留白 */}
+      {/* 卡2 套用素材底圖 — 從素材庫揀一張圖做底圖 → 進底圖模式表單（沿用既有底圖流程） */}
       <div className="rounded-2xl border border-gray-200 bg-white p-5">
         <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100 text-blue-500"><ImageIcon className="h-5 w-5" /></span>
         <div className="text-lg font-semibold text-gray-900">套用素材底圖</div>
         <p className="mt-1 mb-5 text-sm text-gray-400">選擇專業的造型與素材，快速套用內容</p>
-        <button type="button" className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+        <button type="button" onClick={onApplyBase} className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
           選擇底圖 <ArrowRight className="h-4 w-4" />
         </button>
       </div>
