@@ -43,6 +43,8 @@ export default function EditorPage({ params }: { params: Promise<{ clientId: str
           brandLogoUrl={activity.client?.logoUrl ?? undefined}
           logoMode={activity.logoMode}
           logoVersions={activity.client?.logoUrls ?? []}
+          theme={activity.theme}
+          backHref={`/clients/${clientId}/activities/${activityId}`}
         />
       ) : (
         <EditorCanvas
