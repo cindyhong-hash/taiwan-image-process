@@ -20,15 +20,18 @@ type GalleryItem = {
 type TypeKey = "product" | "background" | "person" | "illustration" | "reference";
 type Client = { id: string; name: string };
 
-// 同 ComponentGrid FILTER_META 一致：lucide icon + 每類 solid 底色（tag 用 cls，filter 選中用 activeCls）。
-const META: Record<TypeKey, { label: string; Icon: LucideIcon; cls: string; activeCls: string }> = {
-  product:      { label: "產品成圖", Icon: Package,    cls: "bg-[#C9A227]", activeCls: "bg-[#C9A227] text-white border-[#C9A227]" },
-  background:   { label: "背景",     Icon: Mountain,   cls: "bg-teal-600",   activeCls: "bg-teal-600 text-white border-teal-600" },
-  person:       { label: "人像",     Icon: UserRound,  cls: "bg-rose-500",   activeCls: "bg-rose-500 text-white border-rose-500" },
-  illustration: { label: "插畫",     Icon: Palette,    cls: "bg-amber-500",  activeCls: "bg-amber-500 text-white border-amber-500" },
-  reference:    { label: "參考圖",   Icon: Paperclip,  cls: "bg-blue-500",   activeCls: "bg-blue-500 text-white border-blue-500" },
+// 圖卡上的分類標籤：每類保留自己顏色，但用淺底＋深字（pastel），跟 Figma。
+const META: Record<TypeKey, { label: string; Icon: LucideIcon; badge: string }> = {
+  product:      { label: "產品成圖", Icon: Package,    badge: "bg-gray-100 text-gray-600" },
+  background:   { label: "背景",     Icon: Mountain,   badge: "bg-emerald-100 text-emerald-700" },
+  person:       { label: "人像",     Icon: UserRound,  badge: "bg-violet-100 text-violet-700" },
+  illustration: { label: "插畫",     Icon: Palette,    badge: "bg-rose-100 text-rose-600" },
+  reference:    { label: "參考圖",   Icon: Paperclip,  badge: "bg-blue-100 text-blue-600" },
 };
-const ALL_META = { label: "全部", Icon: LayoutGrid, activeCls: "bg-violet-600 text-white border-violet-600" };
+const ALL_META = { label: "全部", Icon: LayoutGrid };
+// 下方分類 chip 統一色：選中一律品牌紫、未選白底灰字（不分類上色，跟 Figma）。
+const CHIP_ACTIVE = "bg-violet-600 text-white border-violet-600";
+const CHIP_IDLE = "bg-white text-gray-600 border-gray-200 hover:border-gray-300";
 
 function itemType(it: GalleryItem): TypeKey {
   if (it.kind === "material") return "background";
@@ -94,33 +97,33 @@ export function LibraryImagePickerModal({
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-3xl h-[80vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
+      <div className="relative w-full max-w-3xl h-[80vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 shrink-0">
+          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X className="h-4 w-4" /></button>
         </div>
-        <div className="px-4 pt-2.5 pb-2 border-b bg-gray-50/60 shrink-0 space-y-2">
-          {/* 品牌切換：預設鎖當前品牌；撳「全部品牌」可跨品牌揀（同積木 picker 一致）*/}
-          <div className="flex flex-wrap gap-1.5">
+        <div className="px-6 pb-3 shrink-0 space-y-3">
+          {/* 品牌切換：預設鎖當前品牌；撳「全部品牌」可跨品牌揀。選中＝紫色外框（跟 Figma）*/}
+          <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setFilterClientId("")}
-              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                filterClientId === "" ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-600 hover:border-gray-400"}`}>
+              className={`text-sm px-4 py-1.5 rounded-full border transition-colors ${
+                filterClientId === "" ? "bg-white border-violet-400 text-violet-600 font-medium" : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"}`}>
               全部品牌
             </button>
             {clients.map((c) => (
               <button type="button" key={c.id} onClick={() => setFilterClientId(c.id)}
-                className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                  filterClientId === c.id ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-600 hover:border-gray-400"}`}>
+                className={`text-sm px-4 py-1.5 rounded-full border transition-colors ${
+                  filterClientId === c.id ? "bg-white border-violet-400 text-violet-600 font-medium" : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"}`}>
                 {c.name}
               </button>
             ))}
           </div>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋標題 / AI Prompt…"
-              className="w-full border border-gray-300 rounded-full pl-9 pr-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              className="w-full border border-gray-200 rounded-xl pl-10 pr-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-gray-400" />
           </div>
-          <div className="flex gap-1.5 flex-wrap">
+          <div className="flex gap-2 flex-wrap">
             {pills.map((k) => {
               const m = k === "ALL" ? ALL_META : META[k];
               const Icon = m.Icon;
@@ -128,14 +131,14 @@ export function LibraryImagePickerModal({
               const cnt = k === "ALL" ? withType.length : (counts[k] ?? 0);
               return (
                 <button key={k} type="button" onClick={() => setTypeFilter(k)}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors ${active ? m.activeCls : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"}`}>
-                  <Icon className="h-3 w-3" />{m.label} <span className="opacity-60">{cnt}</span>
+                  className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border transition-colors ${active ? CHIP_ACTIVE : CHIP_IDLE}`}>
+                  <Icon className="h-3.5 w-3.5" />{m.label} <span className="opacity-60">{cnt}</span>
                 </button>
               );
             })}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-1">
           {loading ? (
             <div className="text-center text-gray-400 py-10 text-sm">載入中…</div>
           ) : filtered.length === 0 ? (
@@ -147,12 +150,12 @@ export function LibraryImagePickerModal({
                 const Icon = m.Icon;
                 return (
                   <button type="button" key={it.imageUrl} onClick={() => onPick(it.imageUrl, it.prompt || it.aiPromptText || "")} title={it.subject || it.name || ""}
-                    className="group relative rounded-xl border border-gray-200 overflow-hidden hover:border-violet-400 hover:shadow-md transition-all">
+                    className="group relative rounded-2xl border border-gray-200 p-1.5 bg-white hover:border-violet-400 hover:shadow-md transition-all">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={it.imageUrl} alt="" loading="lazy" decoding="async" className="w-full aspect-square object-contain bg-gray-50" />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
-                    <span className={`absolute top-2 left-2 flex items-center gap-1 text-[10px] font-semibold ${m.cls} text-white px-1.5 py-0.5 rounded-full shadow whitespace-nowrap pointer-events-none`}>
-                      <Icon className="h-2.5 w-2.5" />{m.label}
+                    <img src={it.imageUrl} alt="" loading="lazy" decoding="async" className="w-full aspect-square object-contain bg-gray-50 rounded-xl" />
+                    <div className="absolute inset-1.5 rounded-xl bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
+                    <span className={`absolute top-3 left-3 flex items-center gap-1 text-[11px] font-medium ${m.badge} px-2 py-0.5 rounded-full whitespace-nowrap pointer-events-none`}>
+                      <Icon className="h-3 w-3" />{m.label}
                     </span>
                   </button>
                 );
