@@ -455,7 +455,7 @@ export function ActivityForm({
                   disabled={!values.imagePrompt.trim()}
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
                     !values.imagePrompt.trim()
-                      ? "cursor-not-allowed border-[#E5E7EB] text-[#9CA3AF] bg-[#F8F9FB]"
+                      ? "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"
                       : editingPrompt
                       ? "border-violet-400 text-violet-700 bg-violet-50 cursor-pointer"
                       : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
@@ -474,7 +474,7 @@ export function ActivityForm({
                   disabled={optimizingPrompt || !values.imagePrompt.trim()}
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
                     optimizingPrompt || !values.imagePrompt.trim()
-                      ? "cursor-not-allowed border-[#E5E7EB] text-[#9CA3AF] bg-[#F8F9FB]"
+                      ? "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"
                       : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
                   }`}
                 >
