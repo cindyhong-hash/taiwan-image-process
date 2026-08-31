@@ -14,7 +14,7 @@ export function CreationCards({
   const cardBase =
     "group relative flex flex-col rounded-2xl bg-white p-5 text-left transition-all cursor-pointer";
   const cta =
-    "pointer-events-none flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium";
+    "pointer-events-none inline-flex self-start items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium";
   return (
     <div className="mb-8 grid grid-cols-3 gap-4">
       {/* 卡1 全新生成（推薦，violet 虛線框）→ 生成類型 popup */}
