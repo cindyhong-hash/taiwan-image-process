@@ -23,7 +23,7 @@ const RATIO_SIZE: Record<string, [number, number]> = {
 export async function POST(request: Request) {
   try {
     if (!process.env.FAL_KEY) return NextResponse.json({ error: "缺少 FAL_KEY（背景生成/產品去背需要）" }, { status: 400 });
-    const body = (await request.json()) as ComposeInput & { backgroundPrompt?: string; ratio?: string; fitMode?: "cover" | "contain" };
+    const body = (await request.json()) as ComposeInput & { backgroundPrompt?: string; backgroundRefUrl?: string; ratio?: string; fitMode?: "cover" | "contain" };
     const ratio = body.ratio ?? "1:1";
     const [dw, dh] = RATIO_SIZE[ratio] ?? [1024, 1024];
     let canvasWidth = body.canvasWidth || dw;
@@ -32,7 +32,8 @@ export async function POST(request: Request) {
     let backgroundUrl = body.backgroundUrl;
     const bgProvided = !!backgroundUrl;   // supplied (upload / 素材庫) vs AI-generated
     if (!backgroundUrl && body.backgroundPrompt) {
-      backgroundUrl = await generateImageFal({ prompt: body.backgroundPrompt, imageRatio: ratio, seed: `ml-bg-${canvasWidth}x${canvasHeight}` });
+      // backgroundRefUrl（選填）＝參考圖：交給 FAL 的 image_prompt 影響生成風格/構圖。
+      backgroundUrl = await generateImageFal({ prompt: body.backgroundPrompt, imageRatio: ratio, seed: `ml-bg-${canvasWidth}x${canvasHeight}`, styleReferenceUrl: body.backgroundRefUrl || undefined });
     }
     if (!backgroundUrl) return NextResponse.json({ error: "需要 backgroundUrl 或 backgroundPrompt" }, { status: 400 });
 

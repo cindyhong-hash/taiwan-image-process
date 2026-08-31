@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { File as FileIcon, Image as ImageIcon, Sparkles, X, Loader2, RotateCcw } from "lucide-react";
+import { File as FileIcon, Image as ImageIcon, Sparkles, X, Loader2, RotateCcw, ChevronRight } from "lucide-react";
 import { ML_WIZARD_SEED_KEY } from "@/components/activities/RolePickerModal";
 
 type Step = "method" | "material" | "aiPrompt" | "aiResult" | "canvas";
@@ -78,7 +78,7 @@ export function FreeLayoutWizard({ clientId, onClose }: { clientId: string; onCl
     try {
       const r = await fetch("/api/magic-layers/compose", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backgroundPrompt: aiPrompt.trim(), ratio: "1:1", productImageUrls: [], texts: [] }),
+        body: JSON.stringify({ backgroundPrompt: aiPrompt.trim(), backgroundRefUrl: aiRefUrl || undefined, ratio: "1:1", productImageUrls: [], texts: [] }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? r.statusText);
@@ -89,7 +89,7 @@ export function FreeLayoutWizard({ clientId, onClose }: { clientId: string; onCl
     } finally {
       setBusy(false); setProgress("");
     }
-  }, [aiPrompt, busy]);
+  }, [aiPrompt, aiRefUrl, busy]);
 
   const handleCreate = useCallback(async () => {
     if (busy) return;
@@ -128,7 +128,7 @@ export function FreeLayoutWizard({ clientId, onClose }: { clientId: string; onCl
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden"
+        className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {busy && (
@@ -140,52 +140,37 @@ export function FreeLayoutWizard({ clientId, onClose }: { clientId: string; onCl
 
         {step === "method" && (
           <div className="p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-semibold text-gray-900">建立自由排版</h2>
-              <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+            <div className="relative flex items-center justify-center mb-6">
+              <WizardSteps activeIndex={1} />
+              <button type="button" onClick={onClose} className="absolute right-0 top-0 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="space-y-3">
-              <button
-                type="button"
-                className={optionBtn}
-                onClick={() => { router.push(`/clients/${clientId}/magic-layers/compose?blank=1`); onClose(); }}
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-gray-500">
-                  <FileIcon className="h-5 w-5" />
-                </span>
-                <span>
-                  <div className="font-semibold text-gray-900">空白畫布</div>
-                  <div className="text-sm text-gray-400">從一張空白畫布開始</div>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={optionBtn}
-                onClick={() => { setBranch("material"); setStep("material"); }}
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-500">
-                  <ImageIcon className="h-5 w-5" />
-                </span>
-                <span>
-                  <div className="font-semibold text-gray-900">從素材開始</div>
-                  <div className="text-sm text-gray-400">選一張素材庫圖片開始</div>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={optionBtn}
-                onClick={() => { setBranch("ai"); setStep("aiPrompt"); }}
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-500">
-                  <Sparkles className="h-5 w-5" />
-                </span>
-                <span>
-                  <div className="font-semibold text-gray-900">AI 幫我建立底圖</div>
-                  <div className="text-sm text-gray-400">用 AI 生成一張背景開始</div>
-                </span>
-              </button>
+            <h2 className="flex items-center gap-2 text-2xl font-bold text-gray-900">建立自由排版 <Sparkles className="h-5 w-5 text-violet-500" /></h2>
+            <p className="mt-1 mb-6 text-sm text-gray-400">選擇一個起點，進入畫布後都可以自由加入圖片、產品與文字。</p>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { key: "blank", title: "空白開始", sub: "建立全新空白畫布", badge: "最自由設計", icon: <FileIcon className="h-6 w-6" />, iconCls: "bg-violet-600 text-white", badgeCls: "bg-violet-600 text-white", onClick: () => { router.push(`/clients/${clientId}/magic-layers/compose?blank=1`); onClose(); } },
+                { key: "material", title: "從素材開始", sub: "選一張素材作為底圖", badge: "已有商品圖片", icon: <ImageIcon className="h-6 w-6" />, iconCls: "bg-gray-100 text-gray-500", badgeCls: "bg-gray-100 text-gray-500", onClick: () => { setBranch("material"); setStep("material"); } },
+                { key: "ai", title: "AI 幫我建立底圖", sub: "描述想要的背景圖案", badge: "快速建立場景", icon: <Sparkles className="h-6 w-6" />, iconCls: "bg-violet-100 text-violet-500", badgeCls: "bg-gray-100 text-gray-500", onClick: () => { setBranch("ai"); setStep("aiPrompt"); } },
+              ].map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={c.onClick}
+                  className="group flex flex-col rounded-2xl border border-gray-200 p-5 text-left transition-all hover:border-violet-400 hover:bg-violet-50/40"
+                >
+                  <div className="mb-4 flex items-start justify-between">
+                    <span className={`flex h-12 w-12 items-center justify-center rounded-xl ${c.iconCls}`}>{c.icon}</span>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${c.badgeCls}`}>{c.badge}</span>
+                  </div>
+                  <div className="text-lg font-bold text-gray-900">{c.title}</div>
+                  <div className="mt-1 text-sm text-gray-400">{c.sub}</div>
+                  <div className="mt-4 flex items-center gap-0.5 text-sm font-medium text-gray-400 group-hover:text-violet-600">
+                    點擊選擇 <ChevronRight className="h-4 w-4" />
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         )}
