@@ -16,6 +16,7 @@ import type { PromptSlots, StyleComponent, ComponentCategory, PaletteColor, Pale
 import { getColors, PALETTE_ROLES, SHOW_SERIES_TEMPLATE } from "@/types/library";
 import { ColorCards } from "./ColorCards";
 import { SlotPickerModal } from "./SlotPickerModal";
+import { SectionLabel } from "@/components/activities/formParts";
 import { INDUSTRY_PRESETS } from "@/types/presets";
 import { useRotatingHint } from "@/hooks/useRotatingHint";
 import { pollLibraryImage } from "@/lib/pollLibraryImage";
@@ -145,16 +146,6 @@ function BlockCard({
 }
 
 // 編號分段標題（同活動圖頁 ActivityForm 一致）
-function SectionLabel({ step, title, hint }: { step: string; title: string; hint?: string }) {
-  return (
-    <div className="flex items-baseline gap-2 border-b pb-1.5">
-      <span className="text-[10px] font-bold text-gray-400 tracking-widest">{step}</span>
-      <span className="text-sm font-semibold text-gray-800">{title}</span>
-      {hint && <span className="text-xs text-gray-400 font-normal">{hint}</span>}
-    </div>
-  );
-}
-
 // ─── Main ────────────────────────────────────────────────────────────────────
 export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function PromptComposer(
   { slots, onClearSlot, onPickSlot, clientId, onGenerated, onStarted, prefill, prefillNonce, onDirtyChange }, ref) {

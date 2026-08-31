@@ -15,6 +15,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Wand2, Loader2, Check, Save, Link2, Sparkles, Upload, RefreshCw, RotateCcw, RotateCw } from "lucide-react";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
+import { SectionLabel } from "@/components/activities/formParts";
 import { Button } from "@/components/ui/button";
 import { useRotatingHint } from "@/hooks/useRotatingHint";
 import { pollLibraryImage } from "@/lib/pollLibraryImage";
@@ -41,16 +42,6 @@ const TYPE_META: Record<AssetType, { label: string; sub: string; placeholder: st
 };
 
 // 編號分段標題（同產品圖生成台一致）
-function SectionLabel({ step, title, hint }: { step: string; title: string; hint?: string }) {
-  return (
-    <div className="flex items-baseline gap-2 border-b pb-1.5">
-      <span className="text-[10px] font-bold text-gray-400 tracking-widest">{step}</span>
-      <span className="text-sm font-semibold text-gray-800">{title}</span>
-      {hint && <span className="text-xs text-gray-400 font-normal">{hint}</span>}
-    </div>
-  );
-}
-
 export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: Props) {
   const [description, setDescription] = useState(init?.description ?? "");
   // AI優化提示詞嘅上一步/重做棧（見 src/hooks/useUndoRedo.ts）。
