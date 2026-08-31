@@ -13,7 +13,7 @@
    for AI 生成 (picked/uploaded backgrounds drive the canvas by their real size).
    ============================================================ */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { MagicLayersEditor, type SavedLayer } from "@/components/magic-layers/MagicLayersEditor.tsx";
 import type { LayerData, SemanticId } from "@/lib/magic-layers/types.ts";
 import { ML_COMPOSE_BG_KEY, ML_COMPOSE_CLIENT_KEY, ML_WIZARD_SEED_KEY } from "@/components/activities/RolePickerModal";
@@ -29,7 +29,7 @@ function savedToLayerData(sl: SavedLayer): LayerData {
     zIndex: sl.zIndex, confidence: 1, source: "generated", editable: true,
     embeddedText: [], children: [],
     meta: {
-      visible: sl.visible, locked: sl.locked, opacity: sl.opacity,
+      visible: sl.visible, locked: sl.locked, opacity: sl.opacity, groupId: sl.groupId ?? null,
       ...(sl.isText ? { style: { text: sl.text, fontSizePx: sl.fontSize, fontWeight: sl.fontWeight, color: sl.color, align: sl.align, fontFamily: sl.fontFamily, fx: sl.fx ?? null }, textObject: { text: sl.text } } : {}),
       ...(sl.isArt ? { isArt: true, artText: sl.text ?? "", ...(sl.artRefImage ? { artRefImage: sl.artRefImage } : {}) } : {}),
       ...(sl.shape ? { shape: sl.shape } : {}),
@@ -53,6 +53,10 @@ function loadImg(url: string): Promise<HTMLImageElement> {
 
 export function ComposeView({ clientId: clientIdProp }: { clientId?: string }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  // 經 handoff（自由排版精靈 seed / 空白 blank / 載入既有排版 activity）進來 → 「返回」離開編輯器，
+  // 唔好跌返舊版分層合成表單（已被精靈取代）。表單流程（直接開 compose 頁填表）先維持原本「返回＝回表單」。
+  const [fromHandoff, setFromHandoff] = useState(false);
   const [bgMode, setBgMode] = useState<BgMode>(clientIdProp ? "library" : "ai");
   const [bgPrompt, setBgPrompt] = useState("典雅浴室，大理石檯面，柔和自然光，清新留白背景，無產品無文字");
   const [libUrl, setLibUrl] = useState<string>("");       // 選中的素材庫背景
@@ -95,6 +99,7 @@ export function ComposeView({ clientId: clientIdProp }: { clientId?: string }) {
       if (cancelled) return;
       setImg(im);
       setLayers([]);
+      setFromHandoff(true);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,6 +121,7 @@ export function ComposeView({ clientId: clientIdProp }: { clientId?: string }) {
         if (cancelled) return;
         setImg(im);
         setLayers(seed.layers);
+        setFromHandoff(true);
         if (seed.clientId && !clientIdProp) setClientId(seed.clientId);
         if (seed.title) { setTitle(seed.title); setDocName(seed.title); }
         sessionStorage.removeItem(ML_WIZARD_SEED_KEY);
@@ -145,6 +151,7 @@ export function ComposeView({ clientId: clientIdProp }: { clientId?: string }) {
         if (cancelled) return;
         setImg(im);
         setLayers((d.layers as SavedLayer[]).map(savedToLayerData));
+        setFromHandoff(true);
         if (d.activityId) setActivityId(d.activityId);
         if (d.name) { setTitle(d.name); setDocName(d.name); }
       } catch { /* ignore — falls back to the form */ }
@@ -239,7 +246,11 @@ export function ComposeView({ clientId: clientIdProp }: { clientId?: string }) {
       <div style={S.editorPanel}>
         <MagicLayersEditor image={img} layers={layers} backgrounds={bgLibrary} logos={logos}
           name={docName ?? title} onRename={setDocName}
-          onBack={() => { setLayers(null); setImg(null); }} onSave={handleSave} />
+          onBack={() => {
+            // handoff（精靈/空白/續編）進來 → 返回離開編輯器（回上一頁）；表單流程 → 返回回表單。
+            if (fromHandoff) { router.back(); }
+            else { setLayers(null); setImg(null); }
+          }} onSave={handleSave} />
       </div>
     );
   }
