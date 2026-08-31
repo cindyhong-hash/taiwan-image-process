@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { MagicLayersEditor, type SavedLayer } from "@/components/magic-layers/MagicLayersEditor.tsx";
 import type { LayerData, SemanticId } from "@/lib/magic-layers/types.ts";
-import { ML_COMPOSE_BG_KEY, ML_COMPOSE_CLIENT_KEY } from "@/components/activities/RolePickerModal";
+import { ML_COMPOSE_BG_KEY, ML_COMPOSE_CLIENT_KEY, ML_WIZARD_SEED_KEY } from "@/components/activities/RolePickerModal";
 
 // 把存起來的 SavedLayer[] 還原成編輯器吃的 LayerData[]（含執行期旗標塞進 meta）。
 function savedToLayerData(sl: SavedLayer): LayerData {
@@ -95,6 +95,31 @@ export function ComposeView({ clientId: clientIdProp }: { clientId?: string }) {
       if (cancelled) return;
       setImg(im);
       setLayers([]);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // [自由排版精靈] 網址帶 ?seed=1 → 讀 sessionStorage 已 compose 好嘅 layers/尺寸，直接落地編輯器。
+  useEffect(() => {
+    if (searchParams.get("seed") !== "1") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = sessionStorage.getItem(ML_WIZARD_SEED_KEY);
+        if (!raw) return;
+        const seed = JSON.parse(raw) as {
+          layers: LayerData[]; docW: number; docH: number;
+          clientId?: string; title?: string; subtitle?: string;
+        };
+        const im = await blankImage(seed.docW, seed.docH);
+        if (cancelled) return;
+        setImg(im);
+        setLayers(seed.layers);
+        if (seed.clientId && !clientIdProp) setClientId(seed.clientId);
+        if (seed.title) { setTitle(seed.title); setDocName(seed.title); }
+        sessionStorage.removeItem(ML_WIZARD_SEED_KEY);
+      } catch { /* ignore — falls back to the form */ }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

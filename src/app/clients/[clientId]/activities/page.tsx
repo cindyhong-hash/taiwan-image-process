@@ -5,6 +5,7 @@ import { Trash2, Search, CheckCircle2, Circle, X, Image as ImageIcon } from "luc
 import { AdCreationHeader } from "@/components/adcreation/AdCreationHeader";
 import { BrandMemoryBar } from "@/components/adcreation/BrandMemoryBar";
 import { CreationCards } from "@/components/adcreation/CreationCards";
+import { FreeLayoutWizard } from "@/components/adcreation/FreeLayoutWizard";
 import { MultiLayoutPicker } from "@/components/activities/MultiLayoutPicker";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
@@ -136,6 +137,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
   const [showBasePicker, setShowBasePicker] = useState(false); // 套用素材底圖：從素材庫揀底圖
+  const [showFreeWizard, setShowFreeWizard] = useState(false); // 自由排版建立精靈
 
   // 全新生成 → 直接選版型：單張→單圖表單；其餘→多圖表單(帶 layout)
   const handleLayout = (id: string) => {
@@ -233,7 +235,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
         taboos={client.taboos}
       />
 
-      <CreationCards onNewGenerate={() => setShowTypeModal(true)} onApplyBase={() => setShowBasePicker(true)} clientId={clientId} />
+      <CreationCards onNewGenerate={() => setShowTypeModal(true)} onApplyBase={() => setShowBasePicker(true)} onFreeLayout={() => setShowFreeWizard(true)} />
 
       <h2 className="text-lg font-semibold text-gray-900 mb-3">最近圖文</h2>
 
@@ -345,6 +347,9 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
       )}
       {showTypeModal && (
         <MultiLayoutPicker selectedId="single" onSelect={handleLayout} onClose={() => setShowTypeModal(false)} />
+      )}
+      {showFreeWizard && (
+        <FreeLayoutWizard clientId={clientId} onClose={() => setShowFreeWizard(false)} />
       )}
     </div>
   );

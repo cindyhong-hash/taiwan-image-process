@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Image as ImageIcon, LayoutTemplate, ArrowRight } from "lucide-react";
 
 // 三張創作卡：整張卡可點＋hover 有反應（跟首頁 QuickStartCards 一致），
@@ -6,11 +5,11 @@ import { Image as ImageIcon, LayoutTemplate, ArrowRight } from "lucide-react";
 export function CreationCards({
   onNewGenerate,
   onApplyBase,
-  clientId,
+  onFreeLayout,
 }: {
   onNewGenerate: () => void;
   onApplyBase: () => void;
-  clientId: string;
+  onFreeLayout: () => void;
 }) {
   const cardBase =
     "group relative flex flex-col rounded-2xl bg-white p-5 text-left transition-all cursor-pointer";
@@ -47,9 +46,10 @@ export function CreationCards({
         </span>
       </button>
 
-      {/* 卡3 自由排版（NEW）→ 空白 Magic Layers 畫布（同首頁） */}
-      <Link
-        href={`/magic-layers/compose?blank=1&clientId=${clientId}`}
+      {/* 卡3 自由排版（NEW）→ 建立精靈（空白/從素材/AI底圖 → 選尺寸 → Magic Layers 編輯器） */}
+      <button
+        type="button"
+        onClick={onFreeLayout}
         className={`${cardBase} border border-gray-200 hover:border-violet-300 hover:shadow-sm`}
       >
         <div className="mb-4 flex items-start justify-between">
@@ -61,7 +61,7 @@ export function CreationCards({
         <span className={`${cta} mt-auto border border-gray-200 text-gray-600 group-hover:border-violet-300 group-hover:text-violet-600`}>
           開始創作 <ArrowRight className="h-4 w-4" />
         </span>
-      </Link>
+      </button>
     </div>
   );
 }

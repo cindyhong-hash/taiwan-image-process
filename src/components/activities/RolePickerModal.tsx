@@ -20,6 +20,9 @@ export const ACTIVITY_HANDOFF_KEY = "activityFormHandoff";
 export const ML_COMPOSE_BG_KEY = "mlComposeBg";
 // 同時帶 clientId，令 compose 頁的背景庫連動「該品牌素材庫」的內容。
 export const ML_COMPOSE_CLIENT_KEY = "mlComposeClient";
+// [自由排版精靈] compose() 完成後把 {layers, docW, docH, clientId, title, subtitle} 經
+// sessionStorage 傳去 /magic-layers/compose?seed=1，畫面一開即直接落地編輯器（跳過表單）。
+export const ML_WIZARD_SEED_KEY = "mlWizardSeed";
 
 export function RolePickerModal({
   imageUrl,
