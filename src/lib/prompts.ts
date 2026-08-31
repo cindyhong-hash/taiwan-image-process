@@ -257,6 +257,7 @@ type CopyPromptParams = {
   taboos: string[];
   forceTitle?: boolean;  // 主標題強制使用 titleText（鎖定版）
   productContext?: string;  // [底圖模式] vision 認出嘅產品/畫面描述，令冇 title 時文案唔會離題
+  brandDescription?: string; // 品牌簡介（品牌記憶）：作品牌背景參考，讓文案更貼品牌
 };
 
 const LAYOUT_COPY_PERSONA: Record<string, { direction: string; examples: string }> = {
@@ -278,7 +279,10 @@ const LAYOUT_COPY_PERSONA: Record<string, { direction: string; examples: string 
 };
 
 export function buildCopyPrompt(params: CopyPromptParams): string {
-  const { theme, focusPoint, titleText, toneLabels, layoutType, taboos, forceTitle, productContext } = params;
+  const { theme, focusPoint, titleText, toneLabels, layoutType, taboos, forceTitle, productContext, brandDescription } = params;
+  const brandLine = brandDescription?.trim()
+    ? `- 品牌簡介（背景參考，文案風格要貼合這個品牌）：${brandDescription.trim()}`
+    : "";
 
   const persona = LAYOUT_COPY_PERSONA[layoutType] ?? LAYOUT_COPY_PERSONA["A"];
 
@@ -314,7 +318,7 @@ ${messageDirection}
 
 【活動資訊】
 ${themeLine}
-${productLine ? productLine + "\n" : ""}- 品牌調性：${toneLabels.join("、") || "專業、親切"}
+${productLine ? productLine + "\n" : ""}${brandLine ? brandLine + "\n" : ""}- 品牌調性：${toneLabels.join("、") || "專業、親切"}
 - 版型方向：${persona.direction}
 - 禁忌事項：${taboos.length > 0 ? taboos.join("、") : "無特別限制"}
 

@@ -9,6 +9,9 @@ datasource db {
 model Client {
   id             String     @id @default(cuid())
   name           String
+  description    String?    // 品牌簡介：帶入品牌記憶，生圖/文案時作品牌背景參考
+  industry       String?    // 品牌產業
+  fonts              String     @default("[]")  // 常用字體 JSON string[]
   primaryColor   String
   secondaryColor String?
   logoUrl        String?

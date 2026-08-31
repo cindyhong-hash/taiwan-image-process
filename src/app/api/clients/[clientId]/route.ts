@@ -8,6 +8,7 @@ function parseClient(client: Record<string, unknown>) {
     taboos: JSON.parse(client.taboos as string),
     pastPostImageUrls: JSON.parse((client.pastPostImageUrls as string) ?? "[]"),
     logoUrls: JSON.parse((client.logoUrls as string) ?? "[]"),
+    fonts: JSON.parse((client.fonts as string) ?? "[]"),
   };
 }
 
@@ -41,6 +42,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
   if (body.paletteColors) updateData.paletteColors = JSON.stringify(body.paletteColors);   // [WIP/素材庫] 防呆：array→string
   if (body.pastPostImageUrls) updateData.pastPostImageUrls = JSON.stringify(body.pastPostImageUrls);
   if (body.logoUrls) updateData.logoUrls = JSON.stringify(body.logoUrls);   // 多版本 logo
+  if (body.fonts) updateData.fonts = JSON.stringify(body.fonts);            // 常用字體 array→string
+  // description / industry 為純量欄位，隨 ...body 直接存入（品牌簡介帶入品牌記憶）。
 
   const client = await db.client.update({
     where: { id: clientId },

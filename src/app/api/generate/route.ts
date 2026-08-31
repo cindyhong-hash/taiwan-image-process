@@ -207,6 +207,7 @@ export async function POST(request: Request) {
           taboos:     [],
           forceTitle: false, // 一律讓 AI 寫（有必放文字時只取佢嘅副標，主標用戶鎖定）
           productContext: productDesc ?? undefined,
+          brandDescription: client.description ?? undefined,
         });
         const rawCopy = (await chatTextOpenRouter(copyPrompt, 500)) ?? "";
         const { title: aiTitle, imageSubtitle: aiSub } = parseImageText(rawCopy);
@@ -349,6 +350,7 @@ export async function POST(request: Request) {
         layoutType: layoutConfig.type,
         taboos,
         forceTitle: false, // 一律讓 AI 寫（有必放文字時只取佢嘅副標，主標用戶鎖定）
+        brandDescription: client.description ?? undefined,
       });
       const rawCopy = (await chatTextOpenRouter(copyPrompt, 500)) ?? "";
 
