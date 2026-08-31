@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Settings, Plug, ChevronLeft } from "lucide-react";
+import { Settings, Plug } from "lucide-react";
 import { BrandSettingsForm, type BrandFormValues } from "@/components/clients/BrandSettingsForm";
+import { AiLearnedCard } from "@/components/home/AiLearnedCard";
 
 type SettingsTab = "settings" | "linking";
 
@@ -32,14 +32,22 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
 
   if (!client) return <div className="text-gray-400">載入中...</div>;
 
+  // AI 已學習側卡：以已填欄位數估算品牌辨識完成度
+  const assetCount = client.pastPostImageUrls?.length ?? 0;
+  const learnedFields = [
+    !!client.name,
+    !!client.description,
+    !!client.industry,
+    !!client.primaryColor,
+    (client.logoUrls?.length ?? 0) > 0,
+    (client.toneLabels?.length ?? 0) > 0,
+    (client.fonts?.length ?? 0) > 0,
+    assetCount > 0,
+  ];
+  const percent = Math.round((learnedFields.filter(Boolean).length / learnedFields.length) * 100);
+
   return (
     <div>
-      {clientId && (
-        <Link href={`/clients/${clientId}`} className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 mb-4 transition-colors">
-          <ChevronLeft className="h-3.5 w-3.5" />返回品牌工作區
-        </Link>
-      )}
-
       {/* 2-tab：修改品牌設定 / 連動帳號調整（wireframe ⑨） */}
       <div className="flex gap-1 border-b mb-6">
         {([
@@ -48,14 +56,27 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
         ]).map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex items-center gap-1.5 px-4 pb-3 pt-1 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.key ? "border-black text-black" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
+              tab === t.key ? "border-violet-600 text-violet-700" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
             {t.icon}{t.label}
           </button>
         ))}
       </div>
 
       {tab === "settings" ? (
-        <BrandSettingsForm initialValues={client} onSubmit={handleSubmit} submitLabel="更新設定" />
+        <>
+          <div className="mb-6">
+            <h1 className="text-lg font-bold text-gray-900">品牌設定 ✨</h1>
+            <p className="text-sm text-gray-500 mt-1">管理你的品牌資訊，讓 AI 更精準生成符合品牌調性的內容</p>
+          </div>
+          <div className="flex gap-6 items-start">
+            <div className="flex-1 min-w-0">
+              <BrandSettingsForm initialValues={client} onSubmit={handleSubmit} submitLabel="更新品牌設定" />
+            </div>
+            <div className="hidden lg:block w-[300px] shrink-0 sticky top-6">
+              <AiLearnedCard assetCount={assetCount} percent={percent} />
+            </div>
+          </div>
+        </>
       ) : (
         <AccountLinkingStub />
       )}
