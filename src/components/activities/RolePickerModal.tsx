@@ -45,7 +45,7 @@ export function RolePickerModal({
           {/* 揀咗嘅圖預覽 */}
           <div className="flex justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt="揀咗嘅素材圖" className="max-h-40 rounded-xl border object-contain bg-gray-50" />
+            <img src={imageUrl} alt="已選的素材圖" className="max-h-40 rounded-xl border object-contain bg-gray-50" />
           </div>
 
           <p className="text-xs text-gray-500 text-center">呢張圖要點用？</p>
@@ -59,7 +59,7 @@ export function RolePickerModal({
               </span>
               <span>
                 <span className="block text-sm font-semibold text-gray-800">① 作參考圖</span>
-                <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">借呢張圖嘅風格，AI 另外生成一張全新畫面。</span>
+                <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">借這張圖的風格，AI 另外生成一張全新畫面。</span>
               </span>
             </button>
 
@@ -71,7 +71,7 @@ export function RolePickerModal({
               </span>
               <span>
                 <span className="block text-sm font-semibold text-gray-800">② 作活動圖底圖</span>
-                <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">成張相 100% 做背景（唔重新生圖），之後喺圖上加文字。</span>
+                <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">整張圖 100% 做背景（不重新生圖），之後在圖上加文字。</span>
               </span>
             </button>
           </div>

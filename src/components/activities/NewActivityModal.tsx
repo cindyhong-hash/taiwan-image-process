@@ -46,7 +46,7 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
     return (
       <LibraryImagePickerModal
         clientId={clientId}
-        title="從素材庫揀底圖"
+        title="從素材庫選底圖"
         onPick={handlePicked}
         onClose={onClose}
       />
@@ -90,7 +90,7 @@ export function NewActivityModal({ clientId, onClose }: { clientId: string; onCl
             </span>
             <span>
               <span className="block text-sm font-semibold text-gray-800">② 用素材庫圖片 · 作活動圖底圖</span>
-              <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">揀一張現有素材做背景，AI幫手加文字。</span>
+              <span className="block text-[11px] text-gray-500 mt-0.5 leading-relaxed">選一張現有素材做背景，AI 幫你加文字。</span>
             </span>
           </button>
           {/* ③ 自由排版（Magic Layers）— 分層合成後自由拖拉排版，可存續編 */}

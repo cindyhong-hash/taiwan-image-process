@@ -506,7 +506,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         {genMode === "unified" && (
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">畫面描述 Prompt</Label>
+                <Label className="text-sm font-medium">畫面描述 Prompt<span className="text-gray-400 font-normal ml-1.5 text-xs">先描述你想要的畫面，也可以輸入後使用 AI 幫你改寫或優化。</span></Label>
                 <div className="flex items-center gap-1.5">
                   {/* 靈感：依品牌想選題，點了直接填入核心主題 */}
                   <InspireButton
@@ -550,7 +550,6 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                   </span>
                 </div>
               </div>
-              <p className="text-xs text-gray-400">先描述你想要的畫面，也可以輸入後使用 AI 幫你改寫或優化。</p>
               <textarea
                 value={theme}
                 onChange={(e) => setTheme(e.target.value)}

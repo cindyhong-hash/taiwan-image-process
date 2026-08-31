@@ -21,8 +21,8 @@ export function UnsavedChangesModal({ open, saving, onCancel, onLeaveWithoutSavi
             <AlertTriangle className="h-5 w-5 text-amber-600" />
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900">有未儲存嘅修改</h3>
-            <p className="text-sm text-gray-500 mt-1">離開呢頁會遺失未儲存嘅修改，確定要離開？</p>
+            <h3 className="font-semibold text-gray-900">有未儲存的修改</h3>
+            <p className="text-sm text-gray-500 mt-1">離開這頁會遺失未儲存的修改，確定要離開？</p>
           </div>
         </div>
         <div className="flex flex-col gap-2">

@@ -20,7 +20,7 @@ const IMG_MODEL = "google/gemini-3-pro-image-preview";
  * `tones` = 用嚟建議風格嘅 tone 關鍵字（auto hint / UI 建議 / 將來 mapping 用）。
  */
 export const STYLE_OPTIONS: { key: string; label: string; mood: string; tones: string[] }[] = [
-  { key: "auto",       label: "自動（睇底圖＋品牌＋主題）", mood: "", tones: [] },
+  { key: "auto",       label: "自動（依底圖＋品牌＋主題）", mood: "", tones: [] },
   // ── 通用 / 美妝 / 生活 ──
   { key: "luxury",     label: "高級質感", mood: "luxurious, premium, refined metallic gold texture, high-end, glossy",                 tones: ["專業", "精緻", "質感", "奢華", "高級", "信賴", "尊榮", "金融", "珠寶", "名錶", "旗艦", "尊貴"] },
   { key: "elegant",    label: "高貴優雅", mood: "elegant, noble, graceful, refined gold accents, classic serif sophistication",        tones: ["高貴", "優雅", "典雅", "尊貴", "經典", "格調", "時尚", "精品", "禮品"] },

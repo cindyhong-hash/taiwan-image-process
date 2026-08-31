@@ -267,7 +267,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
                 {otherClients.length > 0 && (
                   <select disabled={batchBusy || selectedIds.size === 0} defaultValue=""
                     onChange={(e) => { const v = e.target.value; if (!v) return; runBatchMove(v); e.currentTarget.value = ""; }}
-                    title="將選取嘅活動移到另一個品牌"
+                    title="將選取的活動移到另一個品牌"
                     className="flex items-center gap-1 text-xs bg-white border border-violet-300 text-violet-700 rounded-full px-3 py-1.5 outline-none cursor-pointer disabled:opacity-50">
                     <option value="">移到品牌…</option>
                     {otherClients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -293,7 +293,7 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
             const acts = client.activities.filter((a) =>
               (actStatus === "ALL" || a.status === actStatus) &&
               (!actSearch.trim() || `${a.theme} ${a.focusPoint}`.toLowerCase().includes(actSearch.toLowerCase())));
-            if (acts.length === 0) return <div className="text-center py-16 text-gray-400 text-sm">搵唔到符合條件嘅活動</div>;
+            if (acts.length === 0) return <div className="text-center py-16 text-gray-400 text-sm">找不到符合條件的活動</div>;
             return (
               <div className="space-y-2.5">
                 {acts.map((act) => (

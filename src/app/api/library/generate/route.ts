@@ -297,7 +297,7 @@ async function runGeneration(rowId: string, body: Record<string, any>, host: str
       // ── Fallback: mechanical sharp overlay (needs a transparent PNG) ──
       const meta = await sharp(product).metadata();
       if (!meta.hasAlpha) {
-        await markFailed(rowId, "AI 合成失敗，且產品圖唔係透明去背圖。請先去背（remove.bg / photoroom）再上傳，或重試。");
+        await markFailed(rowId, "AI 合成失敗，且產品圖不是透明去背圖。請先去背（remove.bg / photoroom）再上傳，或重試。");
         return;
       }
       let backdrop: Buffer;

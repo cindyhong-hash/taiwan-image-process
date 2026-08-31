@@ -9,7 +9,7 @@ export default function UnassignedLibraryPage() {
       <div className="flex items-center gap-2 mb-6">
         <Layers className="h-5 w-5 text-gray-500" />
         <h1 className="text-xl font-semibold">未分組素材</h1>
-        <span className="text-xs text-gray-400">（未指派品牌嘅素材）</span>
+        <span className="text-xs text-gray-400">（未指派品牌的素材）</span>
       </div>
       <LibraryWorkspace clientId={null} unassigned />
     </div>

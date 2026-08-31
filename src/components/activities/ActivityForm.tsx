@@ -435,7 +435,7 @@ export function ActivityForm({
           <div className="flex items-center justify-between">
             <Label className="text-sm font-medium">
               畫面描述 Prompt
-              <span className="text-gray-400 font-normal ml-1.5 text-xs">你腦中的畫面，越具體越好</span>
+              <span className="text-gray-400 font-normal ml-1.5 text-xs">先描述你想要的畫面，也可以輸入後使用 AI 幫你改寫或優化。</span>
             </Label>
             <div className="flex items-center gap-1.5">
               {/* 靈感：依品牌想選題，點了直接填入畫面描述 */}
@@ -506,7 +506,6 @@ export function ActivityForm({
               )}
             </div>
           </div>
-          <p className="text-xs text-gray-400">先描述你想要的畫面，也可以輸入後使用 AI 幫你改寫或優化。</p>
           <textarea
             value={values.imagePrompt}
             onChange={(e) => set("imagePrompt", e.target.value)}
@@ -599,7 +598,7 @@ export function ActivityForm({
 
       {/* ── 03 套用風格積木（構圖 / 顏色 / 背景）→ 內容注入 AI Prompt ─────────── */}
       <div className="space-y-3">
-        <SectionLabel step="03" title="參考過往貼文風格" hint="選填，揀咗會加入 AI Prompt 做生成參考" />
+        <SectionLabel step="03" title="參考過往貼文風格" hint="選取後會加入 AI Prompt 生成參考" />
         <div className="grid grid-cols-3 gap-3">
           {([
             { cat: "COMPOSITION",  slot: "layout",     label: "構圖", icon: <LayoutTemplate className="h-4 w-4" /> },

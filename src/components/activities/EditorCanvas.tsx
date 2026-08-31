@@ -46,7 +46,7 @@ export function EditorCanvas({ layout, brandLogoUrl, logoVersions = [] }: Props)
     reader.onload = (ev) => {
       setRefImageDataUrl(ev.target?.result as string);
       // 如果指令欄是空的，自動填入文字風格參考提示
-      setImagePrompt(prev => prev.trim() ? prev : "參考參考圖的文字風格，套用到現有廣告的文字上（保持原本語言，唔好翻譯）");
+      setImagePrompt(prev => prev.trim() ? prev : "參考參考圖的文字風格，套用到現有廣告的文字上（保持原本語言，不要翻譯）");
     };
     reader.readAsDataURL(file);
     e.target.value = "";

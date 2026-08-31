@@ -46,7 +46,7 @@ export function LibraryImagePickerModal({
   clientId,
   onPick,
   onClose,
-  title = "從素材庫揀圖",
+  title = "從素材庫選圖",
 }: {
   clientId: string;
   onPick: (url: string, promptText?: string) => void; // 連帶回傳該圖已有嘅 AI Prompt（免再分析）
@@ -139,7 +139,7 @@ export function LibraryImagePickerModal({
           {loading ? (
             <div className="text-center text-gray-400 py-10 text-sm">載入中…</div>
           ) : filtered.length === 0 ? (
-            <div className="text-center text-gray-400 py-10 text-sm">冇符合嘅素材</div>
+            <div className="text-center text-gray-400 py-10 text-sm">沒有符合的素材</div>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
               {filtered.map(({ it, t }) => {
