@@ -2,8 +2,13 @@
 /* Standalone entry (no brand context) — renders inside the app shell so the
    brand sidebar stays visible. Brand-scoped entry lives at
    /clients/[clientId]/magic-layers/compose. */
+import { Suspense } from "react";
 import { ComposeView } from "@/components/magic-layers/ComposeView";
 
 export default function ComposePage() {
-  return <ComposeView />;
+  return (
+    <Suspense fallback={<div className="text-gray-400">載入中...</div>}>
+      <ComposeView />
+    </Suspense>
+  );
 }
