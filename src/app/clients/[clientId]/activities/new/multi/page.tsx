@@ -613,7 +613,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
           {/* ── 02 必放文字 ────────────────────────────────────── */}
           <div className="space-y-4">
             <SectionLabel step="02" title="必放文字" />
-            <Field label="必放文字（預設套用至主圖）" hint="AI 文案會包含這些文字">
+            <Field label="必放文字（預設套用至主圖）">
               <Input
                 className="bg-white"
                 value={mustText}

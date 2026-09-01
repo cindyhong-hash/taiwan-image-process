@@ -81,8 +81,7 @@ export function AssetUploadCards({
       <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
         <UploadCloud className="h-7 w-7 text-gray-400" />
         <div>
-          <p className="text-sm font-bold text-gray-800">產品主圖 最多 5 張<span className="text-xs text-gray-400 font-normal ml-1">（選填）</span></p>
-          <p className="text-xs text-gray-400 mt-0.5">去背產品圖效果更佳</p>
+          <p className="text-sm font-bold text-gray-800">產品主圖 最多 5 張</p>
         </div>
         {(productUrls.length > 0 || uploadingProduct) && (
           <div className="flex gap-1.5 flex-wrap justify-center">
@@ -120,8 +119,7 @@ export function AssetUploadCards({
       <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
         <UploadCloud className="h-7 w-7 text-gray-400" />
         <div>
-          <p className="text-sm font-bold text-gray-800">風格參考圖 1 張<span className="text-xs text-gray-400 font-normal ml-1">（選填）</span></p>
-          <p className="text-xs text-gray-400 mt-0.5">指定你想要的排版或氛圍</p>
+          <p className="text-sm font-bold text-gray-800">風格參考圖 1 張</p>
         </div>
         {(refUrls.length > 0 || uploadingRef) && (
           <div className="flex gap-1.5 flex-wrap justify-center">

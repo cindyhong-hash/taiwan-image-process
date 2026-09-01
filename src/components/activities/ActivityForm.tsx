@@ -563,7 +563,7 @@ export function ActivityForm({
           )}
         </div>
 
-        <Field label="必放文字" optional hint="AI 文案會包含這些文字">
+        <Field label="必放文字" optional>
           <Input
             className="bg-white"
             value={values.requiredText}
