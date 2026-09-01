@@ -2,6 +2,15 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { HelpCircle, Bell, CheckCircle2, Sparkles, PlayCircle, X } from "lucide-react";
+import { GuidedTour, type TourStep } from "./GuidedTour";
+
+// 快速教學步驟：錨在每頁都有的側欄 + 說明鈕（找不到錨點會置中顯示）。
+const TOUR_STEPS: TourStep[] = [
+  { anchor: '[data-tour="nav-home"]', title: "從首頁開始", desc: "描述你想做的內容，或直接挑素材，快速建立圖文。" },
+  { anchor: '[data-tour="nav-activities"]', title: "建立廣告圖文", desc: "單圖或多圖活動都在這裡：填主題 → AI 幫你生成。" },
+  { anchor: '[data-tour="nav-library"]', title: "素材庫", desc: "產品圖、背景、人像、插圖素材集中管理，可再拿去生成。" },
+  { anchor: '[data-tour="help"]', title: "隨時回來看說明", desc: "點這顆問號，可看目前頁面說明，或再看一次這個教學。" },
+];
 
 // 專注型頁面（建立/編輯流程）本身有自己的頁首（返回 + 已選版型 等），不再疊全域頂欄。
 const HIDE_ON = [
@@ -31,6 +40,7 @@ export function TopHeader() {
   const router = useRouter();
   const [open, setOpen] = useState<"help" | "noti" | null>(null);
   const [notis, setNotis] = useState<NotiItem[]>([]);
+  const [tour, setTour] = useState(false);
 
   // clientId 來自路由 /clients/[clientId]/…；用來拉「已完成作品」當通知來源。
   const clientId = pathname.match(/\/clients\/([^/]+)/)?.[1];
@@ -59,22 +69,22 @@ export function TopHeader() {
     <header className="relative flex h-16 items-center justify-end gap-3 border-b border-gray-200 bg-gray-50 px-8">
       {/* 說明 */}
       <div className="relative">
-        <button type="button" onClick={() => setOpen((o) => (o === "help" ? null : "help"))}
+        <button type="button" data-tour="help" onClick={() => setOpen((o) => (o === "help" ? null : "help"))}
           className={`rounded-lg p-1.5 transition-colors ${open === "help" ? "text-violet-600 bg-violet-50" : "text-gray-400 hover:text-gray-600"}`}>
           <HelpCircle className="h-5 w-5" />
         </button>
         {open === "help" && (
           <Popover onClose={() => setOpen(null)}>
             <div className="px-4 pt-4 pb-2 text-base font-semibold text-gray-900">需要幫忙嗎？</div>
-            <button type="button" onClick={() => setOpen(null)}
+            <button type="button" onClick={() => { setOpen(null); setTour(true); }}
               className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-violet-50/60 transition-colors">
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600"><Sparkles className="h-4 w-4" /></span>
               <span>
                 <span className="block text-sm font-medium text-gray-800">這個頁面怎麼用？</span>
-                <span className="block text-xs text-gray-400 mt-0.5">AI 根據目前所在頁面解釋操作流程</span>
+                <span className="block text-xs text-gray-400 mt-0.5">用步驟導覽快速帶你看操作流程</span>
               </span>
             </button>
-            <button type="button" onClick={() => setOpen(null)}
+            <button type="button" onClick={() => { setOpen(null); setTour(true); }}
               className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-violet-50/60 transition-colors">
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600"><PlayCircle className="h-4 w-4" /></span>
               <span>
@@ -123,6 +133,8 @@ export function TopHeader() {
           </Popover>
         )}
       </div>
+
+      {tour && <GuidedTour steps={TOUR_STEPS} onClose={() => setTour(false)} />}
     </header>
   );
 }
