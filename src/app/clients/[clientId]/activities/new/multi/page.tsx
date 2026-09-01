@@ -2,14 +2,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, ImagePlus, X, ChevronDown, ChevronLeft, Sparkles, LayoutGrid, Pencil, Trash2, Zap } from "lucide-react";
+import { Loader2, ImagePlus, X, ChevronDown, ChevronLeft, Sparkles, LayoutGrid, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiLayoutPicker, LayoutThumb } from "@/components/activities/MultiLayoutPicker";
 import { InspireButton } from "@/components/activities/InspireButton";
 import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
-import { SectionLabel, Field, AssetUploadCards } from "@/components/activities/formParts";
+import { AssetUploadCards, FormSection } from "@/components/activities/formParts";
 import { IMAGE_MODELS } from "@/components/activities/ActivityForm";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { getMultiLayout } from "@/types/multiLayout";
@@ -434,7 +434,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
     : cells.length > 0 && cells.every((c) => c.description.trim().length > 0 || c.assetUrls.length > 0);
 
   return (
-    <div className="max-w-3xl space-y-8 pb-10">
+    <div className="max-w-3xl space-y-8 pb-4">
       {draftDialog}
       <div>
         {/* 標題（左）+ 版型標示／重選（右）— 與單圖編輯頁一致 */}
@@ -474,339 +474,349 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         )}
       </div>
 
-      {/* ── 01 活動核心主題 Prompt（含生成模式切換）───────────────── */}
-      <div className="space-y-4">
-        <SectionLabel step="01" title="活動核心主題 Prompt" required />
-
+      {/* ── 01 活動核心主題（含生成模式切換 + 各模式內容）───────────────── */}
+      <FormSection step="01" title="活動核心主題" required>
         {/* 生成模式切換（統一主題 / 各圖獨立填寫）*/}
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setGenMode("unified")}
-              className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                genMode === "unified" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500"
-              }`}
-            >
-              統一主題（AI 自動分鏡）
-            </button>
-            <button
-              type="button"
-              onClick={() => { setGenMode("perCell"); setVariantChoice("A"); }}
-              className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                genMode === "perCell" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500"
-              }`}
-            >
-              各圖獨立填寫（進階）
-            </button>
-          </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => setGenMode("unified")}
+            className={`flex-1 rounded-lg border-[1.5px] px-4 py-2.5 text-sm font-medium transition-all ${
+              genMode === "unified" ? "border-violet-600 bg-violet-50 text-violet-700" : "border-[#ebeff5] bg-white text-gray-500 hover:border-violet-300"
+            }`}
+          >
+            統一主題（AI 自動分鏡）
+          </button>
+          <button
+            type="button"
+            onClick={() => { setGenMode("perCell"); setVariantChoice("A"); }}
+            className={`flex-1 rounded-lg border-[1.5px] px-4 py-2.5 text-sm font-medium transition-all ${
+              genMode === "perCell" ? "border-violet-600 bg-violet-50 text-violet-700" : "border-[#ebeff5] bg-white text-gray-500 hover:border-violet-300"
+            }`}
+          >
+            各圖獨立填寫（進階）
+          </button>
         </div>
 
-        {/* 統一主題 → 畫面描述 Prompt 直接接喺模式切換下面（同 Figma 01 一體） */}
+        {/* 統一主題 → 畫面描述 Prompt + 必放文字（同 Figma 265-1253 一體） */}
         {genMode === "unified" && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">畫面描述 Prompt<span className="text-gray-400 font-normal ml-1.5 text-xs">先描述你想要的畫面，也可以輸入後使用 AI 幫你改寫或優化。</span></Label>
-                <div className="flex items-center gap-1.5">
-                  {/* 靈感：依品牌想選題，點了直接填入核心主題 */}
-                  <InspireButton
-                    clientId={clientId}
-                    field="theme"
-                    onPick={(text) => setTheme(text)}
-                  />
-                  {/* AI 改寫（要有 Prompt 先可用；disabled 時外層 span 帶 tooltip）*/}
-                  <span title={!theme.trim() ? "輸入畫面描述後即可使用" : undefined} className="inline-flex">
-                    <button
-                      type="button"
-                      onClick={() => { setEditingPrompt((v) => !v); setEditInstruction(""); }}
-                      disabled={!theme.trim()}
-                      className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                        !theme.trim()
-                          ? "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"
-                          : editingPrompt
-                          ? "border-violet-400 text-violet-700 bg-violet-50 cursor-pointer"
-                          : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
-                      }`}
-                    >
-                      <Pencil className="h-3 w-3" />
-                      AI 改寫
-                    </button>
-                  </span>
-                  {/* 優化 Prompt */}
-                  <span title={!theme.trim() ? "輸入畫面描述後即可使用" : undefined} className="inline-flex">
-                    <button
-                      type="button"
-                      onClick={optimizeTheme}
-                      disabled={optimizing || !theme.trim()}
-                      className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                        optimizing || !theme.trim()
-                          ? "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"
-                          : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
-                      }`}
-                    >
-                      {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                      <span>優化 Prompt</span>
-                    </button>
-                  </span>
-                </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-bold text-gray-900">畫面描述 Prompt</span>
+                <span className="text-xs text-gray-400 font-normal">核心主題故事或圖片的描述</span>
               </div>
+              <div className="flex items-center gap-2">
+                {/* 靈感：依品牌想選題，點了直接填入核心主題 */}
+                <InspireButton
+                  clientId={clientId}
+                  field="theme"
+                  onPick={(text) => setTheme(text)}
+                />
+                {/* AI 改寫（要有 Prompt 先可用；disabled 時外層 span 帶 tooltip）*/}
+                <span title={!theme.trim() ? "輸入畫面描述後即可使用" : undefined} className="inline-flex">
+                  <button
+                    type="button"
+                    onClick={() => { setEditingPrompt((v) => !v); setEditInstruction(""); }}
+                    disabled={!theme.trim()}
+                    className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border transition-all ${
+                      !theme.trim()
+                        ? "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"
+                        : editingPrompt
+                        ? "border-violet-400 text-violet-700 bg-violet-100 cursor-pointer"
+                        : "border-[#ebe4f9] text-violet-600 bg-[#f9f6ff] hover:bg-violet-100 cursor-pointer"
+                    }`}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    AI 改寫
+                  </button>
+                </span>
+                {/* AI 優化提示詞 */}
+                <span title={!theme.trim() ? "輸入畫面描述後即可使用" : undefined} className="inline-flex">
+                  <button
+                    type="button"
+                    onClick={optimizeTheme}
+                    disabled={optimizing || !theme.trim()}
+                    className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border transition-all ${
+                      optimizing || !theme.trim()
+                        ? "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"
+                        : "border-violet-600 text-white bg-violet-600 hover:bg-violet-700 cursor-pointer"
+                    }`}
+                  >
+                    {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                    <span>AI 優化提示詞</span>
+                  </button>
+                </span>
+              </div>
+            </div>
+            <div className="relative">
               <textarea
                 value={theme}
                 onChange={(e) => setTheme(e.target.value)}
                 rows={4}
+                maxLength={500}
                 placeholder="例：日系文青風的夏季芒果冰新品上市，整體色彩明亮、有清涼消暑感。"
-                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-4 py-3 pb-7 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
               />
-              {/* AI 幫改：指令式修改主題 Prompt */}
-              {editingPrompt && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
-                  <p className="text-xs font-medium text-blue-700">✏️ 想怎麼改？</p>
-                  <input
-                    type="text"
-                    value={editInstruction}
-                    onChange={(e) => setEditInstruction(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleEditPrompt(); } }}
-                    placeholder="例：品牌改為 Apple / 加入黃金時段光線"
-                    className="w-full border border-blue-200 rounded-md px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 placeholder:text-gray-400"
-                    autoFocus
-                  />
-                  <div className="flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => { setEditingPrompt(false); setEditInstruction(""); }}
-                      className="p-1 text-gray-400 hover:text-red-400 transition-colors"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleEditPrompt}
-                      disabled={applyingEdit || !editInstruction.trim()}
-                      className={`flex items-center gap-1 text-xs px-3 py-1 rounded-md transition-all ${
-                        applyingEdit || !editInstruction.trim()
-                          ? "opacity-40 cursor-not-allowed bg-blue-300 text-white"
-                          : "bg-blue-500 text-white hover:bg-blue-600"
-                      }`}
-                    >
-                      {applyingEdit ? <><Loader2 className="h-3 w-3 animate-spin" />套用中…</> : "應用"}
-                    </button>
-                  </div>
-                </div>
-              )}
-              {/* 幫我拆解：AI 依版型格數分鏡，帶入各圖並切換至模式 B */}
-              <button
-                type="button"
-                onClick={splitToCells}
-                disabled={splitting || !theme.trim()}
-                className="mt-1.5 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-              >
-                {splitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LayoutGrid className="h-3.5 w-3.5" />}
-                <span>{splitting ? "AI 拆解中…" : `幫我拆解並切換至各圖獨立填寫（${layout.count} 格）`}</span>
-              </button>
+              <span className="pointer-events-none absolute bottom-2.5 right-3 text-[11px] text-gray-400">{theme.length}/500</span>
             </div>
-        )}
-      </div>
-
-      {/* ── 統一主題：02 必放文字 + 03 素材上傳 ── */}
-      {genMode === "unified" && (
-        <>
-          {/* ── 02 必放文字 ────────────────────────────────────── */}
-          <div className="space-y-4">
-            <SectionLabel step="02" title="必放文字" />
-            <Field label="必放文字（預設套用至主圖）">
-              <Input
-                className="bg-white"
-                value={mustText}
-                onChange={(e) => setMustText(e.target.value)}
-                placeholder="例：Title: 盛夏芒果慶典 / Sub: 第二杯半價 / 日期: 2026/06/15"
-              />
-            </Field>
-          </div>
-
-          {/* ── 03 素材上傳 ────────────────────────────────────── */}
-          <div className="space-y-4">
-            <SectionLabel step="03" title="素材上傳" />
-            <AssetUploadCards
-              productUrls={productUrls}
-              refUrls={refUrls}
-              onAddProduct={onAddProductAsset}
-              onRemoveProduct={(i) => setProductUrls(productUrls.filter((_, x) => x !== i))}
-              onPickProductLibrary={() => setShowProductLibPicker(true)}
-              onAddRef={onAddRefAsset}
-              onRemoveRef={(i) => { setRefUrls(refUrls.filter((_, x) => x !== i)); setAnalyzedDone(false); }}
-              onPickRefLibrary={() => setShowRefLibPicker(true)}
-              uploadingProduct={uploadingProduct}
-              uploadingRef={uploadingRef}
-              analyzeState={analyzing ? "analyzing" : analyzedDone ? "done" : "idle"}
-              onAnalyze={() => analyzeRef()}
-              canAnalyze={refUrls.length > 0}
-            />
-          </div>
-        </>
-      )}
-
-      {/* ── 模式 B：各圖獨立 ── */}
-      {genMode === "perCell" && (
-        <div className="space-y-4">
-          <p className="text-xs text-gray-400">各格可獨立設定畫面描述、文字與素材，AI 會分別處理每一張圖。</p>
-          <div className={cells.length > 1 ? "grid grid-cols-2 gap-4" : "space-y-4"}>
-          {cells.map((cell, i) => {
-            const isMain = i === 0;
-            const isLast = i === cells.length - 1 && cells.length > 1;
-            return (
-              <div key={i} className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+            {/* AI 幫改：指令式修改主題 Prompt */}
+            {editingPrompt && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+                <p className="text-xs font-medium text-blue-700">✏️ 想怎麼改？</p>
+                <input
+                  type="text"
+                  value={editInstruction}
+                  onChange={(e) => setEditInstruction(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleEditPrompt(); } }}
+                  placeholder="例：品牌改為 Apple / 加入黃金時段光線"
+                  className="w-full border border-blue-200 rounded-md px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 placeholder:text-gray-400"
+                  autoFocus
+                />
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">圖 {i + 1}</span>
-                  <div className="flex items-center gap-1.5">
-                    {isMain && <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">主視覺</span>}
-                    {isLast && <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">結尾</span>}
-                    {layout.expandable && cells.length > layout.count && (
-                      <button type="button" onClick={() => removeCell(i)} className="text-gray-400 hover:text-red-500">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setEditingPrompt(false); setEditInstruction(""); }}
+                    className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleEditPrompt}
+                    disabled={applyingEdit || !editInstruction.trim()}
+                    className={`flex items-center gap-1 text-xs px-3 py-1 rounded-md transition-all ${
+                      applyingEdit || !editInstruction.trim()
+                        ? "opacity-40 cursor-not-allowed bg-blue-300 text-white"
+                        : "bg-blue-500 text-white hover:bg-blue-600"
+                    }`}
+                  >
+                    {applyingEdit ? <><Loader2 className="h-3 w-3 animate-spin" />套用中…</> : "應用"}
+                  </button>
                 </div>
-                <div className="space-y-1">
+              </div>
+            )}
+            {/* 幫我拆解：AI 依版型格數分鏡，帶入各圖並切換至模式 B */}
+            <button
+              type="button"
+              onClick={splitToCells}
+              disabled={splitting || !theme.trim()}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              {splitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+              <span>{splitting ? "AI 拆解中…" : `幫我拆解並切換至各圖獨立填寫（${layout.count} 格）`}</span>
+            </button>
+
+            {/* 必放文字（Figma 265-1253：併入 01）*/}
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-sm font-bold text-gray-900">必放文字</span>
+                <span className="text-xs text-gray-400 font-normal">（需包含在圖案中）— AI 文案中自然包含這些文字（預設套用至主圖）</span>
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={mustText}
+                  onChange={(e) => setMustText(e.target.value)}
+                  maxLength={200}
+                  placeholder="例：Title: 盛夏芒果慶典 / Sub: 第二杯半價 / 日期: 2026/06/15"
+                  className="w-full h-11 bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-4 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+                />
+                <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 right-3 text-[11px] text-gray-400">{mustText.length}/200</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 各圖獨立：逐格卡片（Figma 265-1044）*/}
+        {genMode === "perCell" && (
+          <div className="space-y-4">
+            <p className="text-xs text-gray-400">各格可獨立設定畫面描述、文字與素材，AI 會分別處理每一張圖。</p>
+            <div className={cells.length > 1 ? "grid grid-cols-2 gap-4" : "space-y-4"}>
+            {cells.map((cell, i) => {
+              const isMain = i === 0;
+              const isLast = i === cells.length - 1 && cells.length > 1;
+              return (
+                <div key={i} className="rounded-xl border-[1.5px] border-[#ebeff5] bg-white p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs text-gray-500">畫面描述</Label>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => { setCellEditingIdx(cellEditingIdx === i ? null : i); setCellEditText(""); }}
-                        disabled={!cell.description.trim()}
-                        className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border transition-all ${
-                          !cell.description.trim() ? "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"
-                          : cellEditingIdx === i ? "border-blue-300 text-blue-600 bg-blue-50" : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                        }`}
-                      >
-                        <Pencil className="h-2.5 w-2.5" />AI 幫改
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => optimizeCell(i)}
-                        disabled={cellOptimizingIdx === i || !cell.description.trim()}
-                        className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-violet-300 text-violet-600 hover:bg-violet-50 disabled:opacity-40"
-                      >
-                        {cellOptimizingIdx === i ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Sparkles className="h-2.5 w-2.5" />}
-                        AI 優化
-                      </button>
+                    <span className="text-sm font-bold text-gray-900">圖 {i + 1}</span>
+                    <div className="flex items-center gap-1.5">
+                      {isMain && <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">主視覺</span>}
+                      {isLast && <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">結尾</span>}
+                      {layout.expandable && cells.length > layout.count && (
+                        <button type="button" onClick={() => removeCell(i)} className="text-gray-400 hover:text-red-500">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <textarea
-                    value={cell.description}
-                    onChange={(e) => updateCell(i, { description: e.target.value })}
-                    rows={2}
-                    placeholder="描述這一格的畫面…"
-                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  {cellEditingIdx === i && (
-                    <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-2 space-y-1.5">
-                      <input
-                        type="text"
-                        value={cellEditText}
-                        onChange={(e) => setCellEditText(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyCellEdit(i); } }}
-                        placeholder="想怎麼改？例：改成海邊場景 / 加入金色光暈"
-                        className="w-full border border-blue-200 rounded-md px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
-                        autoFocus
-                      />
-                      <div className="flex justify-end">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-gray-700">畫面描述 Prompt</Label>
+                      <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => applyCellEdit(i)}
-                          disabled={cellApplying || !cellEditText.trim()}
-                          className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-all ${
-                            cellApplying || !cellEditText.trim() ? "opacity-40 cursor-not-allowed bg-blue-300 text-white" : "bg-blue-500 text-white hover:bg-blue-600"
+                          onClick={() => { setCellEditingIdx(cellEditingIdx === i ? null : i); setCellEditText(""); }}
+                          disabled={!cell.description.trim()}
+                          className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border transition-all ${
+                            !cell.description.trim() ? "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"
+                            : cellEditingIdx === i ? "border-blue-300 text-blue-600 bg-blue-50" : "border-gray-200 text-gray-500 hover:bg-gray-50"
                           }`}
                         >
-                          {cellApplying ? <><Loader2 className="h-2.5 w-2.5 animate-spin" />套用中…</> : "應用"}
+                          <Pencil className="h-2.5 w-2.5" />AI 幫改
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => optimizeCell(i)}
+                          disabled={cellOptimizingIdx === i || !cell.description.trim()}
+                          className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-violet-300 text-violet-600 hover:bg-violet-50 disabled:opacity-40"
+                        >
+                          {cellOptimizingIdx === i ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Sparkles className="h-2.5 w-2.5" />}
+                          優化
                         </button>
                       </div>
                     </div>
-                  )}
+                    <textarea
+                      value={cell.description}
+                      onChange={(e) => updateCell(i, { description: e.target.value })}
+                      rows={2}
+                      placeholder="描述這一格的畫面…"
+                      className="w-full bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    {cellEditingIdx === i && (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-2 space-y-1.5">
+                        <input
+                          type="text"
+                          value={cellEditText}
+                          onChange={(e) => setCellEditText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyCellEdit(i); } }}
+                          placeholder="想怎麼改？例：改成海邊場景 / 加入金色光暈"
+                          className="w-full border border-blue-200 rounded-md px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+                          autoFocus
+                        />
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => applyCellEdit(i)}
+                            disabled={cellApplying || !cellEditText.trim()}
+                            className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-all ${
+                              cellApplying || !cellEditText.trim() ? "opacity-40 cursor-not-allowed bg-blue-300 text-white" : "bg-blue-500 text-white hover:bg-blue-600"
+                            }`}
+                          >
+                            {cellApplying ? <><Loader2 className="h-2.5 w-2.5 animate-spin" />套用中…</> : "應用"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium text-gray-700">必放文字</Label>
+                    <Input
+                      className="bg-white border-[1.5px] border-[#ebeff5]"
+                      value={cell.mustText}
+                      onChange={(e) => updateCell(i, { mustText: e.target.value })}
+                      placeholder="留白＝不放文字"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium text-gray-700">上傳產品圖</Label>
+                    <AssetStrip label="" sub="" size="lg" urls={cell.assetUrls} max={5}
+                      onAdd={(f) => addCellAsset(i, f)}
+                      onRemove={(x) => updateCell(i, { assetUrls: cell.assetUrls.filter((_, k) => k !== x) })} />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-gray-500">必放文字</Label>
-                  <Input
-                    className="bg-white"
-                    value={cell.mustText}
-                    onChange={(e) => updateCell(i, { mustText: e.target.value })}
-                    placeholder="留白＝不放文字"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-gray-500">上傳產品圖</Label>
-                  <AssetStrip label="" sub="" urls={cell.assetUrls} max={5}
-                    onAdd={(f) => addCellAsset(i, f)}
-                    onRemove={(x) => updateCell(i, { assetUrls: cell.assetUrls.filter((_, k) => k !== x) })} />
-                </div>
-              </div>
-            );
-          })}
-          </div>
+              );
+            })}
+            </div>
 
-          {canExpand && (
-            <button
-              type="button"
-              onClick={addCell}
-              className="w-full rounded-xl border border-dashed border-gray-200 py-3 text-sm text-gray-400 hover:border-violet-300 hover:text-violet-600"
-            >
-              ＋ 新增一格（上限 {layout.maxCount}）
-            </button>
-          )}
-        </div>
+            {canExpand && (
+              <button
+                type="button"
+                onClick={addCell}
+                className="w-full rounded-xl border border-dashed border-gray-200 py-3 text-sm text-gray-400 hover:border-violet-300 hover:text-violet-600"
+              >
+                ＋ 新增一格（上限 {layout.maxCount}）
+              </button>
+            )}
+          </div>
+        )}
+      </FormSection>
+
+      {/* ── 統一主題：02 素材上傳 ── */}
+      {genMode === "unified" && (
+        <FormSection step="02" title="素材上傳" optional>
+          <AssetUploadCards
+            productUrls={productUrls}
+            refUrls={refUrls}
+            onAddProduct={onAddProductAsset}
+            onRemoveProduct={(i) => setProductUrls(productUrls.filter((_, x) => x !== i))}
+            onPickProductLibrary={() => setShowProductLibPicker(true)}
+            onAddRef={onAddRefAsset}
+            onRemoveRef={(i) => { setRefUrls(refUrls.filter((_, x) => x !== i)); setAnalyzedDone(false); }}
+            onPickRefLibrary={() => setShowRefLibPicker(true)}
+            uploadingProduct={uploadingProduct}
+            uploadingRef={uploadingRef}
+            analyzeState={analyzing ? "analyzing" : analyzedDone ? "done" : "idle"}
+            onAnalyze={() => analyzeRef()}
+            canAnalyze={refUrls.length > 0}
+          />
+        </FormSection>
       )}
 
       {/* ── 生成設定：生成款式（統一主題才有）+ 生圖模型 ── */}
-      <div className="space-y-4">
-        <SectionLabel step={genMode === "unified" ? "04" : "02"} title="生成設定" required />
+      <FormSection step={genMode === "unified" ? "03" : "02"} title="生成設定" required>
         {genMode === "unified" && (
-          <div className="space-y-1">
-            <Label className="text-sm font-medium">生成款式</Label>
-            <div className="flex gap-2">
+          <div className="space-y-2">
+            <span className="text-sm font-bold text-gray-900">生成款式</span>
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => { setVariantCount(1); setVariantChoice("A"); }}
-                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                  variantChoice === "A" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500"
+                className={`flex flex-col items-start gap-0.5 rounded-lg border-[1.5px] px-4 py-3 text-left transition-all ${
+                  variantChoice === "A" ? "border-violet-600 bg-violet-50" : "border-[#ebeff5] bg-white hover:border-violet-300"
                 }`}
               >
-                A 導購版
+                <span className={`text-sm font-bold ${variantChoice === "A" ? "text-violet-700" : "text-gray-900"}`}>A 導購版</span>
+                <span className={`text-xs ${variantChoice === "A" ? "text-violet-600" : "text-gray-400"}`}>著重商業文字與產品展示</span>
               </button>
               <button
                 type="button"
                 onClick={() => { setVariantCount(1); setVariantChoice("B"); }}
-                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
-                  variantChoice === "B" ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500"
+                className={`flex flex-col items-start gap-0.5 rounded-lg border-[1.5px] px-4 py-3 text-left transition-all ${
+                  variantChoice === "B" ? "border-violet-600 bg-violet-50" : "border-[#ebeff5] bg-white hover:border-violet-300"
                 }`}
               >
-                B 敘事版
+                <span className={`text-sm font-bold ${variantChoice === "B" ? "text-violet-700" : "text-gray-900"}`}>B 敘事版</span>
+                <span className={`text-xs ${variantChoice === "B" ? "text-violet-600" : "text-gray-400"}`}>聚焦場景說故事、插畫風格</span>
               </button>
             </div>
           </div>
         )}
-        <div className="space-y-1">
-          <Label className="text-sm font-medium">生圖模型</Label>
-          <select
-            value={imageModel}
-            onChange={(e) => setImageModel(e.target.value)}
-            className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer"
-          >
-            {IMAGE_MODELS.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-          <p className="text-xs text-gray-400 mt-0.5">{IMAGE_MODELS.find((m) => m.value === imageModel)?.hint}</p>
+        <div className="space-y-2">
+          <span className="text-sm font-bold text-gray-900">生圖模型</span>
+          <div className="relative">
+            <select
+              value={imageModel}
+              onChange={(e) => setImageModel(e.target.value)}
+              className="w-full h-11 appearance-none border border-[#ebeff5] rounded-lg px-4 pr-9 text-[13px] font-semibold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+            >
+              {IMAGE_MODELS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+          </div>
+          <p className="text-xs text-gray-400">{IMAGE_MODELS.find((m) => m.value === imageModel)?.hint}</p>
         </div>
-      </div>
+      </FormSection>
 
-      {/* AI 開始生成：跟單圖版一致——內嵌喺表單流程底部，靠左，唔用 fixed footer。 */}
-      <div className="pt-2">
-        <Button type="button" onClick={handleSubmit} disabled={saving || !canSubmit} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-6">
+      {/* AI 開始生成：置中大圓角按鈕（Figma v2）*/}
+      <div className="flex flex-col items-center pt-2">
+        <Button type="button" onClick={handleSubmit} disabled={saving || !canSubmit}
+          className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-16 py-4 text-base font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-50">
           {saving
-            ? <><Loader2 className="h-4 w-4 animate-spin" />處理中…</>
-            : <><Zap className="h-4 w-4" />{editId ? "儲存並重新生成" : "AI 開始生成"}</>}
+            ? <><Loader2 className="h-5 w-5 animate-spin" />處理中…</>
+            : <><Sparkles className="h-[18px] w-[18px]" />{editId ? "儲存並重新生成" : "AI 開始生成"}</>}
         </Button>
       </div>
 
@@ -871,10 +881,9 @@ function AssetStrip({
         </div>
       )}
       {showBigEmptyZone ? (
-        <label className="w-full h-32 flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 bg-white hover:border-violet-300 hover:bg-violet-50/30 cursor-pointer transition-colors">
+        <label className="w-full h-24 flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-[#ebeff5] bg-white hover:border-violet-300 hover:bg-violet-50/30 cursor-pointer transition-colors">
           {busy ? <Loader2 className="h-5 w-5 text-gray-300 animate-spin" /> : <ImagePlus className="h-5 w-5 text-gray-300" />}
-          <span className="text-xs text-gray-400">點擊或拖曳上傳</span>
-          <span className="text-[10px] text-gray-300">{urls.length}/{max}</span>
+          <span className="text-xs text-gray-400">上傳素材 ({urls.length}/{max})</span>
           <input type="file" accept="image/*" multiple className="hidden"
             onChange={(e) => e.target.files && handle(e.target.files)} />
         </label>

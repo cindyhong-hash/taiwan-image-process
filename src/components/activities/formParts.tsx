@@ -28,6 +28,24 @@ export function SectionLabel({ step, title, hint, required, divider = true }: { 
   );
 }
 
+// ── FormSection：白底圓角卡 + 圓形數字徽章標題（Figma step3-creation-form-v2）──
+
+export function FormSection({ step, title, required, optional, children }: {
+  step: string; title: string; required?: boolean; optional?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-[#ebeff5] bg-white p-6 sm:p-8 space-y-6">
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">{step}</span>
+        <span className="text-base font-bold text-gray-900">{title}</span>
+        {required && <span className="text-red-500 text-sm">*</span>}
+        {optional && <span className="text-xs text-gray-400 font-normal">（選填）</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 // ── Field：label + required */ optional（選填）+ hint ────────────────────────
 
 export function Field({ label, hint, required, optional, children }: {

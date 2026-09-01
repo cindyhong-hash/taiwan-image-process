@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { X, Loader2, Wand2, Pencil, Trash2, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Lock, RefreshCw, RotateCcw, RotateCw, Sparkles, ChevronDown } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { InspireButton } from "@/components/activities/InspireButton";
-import { AssetUploadCards } from "@/components/activities/formParts";
+import { AssetUploadCards, FormSection } from "@/components/activities/formParts";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
 import { getColors, PALETTE_ROLES } from "@/types/library";
 import { readableText } from "@/components/library/ColorCards";
@@ -72,23 +72,6 @@ async function uploadFile(file: File): Promise<string> {
   fd.append("file", file);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
   return (await res.json()).url;
-}
-
-// ── 白卡片區塊（Figma step3-creation-form-v2：白底圓角卡 + 圓形數字徽章標題，無底線）──
-function FormSection({ step, title, required, optional, children }: {
-  step: string; title: string; required?: boolean; optional?: boolean; children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl border border-[#ebeff5] bg-white p-6 sm:p-8 space-y-6">
-      <div className="flex items-center gap-2.5">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">{step}</span>
-        <span className="text-base font-bold text-gray-900">{title}</span>
-        {required && <span className="text-red-500 text-sm">*</span>}
-        {optional && <span className="text-xs text-gray-400 font-normal">（選填）</span>}
-      </div>
-      {children}
-    </section>
-  );
 }
 
 // ── Main form ─────────────────────────────────────────────────────────────────
