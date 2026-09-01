@@ -184,7 +184,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
   // Editable compiled prompt override
   const [activePreset, setActivePreset] = useState<string | null>(null);
   // 「參考過往貼文風格」收合（Figma v2）——併入 02 設計描述卡底部，預設收起（進階選填）。
-  const [pastStyleOpen, setPastStyleOpen] = useState(false);
+  const [pastStyleOpen, setPastStyleOpen] = useState(true);
   const [showDescHelp, setShowDescHelp] = useState(false); // 設計描述「?」說明 popover
 
   // 1–3 product photos for compositing together into one scene.
