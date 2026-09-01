@@ -1,4 +1,5 @@
-import { Image as ImageIcon, LayoutTemplate, ArrowRight } from "lucide-react";
+import { Image as ImageIcon, ArrowRight } from "lucide-react";
+import { FreeLayoutIcon } from "@/components/icons/FreeLayoutIcon";
 
 // 三張創作卡：整張卡可點＋hover 有反應（跟首頁 QuickStartCards 一致），
 // 內層 CTA 只作視覺提示（pointer-events-none），實際點擊交給整張卡。
@@ -53,7 +54,7 @@ export function CreationCards({
         className={`${cardBase} border border-gray-200 hover:border-violet-300 hover:shadow-sm`}
       >
         <div className="mb-4 flex items-start justify-between">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-violet-500"><LayoutTemplate className="h-5 w-5" /></span>
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-violet-500"><FreeLayoutIcon className="h-5 w-5" /></span>
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-600">NEW</span>
         </div>
         <div className="text-lg font-semibold text-gray-900">自由排版</div>
