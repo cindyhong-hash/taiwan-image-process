@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Settings, Plug } from "lucide-react";
+import { Settings, Plug, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import { BrandSettingsForm, type BrandFormValues } from "@/components/clients/BrandSettingsForm";
 import { AiLearnedCard } from "@/components/home/AiLearnedCard";
 
@@ -11,6 +11,8 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
   const [clientId, setClientId] = useState<string>("");
   const [client, setClient] = useState<BrandFormValues | null>(null);
   const [tab, setTab] = useState<SettingsTab>("settings");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -28,6 +30,19 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
     });
     router.push(`/clients/${clientId}`);
     router.refresh();
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
+      try { localStorage.removeItem("lastClientId"); } catch { /* ignore */ }
+      router.push("/clients");
+      router.refresh();
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
   };
 
   if (!client) return <div className="text-gray-400">載入中...</div>;
@@ -76,9 +91,47 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
               <AiLearnedCard assetCount={assetCount} percent={percent} />
             </div>
           </div>
+
+          {/* 危險操作：刪除品牌 */}
+          <div className="mt-10 max-w-3xl border-t border-gray-200 pt-6">
+            <h2 className="text-sm font-bold text-red-600">危險操作</h2>
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50/50 p-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-800">刪除品牌</p>
+                <p className="text-xs text-gray-500 mt-0.5">會一併刪除此品牌的所有活動、圖文與素材，無法復原。</p>
+              </div>
+              <button type="button" onClick={() => setConfirmDelete(true)}
+                className="flex items-center gap-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg px-3 py-2 hover:bg-red-100 transition-colors shrink-0">
+                <Trash2 className="h-4 w-4" />刪除品牌
+              </button>
+            </div>
+          </div>
         </>
       ) : (
         <AccountLinkingStub />
+      )}
+
+      {/* 刪除確認 */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5">
+            <div className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              <h3 className="text-sm font-semibold">刪除品牌「{client.name}」？</h3>
+            </div>
+            <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+              這會永久刪除此品牌，以及底下<b>所有活動、圖文與素材</b>，無法復原。
+            </p>
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button type="button" onClick={() => setConfirmDelete(false)} disabled={deleting}
+                className="text-xs font-medium text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors disabled:opacity-50">取消</button>
+              <button type="button" onClick={handleDelete} disabled={deleting}
+                className="flex items-center gap-1 text-xs font-medium text-white bg-red-500 rounded-lg px-3 py-1.5 hover:bg-red-600 disabled:opacity-50 transition-colors">
+                {deleting ? <><Loader2 className="h-3 w-3 animate-spin" />刪除中…</> : "確認刪除"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -54,6 +54,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
+  // 素材庫（風格組件／圖庫）的 clientId 是鬆散欄位、無 FK cascade → 先手動清掉，避免刪品牌後留孤兒資料。
+  // 活動（Activity）與其圖片由 schema onDelete: Cascade 自動連帶刪除。
+  try { await db.styleComponent.deleteMany({ where: { clientId } }); } catch { /* ignore */ }
+  try { await db.libraryImage.deleteMany({ where: { clientId } }); } catch { /* ignore */ }
   await db.client.delete({ where: { id: clientId } });
   return NextResponse.json({ success: true });
 }
