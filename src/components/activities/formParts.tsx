@@ -73,7 +73,7 @@ function UploadActionBar({ onUpload, uploadDisabled, onPickLibrary, pickDisabled
     <div className="flex items-stretch border-t border-[#ebeff5] h-11 shrink-0">
       <label className={`flex-1 flex items-center justify-center gap-1.5 text-[13px] font-semibold whitespace-nowrap transition-colors
         ${uploadDisabled ? "text-gray-300 cursor-not-allowed" : "text-gray-800 hover:bg-gray-50 cursor-pointer"}`}>
-        <Upload className="h-4 w-4 shrink-0" />上傳圖片
+        <Upload className="h-4 w-4 shrink-0" />上傳
         {!uploadDisabled && (
           <input type="file" accept="image/*" multiple={multiple} className="hidden"
             onChange={(e) => e.target.files && onUpload(e.target.files)} />
@@ -82,7 +82,7 @@ function UploadActionBar({ onUpload, uploadDisabled, onPickLibrary, pickDisabled
       <div className="w-px bg-[#ebeff5]" />
       <button type="button" onClick={onPickLibrary} disabled={pickDisabled}
         className="flex-1 flex items-center justify-center gap-1.5 text-[13px] font-semibold whitespace-nowrap text-violet-600 hover:bg-violet-50 disabled:text-gray-300 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors">
-        <Images className="h-4 w-4 shrink-0" />從素材庫選擇
+        <Images className="h-4 w-4 shrink-0" />素材庫
       </button>
     </div>
   );
