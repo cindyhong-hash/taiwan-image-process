@@ -651,7 +651,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-semibold text-gray-600">設計描述 Prompt</span>
+              <span className="text-sm font-bold text-gray-900">設計描述 Prompt</span>
               {/* 「?」說明：長指引收在這裡，點開才看 */}
               <div className="relative inline-flex">
                 <button type="button" onClick={() => setShowDescHelp((v) => !v)}
@@ -674,9 +674,9 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               <button onClick={polishBrief} disabled={!hasAnyContent || polishing}
-                className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                  hasAnyContent && !polishing ? "bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100"
-                  : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border transition-all ${
+                  hasAnyContent && !polishing ? "bg-violet-600 border-violet-600 text-white hover:bg-violet-700"
+                  : "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"}`}
                 title="把目前描述擴寫成更完整的中文設計 brief（可再編輯）">
                 {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
                 {polishing ? "AI優化提示詞中…" : "AI優化提示詞"}

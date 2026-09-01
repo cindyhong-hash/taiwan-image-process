@@ -303,7 +303,7 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
-            <label className="text-xs font-semibold text-gray-600">{meta.label}描述</label>
+            <label className="text-sm font-bold text-gray-900">{meta.label}描述</label>
             {refDescribing && (
               <span className="flex items-center gap-1 text-[10px] text-violet-500">
                 <Loader2 className="h-2.5 w-2.5 animate-spin" />讀圖中…
@@ -320,8 +320,8 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
               </button>
             )}
             <button onClick={polish} disabled={(!description.trim() && !refImageUrl.trim()) || polishing || refDescribing}
-              className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                (description.trim() || refImageUrl.trim()) && !polishing && !refDescribing ? "bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100" : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
+              className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border transition-all ${
+                (description.trim() || refImageUrl.trim()) && !polishing && !refDescribing ? "bg-violet-600 border-violet-600 text-white hover:bg-violet-700" : "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"}`}
               title="把描述擴寫成簡潔有創意的生成 brief（可再編輯）">
               {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
               {polishing ? "AI優化提示詞中…" : "AI優化提示詞"}
