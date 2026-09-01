@@ -17,7 +17,7 @@ export default function NewClientPage() {
   };
 
   return (
-    <div>
+    <div className="max-w-3xl">
       <h1 className="text-xl font-semibold mb-6">新增客戶</h1>
       <BrandSettingsForm onSubmit={handleSubmit} submitLabel="建立客戶資料夾" />
     </div>

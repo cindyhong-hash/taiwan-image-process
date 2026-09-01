@@ -69,7 +69,7 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
             <p className="text-sm text-gray-500 mt-1">管理你的品牌資訊，讓 AI 更精準生成符合品牌調性的內容</p>
           </div>
           <div className="flex gap-6 items-start">
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 max-w-3xl">
               <BrandSettingsForm initialValues={client} onSubmit={handleSubmit} submitLabel="更新品牌設定" />
             </div>
             <div className="hidden lg:block w-[300px] shrink-0 sticky top-6">
