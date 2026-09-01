@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { HelpCircle, Bell, CheckCircle2, Sparkles, PlayCircle, X } from "lucide-react";
+import { HelpCircle, Bell, CheckCircle2, Sparkles, X } from "lucide-react";
 import { GuidedTour, type TourStep } from "./GuidedTour";
 
 // 快速教學步驟：錨在每頁都有的側欄 + 說明鈕（找不到錨點會置中顯示）。
@@ -82,14 +82,6 @@ export function TopHeader() {
               <span>
                 <span className="block text-sm font-medium text-gray-800">這個頁面怎麼用？</span>
                 <span className="block text-xs text-gray-400 mt-0.5">用步驟導覽快速帶你看操作流程</span>
-              </span>
-            </button>
-            <button type="button" onClick={() => { setOpen(null); setTour(true); }}
-              className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-violet-50/60 transition-colors">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600"><PlayCircle className="h-4 w-4" /></span>
-              <span>
-                <span className="block text-sm font-medium text-gray-800">查看快速教學</span>
-                <span className="block text-xs text-gray-400 mt-0.5">例如「1 分鐘建立第一篇內容」</span>
               </span>
             </button>
             <div className="h-2" />
