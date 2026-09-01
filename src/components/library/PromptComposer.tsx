@@ -9,14 +9,14 @@ import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "re
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import {
   X, Check, Sparkles, LayoutTemplate, SwatchBook, Mountain, Layers, RotateCcw, RotateCw,
-  Loader2, Upload, Trash2, Wand2,
+  Loader2, Upload, Trash2, Wand2, ChevronDown, HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PromptSlots, StyleComponent, ComponentCategory, PaletteColor, PaletteRole } from "@/types/library";
 import { getColors, PALETTE_ROLES, SHOW_SERIES_TEMPLATE } from "@/types/library";
 import { ColorCards } from "./ColorCards";
 import { SlotPickerModal } from "./SlotPickerModal";
-import { SectionLabel } from "@/components/activities/formParts";
+import { FormSection } from "@/components/activities/formParts";
 import { INDUSTRY_PRESETS } from "@/types/presets";
 import { useRotatingHint } from "@/hooks/useRotatingHint";
 import { pollLibraryImage } from "@/lib/pollLibraryImage";
@@ -183,6 +183,9 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
   const [polishing, setPolishing] = useState(false);
   // Editable compiled prompt override
   const [activePreset, setActivePreset] = useState<string | null>(null);
+  // 「參考過往貼文風格」收合（Figma v2）——併入 02 設計描述卡底部，預設收起（進階選填）。
+  const [pastStyleOpen, setPastStyleOpen] = useState(false);
+  const [showDescHelp, setShowDescHelp] = useState(false); // 設計描述「?」說明 popover
 
   // 1–3 product photos for compositing together into one scene.
   const [productUrls, setProductUrls] = useState<string[]>([]);
@@ -565,7 +568,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
 
   return (
     <div className="pb-20">
-      <div className="space-y-5">
+      <div className="space-y-8">
         {/* 套用行業範本：暫隱藏（hide · no use now）— 內部 header 已移除（modal 標題已表示） */}
         {false && (
         <div>
@@ -593,8 +596,9 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
         )}
 
         {/* ── 01 產品圖片 ── */}
-        <SectionLabel step="01" title="產品圖片" hint="選填 · AI 可代讀圖填入下面設計描述" />
-        <div className="rounded-xl border border-gray-200 bg-white p-3 transition-all">
+        <FormSection step="01" title="產品圖片" optional>
+        <p className="text-xs text-gray-400 font-normal -mt-2">AI 可代讀圖填入下面設計描述</p>
+        <div className="rounded-xl border border-[#ebeff5] bg-white p-3 transition-all">
           <input id="composer-product" type="file" accept="image/*" className="hidden"
             onChange={(e) => { if (e.target.files?.[0]) uploadProduct(e.target.files[0]); e.currentTarget.value = ""; }} />
           {productUrls.length === 0 ? (
@@ -638,9 +642,106 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
           </p>
         </div>
 
-        {/* ── 02 套用風格積木 ── 3 欄小卡片（與活動圖頁一致），選取後即時加入下面設計描述；
-            配色／背景的細節操作一律做成 checkbox（不再是常駐大面板），勾選後即時反映入設計描述 */}
-        <SectionLabel step="02" title="參考過往貼文風格" hint="選填 · 選取後會加入下面設計描述" />
+        </FormSection>
+
+        {/* ── 02 設計描述 ── 由頭到尾都可編輯，主體／構圖／配色／背景／注意事項全部在這一個文字框；
+            上面已經集齊積木注入的內容，這裡做最後定稿 */}
+        <FormSection step="02" title="設計描述" required>
+        <p className="text-xs text-gray-400 font-normal -mt-2">最後定稿 · 隨時可改</p>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-600">設計描述 Prompt</span>
+              {/* 「?」說明：長指引收在這裡，點開才看 */}
+              <div className="relative inline-flex">
+                <button type="button" onClick={() => setShowDescHelp((v) => !v)}
+                  className="text-gray-400 hover:text-violet-600 transition-colors" title="怎麼填？">
+                  <HelpCircle className="h-3.5 w-3.5" />
+                </button>
+                {showDescHelp && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowDescHelp(false)} />
+                    <div className="absolute left-0 top-6 z-20 w-64 rounded-lg border border-[#ebeff5] bg-white p-3 text-xs leading-relaxed text-gray-500 shadow-md">
+                      可直接打字,或上傳產品圖片／選取風格積木自動幫你填入。
+                    </div>
+                  </>
+                )}
+              </div>
+              {/* 目前模式標示：解釋點解 04「合成方式」有時會顯示／隱藏，同「主體」內容來源 */}
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${composite ? "border-violet-300 text-violet-600 bg-violet-50" : "border-gray-200 text-gray-500 bg-gray-50"}`}>
+                {composite ? "🖼 圖片合成模式" : "✍️ 文字生成模式"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button onClick={polishBrief} disabled={!hasAnyContent || polishing}
+                className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                  hasAnyContent && !polishing ? "bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100"
+                  : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                title="把目前描述擴寫成更完整的中文設計 brief（可再編輯）">
+                {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                {polishing ? "AI優化提示詞中…" : "AI優化提示詞"}
+              </button>
+              {/* 上一步/重做：一齊出現一齊收埋（未撳過 AI優化提示詞 之前完全唔顯示），
+                  唔會各自獨立顯示/隱藏——否則逐步 undo/redo 嗰陣兩粒掣會此消彼長咁跳位置。 */}
+              {(designTextHistory.canUndo || designTextHistory.canRedo) && (
+                <>
+                  <button onClick={designTextHistory.undo} disabled={!designTextHistory.canUndo}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                      designTextHistory.canUndo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
+                      : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                    title="上一步">
+                    <RotateCcw className="h-3 w-3" />上一步
+                  </button>
+                  <button onClick={designTextHistory.redo} disabled={!designTextHistory.canRedo}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                      designTextHistory.canRedo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
+                      : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
+                    title="重做">
+                    <RotateCw className="h-3 w-3" />重做
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="relative">
+            <textarea value={designText} onChange={(e) => setDesignText(e.target.value)} rows={5} maxLength={500}
+              placeholder="例：秋冬保濕面霜，質地清爽好推開……"
+              className="w-full bg-white rounded-lg border-[1.5px] border-[#ebeff5] px-3 pt-2 pb-7 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-gray-400 whitespace-pre-wrap" />
+            <span className="pointer-events-none absolute bottom-2.5 right-3 text-[11px] text-gray-400">{designText.length}/500</span>
+          </div>
+          {/* Composite info — NOT part of the brief / not translated, just explains what will happen.
+              背景狀態喺 02 checkbox 隔籬已經即時反映一次；呢度做「生成前總覽」，兩處保留（唔同時刻，唔算重複）。
+              擺喺警告上面：先睇「已經設定咗咩」，最後先見「仲欠咩先撳得掣」，貼近生成掣個位。 */}
+          {(composite || slots.background) && (
+            <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 space-y-0.5">
+              {composite && (
+                <div className="text-[11px] text-violet-700 flex items-center gap-1.5">
+                  <Layers className="h-3 w-3 shrink-0" />合成模式：AI 自動去背 {productUrls.length} 件產品、打光並擺入場景
+                </div>
+              )}
+              {slots.background && (
+                <div className="text-[11px] text-violet-700 flex items-center gap-1.5">
+                  <Mountain className="h-3 w-3 shrink-0" />背景：{bgAsImage ? "直接合成，AI 會把產品擺入這張圖" : "作為文字參考，AI 依描述生成場景"}
+                </div>
+              )}
+            </div>
+          )}
+          {!hasSubject && (
+            <p className="text-[11px] text-amber-600">請先上傳產品圖片，或在上方填寫產品主體描述，才能生成。</p>
+          )}
+        </div>
+
+        {/* 參考過往貼文風格（收合）——置於 02 設計描述卡底部，選取後即時加入上面設計描述 */}
+        <div className="space-y-4 border-t border-[#ebeff5] pt-2">
+          <button type="button" onClick={() => setPastStyleOpen((o) => !o)}
+            className="flex w-full items-center justify-between gap-3 py-1.5 text-left">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold text-gray-900">參考過往貼文風格 <span className="font-normal text-gray-400">（選填）</span></span>
+              <span className="text-xs text-gray-400 font-normal">選取後會加入設計描述</span>
+            </div>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${pastStyleOpen ? "" : "-rotate-90"}`} />
+          </button>
+          {pastStyleOpen && (
         <div className="grid grid-cols-3 gap-3">
           <div>
             <BlockCard label="構圖" icon={<LayoutTemplate className="h-4 w-4" />} component={slots.layout}
@@ -706,79 +807,13 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
             )}
           </div>
         </div>
-
-        {/* ── 03 設計描述 ── 由頭到尾都可編輯，主體／構圖／配色／背景／注意事項全部在這一個文字框；
-            上面已經集齊積木注入的內容，這裡做最後定稿 */}
-        <SectionLabel step="03" title="設計描述" hint="最後定稿 · 隨時可改" />
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-semibold text-gray-600">設計描述 Prompt</span>
-              {/* 目前模式標示：解釋點解 04「合成方式」有時會顯示／隱藏，同「主體」內容來源 */}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${composite ? "border-violet-300 text-violet-600 bg-violet-50" : "border-gray-200 text-gray-500 bg-gray-50"}`}>
-                {composite ? "🖼 圖片合成模式" : "✍️ 文字生成模式"}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button onClick={polishBrief} disabled={!hasAnyContent || polishing}
-                className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                  hasAnyContent && !polishing ? "bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100"
-                  : "opacity-40 cursor-not-allowed border-gray-200 text-gray-400"}`}
-                title="把目前描述擴寫成更完整的中文設計 brief（可再編輯）">
-                {polishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                {polishing ? "AI優化提示詞中…" : "AI優化提示詞"}
-              </button>
-              {/* 上一步/重做：一齊出現一齊收埋（未撳過 AI優化提示詞 之前完全唔顯示），
-                  唔會各自獨立顯示/隱藏——否則逐步 undo/redo 嗰陣兩粒掣會此消彼長咁跳位置。 */}
-              {(designTextHistory.canUndo || designTextHistory.canRedo) && (
-                <>
-                  <button onClick={designTextHistory.undo} disabled={!designTextHistory.canUndo}
-                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                      designTextHistory.canUndo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
-                      : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
-                    title="上一步">
-                    <RotateCcw className="h-3 w-3" />上一步
-                  </button>
-                  <button onClick={designTextHistory.redo} disabled={!designTextHistory.canRedo}
-                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
-                      designTextHistory.canRedo ? "bg-white border-gray-200 text-gray-600 hover:border-gray-400"
-                      : "opacity-30 cursor-not-allowed border-gray-200 text-gray-400"}`}
-                    title="重做">
-                    <RotateCw className="h-3 w-3" />重做
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          {/* 常駐提示：唔會好似 placeholder 咁一有內容就消失，等有主體/積木內容之後都仲提你可以補注意事項 */}
-          <p className="text-[11px] text-gray-400 mt-0.5 mb-1.5">其他注意事項（例如：不要加入紅色、營造溫暖放鬆感）也可以直接寫在下面的文字框裡。</p>
-          <textarea value={designText} onChange={(e) => setDesignText(e.target.value)} rows={5}
-            placeholder="例：秋冬保濕面霜，質地清爽好推開……（可直接打字，或上傳產品圖片／選取風格積木自動幫你填入）"
-            className="w-full bg-white rounded-md border border-gray-300 px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-gray-300 placeholder:text-gray-400 whitespace-pre-wrap" />
-          {/* Composite info — NOT part of the brief / not translated, just explains what will happen.
-              背景狀態喺 02 checkbox 隔籬已經即時反映一次；呢度做「生成前總覽」，兩處保留（唔同時刻，唔算重複）。
-              擺喺警告上面：先睇「已經設定咗咩」，最後先見「仲欠咩先撳得掣」，貼近生成掣個位。 */}
-          {(composite || slots.background) && (
-            <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 space-y-0.5">
-              {composite && (
-                <div className="text-[11px] text-violet-700 flex items-center gap-1.5">
-                  <Layers className="h-3 w-3 shrink-0" />合成模式：AI 自動去背 {productUrls.length} 件產品、打光並擺入場景
-                </div>
-              )}
-              {slots.background && (
-                <div className="text-[11px] text-violet-700 flex items-center gap-1.5">
-                  <Mountain className="h-3 w-3 shrink-0" />背景：{bgAsImage ? "直接合成，AI 會把產品擺入這張圖" : "作為文字參考，AI 依描述生成場景"}
-                </div>
-              )}
-            </div>
-          )}
-          {!hasSubject && (
-            <p className="text-[11px] text-amber-600">請先上傳產品圖片，或在上方填寫產品主體描述，才能生成。</p>
           )}
         </div>
+        </FormSection>
 
-        {/* ── 04 輸出設定 ── 最重要嘅決定（合成方式/AI 引擎）行先，尺寸／數量做微調殿後 */}
-        <SectionLabel step="04" title="輸出設定" hint="引擎 · 尺寸 · 數量" />
+        {/* ── 03 輸出設定 ── 最重要嘅決定（合成方式/AI 引擎）行先，尺寸／數量做微調殿後 */}
+        <FormSection step="03" title="輸出設定">
+        <p className="text-xs text-gray-400 font-normal -mt-2">引擎 · 尺寸 · 數量</p>
         {/* 文字生成模式都要有引擎揀擇——之前淨係喺合成模式先出現，變相文字模式冇得揀，
             但後端其實一早支援 nano-banana 純文字生圖，唔應該收埋。 */}
         {!composite && (
@@ -882,22 +917,20 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
           <label className="text-xs font-semibold text-gray-500">輸出尺寸（比例）</label>
           <div className="relative w-full">
             <select value={ratio} onChange={(e) => pickRatio(e.target.value)}
-              className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer">
+              className="w-full h-11 appearance-none border border-[#ebeff5] rounded-lg px-4 pr-9 text-[13px] font-semibold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
               {["1:1", "4:5", "3:4", "2:3", "9:16", "4:3", "3:2", "16:9"].map((r) => (
                 <option key={r} value={r}>{r}（{RATIO_DIMS[r].w}×{RATIO_DIMS[r].h}）</option>
               ))}
               <option value="custom">自訂…</option>
             </select>
-            <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
           </div>
           <div className="flex items-center gap-2 pt-1.5">
             <input type="number" min={256} max={2400} value={customW} onChange={(e) => changeDim("w", Number(e.target.value))}
-              className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400" />
+              className="w-24 border border-[#ebeff5] rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring" />
             <span className="text-xs text-gray-400">×</span>
             <input type="number" min={256} max={2400} value={customH} onChange={(e) => changeDim("h", Number(e.target.value))}
-              className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400" />
+              className="w-24 border border-[#ebeff5] rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring" />
             <span className="text-[11px] text-gray-400">px · {ratio === "custom" ? "自由尺寸（256–2400）" : `改任一邊自動鎖 ${ratio} 比例`}</span>
           </div>
         </div>
@@ -917,6 +950,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
             {count > 1 && <span className="text-[11px] text-gray-400">生成 {count} 張供選擇（成本 ×{count}）</span>}
           </div>
         )}
+        </FormSection>
 
         {genError && (
           <div className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">⚠️ {genError}</div>
@@ -952,14 +986,16 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
       <div className="fixed bottom-0 left-60 right-0 z-30 bg-white border-t">
         <div className="max-w-3xl ml-6 py-3 flex items-center gap-3">
           {!drafts ? (
-            <Button onClick={handleGenerate} disabled={!canGenerate || generating || savingDrafts}
-              className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-40">
-              {(() => {
-                const series = composite && seriesMode && productUrls.length >= 2;
-                if (generating) { const suffix = series ? `（${productUrls.length} 張）` : composite && count > 1 ? `（${count} 張）` : "（約 10–40 秒）"; return <><Loader2 className="h-4 w-4 animate-spin" />{genHint}{suffix}</>; }
-                return <><Sparkles className="h-4 w-4" />{series ? `生成系列 ${productUrls.length} 張` : composite ? (count > 1 ? `合成 ${count} 張供選擇` : "合成產品圖到背景") : "用此 Prompt 生成新圖"}</>;
-              })()}
-            </Button>
+            <div className="flex flex-col items-center pt-2 w-full">
+              <Button onClick={handleGenerate} disabled={!canGenerate || generating || savingDrafts}
+                className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-16 py-4 text-base font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-50">
+                {(() => {
+                  const series = composite && seriesMode && productUrls.length >= 2;
+                  if (generating) { const suffix = series ? `（${productUrls.length} 張）` : composite && count > 1 ? `（${count} 張）` : "（約 10–40 秒）"; return <><Loader2 className="h-4 w-4 animate-spin" />{genHint}{suffix}</>; }
+                  return <><Sparkles className="h-4 w-4" />{series ? `生成系列 ${productUrls.length} 張` : composite ? (count > 1 ? `合成 ${count} 張供選擇` : "合成產品圖到背景") : "用此 Prompt 生成新圖"}</>;
+                })()}
+              </Button>
+            </div>
           ) : (
             <>
               <button onClick={() => setDrafts(null)} disabled={savingDrafts}

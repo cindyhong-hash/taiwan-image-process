@@ -13,9 +13,9 @@
  */
 
 import { useState, useRef, useEffect } from "react";
-import { Wand2, Loader2, Check, Save, Link2, Sparkles, Upload, RefreshCw, RotateCcw, RotateCw } from "lucide-react";
+import { Wand2, Loader2, Check, Save, Link2, Sparkles, Upload, RefreshCw, RotateCcw, RotateCw, ChevronDown } from "lucide-react";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
-import { SectionLabel } from "@/components/activities/formParts";
+import { FormSection } from "@/components/activities/formParts";
 import { Button } from "@/components/ui/button";
 import { useRotatingHint } from "@/hooks/useRotatingHint";
 import { pollLibraryImage } from "@/lib/pollLibraryImage";
@@ -297,9 +297,9 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
     : { name: "FLUX.1", sub: "schnell · 純文字生圖" };
 
   return (
-    <div className="space-y-5 pb-20">
+    <div className="space-y-8 pb-20">
       {/* ── 01 主體描述 ── */}
-      <SectionLabel step="01" title="主體描述" hint="主要輸入 · 可 AI 優化提示詞" />
+      <FormSection step="01" title="主體描述" required>
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
@@ -347,9 +347,13 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
             )}
           </div>
         </div>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
-          placeholder={meta.placeholder}
-          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 transition" />
+        <div className="relative">
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
+            maxLength={500}
+            placeholder={meta.placeholder}
+            className="w-full bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-3 py-2.5 pb-7 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring transition" />
+          <span className="pointer-events-none absolute bottom-2.5 right-3 text-[11px] text-gray-400">{description.length}/500</span>
+        </div>
       </div>
 
       {/* 人像：亞裔優先（緊貼主體描述） */}
@@ -362,9 +366,10 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
           優先生成亞裔（台灣／香港）面孔
         </label>
       )}
+      </FormSection>
 
       {/* ── 02 參考風格圖 ── */}
-      <SectionLabel step="02" title="參考風格圖" hint="選填 · AI 讀色調/光影/質感" />
+      <FormSection step="02" title="參考風格圖" optional>
       <div>
         <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
           <Link2 className="h-3 w-3" />參考風格圖
@@ -381,7 +386,7 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
               if (url.startsWith("http")) handleDescribeRef(url, false);
             }}
             placeholder="貼上圖片網址（https://…）"
-            className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400 transition"
+            className="flex-1 bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring transition"
           />
           <button onClick={() => fileInputRef.current?.click()} disabled={refUploading}
             title="從電腦上傳圖片"
@@ -403,9 +408,10 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
           </div>
         )}
       </div>
+      </FormSection>
 
       {/* ── 03 輸出設定 ── */}
-      <SectionLabel step="03" title="輸出設定" hint="引擎 · 尺寸 · 數量" />
+      <FormSection step="03" title="輸出設定">
 
       {/* 生成引擎（Nano Banana 需要參考圖；FLUX 標籤依素材類型）*/}
       <div>
@@ -432,15 +438,13 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
         <label className="text-xs font-semibold text-gray-600">輸出尺寸（比例）</label>
         <div className="relative w-full max-w-md">
           <select value={ratio} onChange={(e) => pickRatio(e.target.value)}
-            className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer">
+            className="w-full h-11 appearance-none border border-[#ebeff5] rounded-lg px-4 pr-9 text-[13px] font-semibold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
             {["1:1", "4:5", "3:4", "2:3", "9:16", "4:3", "3:2", "16:9"].map((r) => (
               <option key={r} value={r}>{r}（{RATIO_DIMS[r].w}×{RATIO_DIMS[r].h}）</option>
             ))}
             <option value="custom">自訂…</option>
           </select>
-          <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
         </div>
         <div className="flex items-center gap-2 pt-1.5">
           <input type="number" min={256} max={2400} value={customW} onChange={(e) => changeDim("w", Number(e.target.value))}
@@ -464,6 +468,7 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
           ))}
         </div>
       </div>
+      </FormSection>
 
       {error && (
         <div className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">⚠️ {error}</div>
@@ -505,12 +510,14 @@ export function GenerateAssetForm({ clientId, type, onSaved, onStarted, init }: 
       <div className="fixed bottom-0 left-60 right-0 z-30 bg-white border-t">
         <div className="max-w-3xl ml-6 py-3 flex items-center gap-3">
           {items.length === 0 ? (
-            <Button onClick={handleGenerate} disabled={!description.trim() || generating}
-              className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-40">
-              {generating
-                ? <><Loader2 className="h-4 w-4 animate-spin" />{genHint}（每張約 10–40 秒）</>
-                : <><Wand2 className="h-4 w-4" />生成 {count} 張{meta.label}</>}
-            </Button>
+            <div className="flex flex-col items-center pt-2 w-full">
+              <Button onClick={handleGenerate} disabled={!description.trim() || generating}
+                className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-16 py-4 text-base font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-50">
+                {generating
+                  ? <><Loader2 className="h-4 w-4 animate-spin" />{genHint}（每張約 10–40 秒）</>
+                  : <><Wand2 className="h-4 w-4" />生成 {count} 張{meta.label}</>}
+              </Button>
+            </div>
           ) : (
             <>
               <button onClick={() => setItems([])}
