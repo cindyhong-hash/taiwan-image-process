@@ -2,12 +2,10 @@
 import { useState, useEffect } from "react";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { X, Loader2, Wand2, Pencil, Trash2, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Lock, RefreshCw, RotateCcw, RotateCw, Zap } from "lucide-react";
+import { X, Loader2, Wand2, Pencil, Trash2, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Lock, RefreshCw, RotateCcw, RotateCw, Sparkles, ChevronDown } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { InspireButton } from "@/components/activities/InspireButton";
-import { SectionLabel, Field, AssetUploadCards } from "@/components/activities/formParts";
+import { AssetUploadCards } from "@/components/activities/formParts";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
 import { getColors, PALETTE_ROLES } from "@/types/library";
 import { readableText } from "@/components/library/ColorCards";
@@ -40,11 +38,11 @@ export const IMAGE_MODELS: { value: string; label: string; hint: string }[] = [
 // ── Ratio selector ────────────────────────────────────────────────────────────
 
 // 圖片尺寸比例 pills（step3-creation-form 設計：四個常用比例，取代舊 select + 自訂 W×H）。
-const RATIO_PILLS: { value: string; label: string }[] = [
-  { value: "1:1",  label: "1:1 正方形" },
-  { value: "4:5",  label: "4:5 直式貼文" },
-  { value: "16:9", label: "16:9 橫式廣告" },
-  { value: "9:16", label: "9:16 限動/Reels" },
+const RATIO_PILLS: { value: string; sub: string }[] = [
+  { value: "1:1",  sub: "正方形 (1080×1080)" },
+  { value: "4:5",  sub: "直式貼文 (1080×1350)" },
+  { value: "16:9", sub: "橫式廣告 (1920×1080)" },
+  { value: "9:16", sub: "限動 / Reels (1080×1920)" },
 ];
 
 // 比例 → 實際輸出尺寸（同產品圖生成台一致）；W×H 可改，改時鎖住比例。
@@ -74,6 +72,23 @@ async function uploadFile(file: File): Promise<string> {
   fd.append("file", file);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
   return (await res.json()).url;
+}
+
+// ── 白卡片區塊（Figma step3-creation-form-v2：白底圓角卡 + 圓形數字徽章標題，無底線）──
+function FormSection({ step, title, required, optional, children }: {
+  step: string; title: string; required?: boolean; optional?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-[#ebeff5] bg-white p-6 sm:p-8 space-y-6">
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">{step}</span>
+        <span className="text-base font-bold text-gray-900">{title}</span>
+        {required && <span className="text-red-500 text-sm">*</span>}
+        {optional && <span className="text-xs text-gray-400 font-normal">（選填）</span>}
+      </div>
+      {children}
+    </section>
+  );
 }
 
 // ── Main form ─────────────────────────────────────────────────────────────────
@@ -122,6 +137,8 @@ export function ActivityForm({
   const [refStylePrompt,   setRefStylePrompt]   = useState<string>("");
   // 03 風格積木（構圖 / 顏色 / 背景）— 揀完會把標籤直接寫入「畫面描述 Prompt」，可再喺嗰度改字。
   const [styleBlocks, setStyleBlocks] = useState<{ layout: StyleComponent | null; color: StyleComponent | null; background: StyleComponent | null }>({ layout: null, color: null, background: null });
+  const [pastStyleOpen, setPastStyleOpen] = useState(true); // 「參考過往貼文風格」收合（Figma v2）
+
   const [pickerCat, setPickerCat] = useState<ComponentCategory | null>(null);
   const CAT_META = {
     COMPOSITION:  { slot: "layout"     as const, label: "構圖" },
@@ -352,7 +369,7 @@ export function ActivityForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8 max-w-3xl pb-10">
+    <form onSubmit={handleSubmit} className="space-y-8 pb-4">
 
       {/* ── 底圖模式 banner（成張相做背景，唔重新生圖）─────────── */}
       {isBaseMode && (
@@ -426,18 +443,17 @@ export function ActivityForm({
         </div>
       )}
 
-      {/* ── 01 基本資訊 ─────────────────────────────────────── */}
-      <div className="space-y-4">
-        <SectionLabel step="01" title="基本資訊" required />
+      {/* ── 01 想做什麼？ ─────────────────────────────────────── */}
+      <FormSection step="01" title="想做什麼？" required>
 
-        {/* 畫面描述 + AI 優化按鈕 */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">
-              畫面描述 Prompt
-              <span className="text-gray-400 font-normal ml-1.5 text-xs">先描述你想要的畫面，也可以輸入後使用 AI 幫你改寫或優化。</span>
-            </Label>
+        {/* 畫面描述 + AI 按鈕 */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-1.5">
+              <span className="text-sm font-bold text-gray-900">畫面描述 Prompt</span>
+              <span className="text-xs text-gray-400 font-normal">用日常語言描述想要的場景、主體與氛圍</span>
+            </div>
+            <div className="flex items-center gap-2">
               {/* 靈感：依品牌想選題，點了直接填入畫面描述 */}
               <InspireButton
                 clientId={clientId}
@@ -453,12 +469,12 @@ export function ActivityForm({
                     setEditInstruction("");
                   }}
                   disabled={!values.imagePrompt.trim()}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                  className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border transition-all ${
                     !values.imagePrompt.trim()
                       ? "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"
                       : editingPrompt
-                      ? "border-violet-400 text-violet-700 bg-violet-50 cursor-pointer"
-                      : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
+                      ? "border-violet-400 text-violet-700 bg-violet-100 cursor-pointer"
+                      : "border-[#ebe4f9] text-violet-600 bg-[#f9f6ff] hover:bg-violet-100 cursor-pointer"
                   }`}
                 >
                   <Pencil className="h-3 w-3" />
@@ -472,10 +488,10 @@ export function ActivityForm({
                   type="button"
                   onClick={handleOptimizePrompt}
                   disabled={optimizingPrompt || !values.imagePrompt.trim()}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                  className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border transition-all ${
                     optimizingPrompt || !values.imagePrompt.trim()
                       ? "cursor-not-allowed border-[#E5E7EB] text-[#868D99] bg-[#F8F9FB]"
-                      : "border-violet-300 text-violet-600 bg-white hover:bg-violet-50 cursor-pointer"
+                      : "border-violet-600 text-white bg-violet-600 hover:bg-violet-700 cursor-pointer"
                   }`}
                 >
                   {optimizingPrompt
@@ -506,13 +522,17 @@ export function ActivityForm({
               )}
             </div>
           </div>
-          <textarea
-            value={values.imagePrompt}
-            onChange={(e) => set("imagePrompt", e.target.value)}
-            rows={4}
-            placeholder="例：精緻女生在辦公室，側臉仰頭噴霧，大片窗光，質感時尚"
-            className="w-full bg-white border border-input rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
-          />
+          <div className="relative">
+            <textarea
+              value={values.imagePrompt}
+              onChange={(e) => set("imagePrompt", e.target.value)}
+              rows={4}
+              maxLength={500}
+              placeholder="例：精緻女生在辦公室，側臉仰頭噴霧，大片窗光，質感時尚"
+              className="w-full bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-4 py-3 pb-7 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+            />
+            <span className="pointer-events-none absolute bottom-2.5 right-3 text-[11px] text-gray-400">{values.imagePrompt.length}/500</span>
+          </div>
           {editingPrompt && (
             <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
               <p className="text-xs font-medium text-blue-700">✏️ 想怎麼改？</p>
@@ -563,22 +583,28 @@ export function ActivityForm({
           )}
         </div>
 
-        <Field label="必放文字" optional>
-          <Input
-            className="bg-white"
-            value={values.requiredText}
-            onChange={(e) => set("requiredText", e.target.value)}
-            placeholder="例：精緻女孩必帶✨ / 夏日清涼控油，一噴搞定"
-          />
-        </Field>
-      </div>
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-bold text-gray-900">必放文字</span>
+            <span className="text-xs text-gray-400 font-normal">（選填）— 確保 AI 文案或圖中準確包含這些文字</span>
+          </div>
+          <div className="relative">
+            <input
+              type="text"
+              value={values.requiredText}
+              onChange={(e) => set("requiredText", e.target.value)}
+              maxLength={200}
+              placeholder="例：精緻女孩必帶✨ / 夏日清涼控油，一噴搞定"
+              className="w-full h-11 bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-4 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+            />
+            <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 right-3 text-[11px] text-gray-400">{values.requiredText.length}/200</span>
+          </div>
+        </div>
+      </FormSection>
 
-      {/* 底圖模式唔重新生圖 → 唔需要素材上傳(02) / 風格積木(03) */}
-      {!isBaseMode && (<>
-      {/* ── 02 素材上傳 ─────────────────────────────────────── */}
-      <div className="space-y-4">
-        <SectionLabel step="02" title="素材上傳" />
-
+      {/* 底圖模式唔重新生圖 → 唔需要素材上傳/風格積木 */}
+      {!isBaseMode && (
+      <FormSection step="02" title="加入素材" optional>
         <AssetUploadCards
           productUrls={values.productImageUrls}
           refUrls={values.referenceImageUrls}
@@ -594,12 +620,19 @@ export function ActivityForm({
           onAnalyze={() => handleAnalyzeStyle()}
           canAnalyze={hasRefImages}
         />
-      </div>
 
-      {/* ── 03 套用風格積木（構圖 / 顏色 / 背景）→ 內容注入 AI Prompt ─────────── */}
-      <div className="space-y-3">
-        <SectionLabel step="03" title="參考過往貼文風格" hint="選取後會加入 AI Prompt 生成參考" />
-        <div className="grid grid-cols-3 gap-3">
+        {/* 參考過往貼文風格（收合）→ 內容注入 AI Prompt */}
+        <div className="space-y-4 border-t border-[#ebeff5] pt-2">
+          <button type="button" onClick={() => setPastStyleOpen((o) => !o)}
+            className="flex w-full items-center justify-between gap-3 py-1.5 text-left">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold text-gray-900">參考過往貼文風格 <span className="font-normal text-gray-400">（選填）</span></span>
+              <span className="text-xs text-gray-400 font-normal">選擇您以前成效優良的圖文，AI 將智能套用相同排版、色彩特徵作為本次生成參考</span>
+            </div>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${pastStyleOpen ? "" : "-rotate-90"}`} />
+          </button>
+          {pastStyleOpen && (<>
+          <div className="grid grid-cols-3 gap-3">
           {([
             { cat: "COMPOSITION",  slot: "layout",     label: "構圖", icon: <LayoutTemplate className="h-4 w-4" /> },
             { cat: "COLOR_SCHEME", slot: "color",      label: "配色", icon: <SwatchBook className="h-4 w-4" /> },
@@ -676,55 +709,62 @@ export function ActivityForm({
               </div>
             );
           })}
+          </div>
+          <p className="text-[11px] text-gray-400">選取後會即時加入上方「畫面描述 Prompt」，可以再到那裡修改文字。</p>
+          </>)}
         </div>
-        <p className="text-[11px] text-gray-400">選取後會即時加入上方「畫面描述 Prompt」，可以再到那裡修改文字。</p>
-      </div>
-      </>)}
-
-      {/* ── 04 圖片尺寸比例（底圖模式冇 02/03 → 順延做 02）─────────── */}
-      <div className="space-y-4">
-        <SectionLabel step={isBaseMode ? "02" : "04"} title="圖片尺寸比例" required />
-        <div className="flex flex-wrap gap-2">
-          {RATIO_PILLS.map((r) => (
-            <button
-              key={r.value}
-              type="button"
-              onClick={() => pickRatio(r.value)}
-              className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                values.imageRatio === r.value
-                  ? "bg-violet-50 border-violet-300 text-violet-700"
-                  : "border-gray-200 text-gray-600 hover:border-gray-300"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── 05 生圖模型（底圖模式唔重新生圖 → 唔顯示）─────────── */}
-      {!isBaseMode && (
-      <div className="space-y-2">
-        <SectionLabel step="05" title="生圖模型" required />
-        <div className="relative w-full max-w-md">
-          <select
-            value={values.imageModel}
-            onChange={(e) => set("imageModel", e.target.value)}
-            className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 cursor-pointer"
-          >
-            {IMAGE_MODELS.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-          <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-        <p className="text-xs text-gray-400">
-          {IMAGE_MODELS.find((m) => m.value === values.imageModel)?.hint ?? ""}
-        </p>
-      </div>
+      </FormSection>
       )}
+
+      {/* ── 03 生成設定（比例 + 生圖模型）─────────── */}
+      <FormSection step={isBaseMode ? "02" : "03"} title="生成設定" required>
+        {/* 圖片尺寸比例 */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-bold text-gray-900">圖片尺寸比例</span>
+            <span className="text-red-500 text-sm">*</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {RATIO_PILLS.map((r) => {
+              const active = values.imageRatio === r.value;
+              return (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => pickRatio(r.value)}
+                  className={`flex flex-col items-center gap-1 rounded-lg border-[1.5px] px-4 py-3 transition-colors ${
+                    active ? "bg-violet-50 border-violet-600" : "bg-white border-[#ebeff5] hover:border-violet-300"
+                  }`}
+                >
+                  <span className={`text-sm font-bold ${active ? "text-violet-700" : "text-gray-900"}`}>{r.value}</span>
+                  <span className={`text-xs ${active ? "text-violet-600" : "text-gray-400"}`}>{r.sub}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 生圖模型（底圖模式唔重新生圖 → 唔顯示）*/}
+        {!isBaseMode && (
+        <div className="space-y-2">
+          <div className="relative w-full">
+            <select
+              value={values.imageModel}
+              onChange={(e) => set("imageModel", e.target.value)}
+              className="w-full h-11 appearance-none border border-[#ebeff5] rounded-lg px-4 pr-9 text-[13px] font-semibold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+            >
+              {IMAGE_MODELS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+          </div>
+          <p className="text-xs text-gray-400">
+            {IMAGE_MODELS.find((m) => m.value === values.imageModel)?.hint ?? ""}
+          </p>
+        </div>
+        )}
+      </FormSection>
 
       {/* ── Submit — fixed 貼實 viewport 底（跟其他生成 flow 同一套 pattern，
           外層 <main class="overflow-auto"> 令 sticky 失效，見 QuickAddForm 註解）。
@@ -735,12 +775,13 @@ export function ActivityForm({
           ml-6（唔係 px-6）：呢個 fixed bar 唔經過 <MainLayout> 個 <main class="p-6">，
           冇跟到嗰 24px 嘅左邊距，所以要手動補返 ml-6，等個掣個左邊同真正內容欄
           （max-w-3xl 個 div，冇自己嘅左右 padding）啱啱好對齊，唔會偏咗。 ── */}
-      {/* AI 開始生成：跟 Figma 內嵌喺表單流程底部，靠左，唔用 fixed footer（避免 border-t 造成畫面斷層）。*/}
-      <div className="pt-2">
-        <Button type="submit" disabled={loading || !canSubmit} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-6">
+      {/* AI 開始生成：置中大圓角按鈕（Figma step3-creation-form-v2）*/}
+      <div className="flex flex-col items-center pt-2">
+        <Button type="submit" disabled={loading || !canSubmit}
+          className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-16 py-4 text-base font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-50">
           {loading
-            ? <><Loader2 className="h-4 w-4 animate-spin" />處理中…</>
-            : <><Zap className="h-4 w-4" />{isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel}</>}
+            ? <><Loader2 className="h-5 w-5 animate-spin" />處理中…</>
+            : <><Sparkles className="h-[18px] w-[18px]" />{isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel}</>}
         </Button>
       </div>
 

@@ -2,14 +2,15 @@
 /**
  * formParts — 單圖 (ActivityForm) / 多圖 (multi/page) 表單共用嘅視覺元件。
  * 抽出嚟自 ActivityForm.tsx（Figma 對齊嘅 source of truth），兩邊表單要維持
- * 視覺一致，改樣式淨改呢度一個地方即可。
+ * 視覺一致，改樣式淨改呢度一個地方即可。對齊 Figma step3-creation-form-v2 (263-974)。
  */
 import { Label } from "@/components/ui/label";
-import { X, Loader2, Images, Check, RefreshCw, UploadCloud } from "lucide-react";
+import { X, Loader2, Images, Upload, Sparkles } from "lucide-react";
 
 // ── SectionLabel：violet 數字圓圈 + 標題 + 必填 */選填 + 底線分隔 ─────────────
+// divider 預設 true（多圖／素材庫表單靠底線分隔）；白卡片式版面傳 divider={false}。
 
-export function SectionLabel({ step, title, hint, required }: { step: string; title: string; hint?: string; required?: boolean }) {
+export function SectionLabel({ step, title, hint, required, divider = true }: { step: string; title: string; hint?: string; required?: boolean; divider?: boolean }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -22,7 +23,7 @@ export function SectionLabel({ step, title, hint, required }: { step: string; ti
           : <span className="text-xs text-gray-400">（選填）</span>}
         {hint && <span className="text-xs text-gray-400 font-normal">{hint}</span>}
       </div>
-      <div className="border-b border-gray-200" />
+      {divider && <div className="border-b border-gray-200" />}
     </div>
   );
 }
@@ -45,7 +46,31 @@ export function Field({ label, hint, required, optional, children }: {
   );
 }
 
-// ── AssetUploadCards：素材上傳 3 卡（產品主圖 / 風格參考圖 / AI 反推提示詞）───
+// ── 卡片底部動作列（上傳圖片 | 從素材庫選擇），border-t 分隔 ────────────────────
+
+function UploadActionBar({ onUpload, uploadDisabled, onPickLibrary, pickDisabled, multiple }: {
+  onUpload: (files: FileList) => void; uploadDisabled?: boolean; onPickLibrary: () => void; pickDisabled?: boolean; multiple?: boolean;
+}) {
+  return (
+    <div className="flex items-stretch border-t border-[#ebeff5] h-11 shrink-0">
+      <label className={`flex-1 flex items-center justify-center gap-1.5 text-[13px] font-semibold whitespace-nowrap transition-colors
+        ${uploadDisabled ? "text-gray-300 cursor-not-allowed" : "text-gray-800 hover:bg-gray-50 cursor-pointer"}`}>
+        <Upload className="h-4 w-4 shrink-0" />上傳圖片
+        {!uploadDisabled && (
+          <input type="file" accept="image/*" multiple={multiple} className="hidden"
+            onChange={(e) => e.target.files && onUpload(e.target.files)} />
+        )}
+      </label>
+      <div className="w-px bg-[#ebeff5]" />
+      <button type="button" onClick={onPickLibrary} disabled={pickDisabled}
+        className="flex-1 flex items-center justify-center gap-1.5 text-[13px] font-semibold whitespace-nowrap text-violet-600 hover:bg-violet-50 disabled:text-gray-300 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors">
+        <Images className="h-4 w-4 shrink-0" />從素材庫選擇
+      </button>
+    </div>
+  );
+}
+
+// ── AssetUploadCards：素材上傳 3 卡（產品圖片 / 參考風格圖 / AI 反推提示詞）───
 
 export type AssetUploadCardsProps = {
   productUrls: string[];
@@ -66,6 +91,19 @@ export type AssetUploadCardsProps = {
 const PRODUCT_MAX = 5;
 const REF_MAX = 1;
 
+function Thumb({ url, onRemove }: { url: string; onRemove: () => void }) {
+  return (
+    <div className="relative w-12 h-12 shrink-0">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt="" className="w-12 h-12 object-cover rounded-md border border-[#ebeff5]" />
+      <button type="button" onClick={onRemove}
+        className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
+        <X className="h-2.5 w-2.5 text-gray-500" />
+      </button>
+    </div>
+  );
+}
+
 export function AssetUploadCards({
   productUrls, refUrls,
   onAddProduct, onRemoveProduct, onPickProductLibrary,
@@ -77,119 +115,77 @@ export function AssetUploadCards({
   const done = analyzeState === "done";
   return (
     <div className="grid grid-cols-3 gap-4 items-stretch">
-      {/* 欄 1：產品主圖 */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
-        <UploadCloud className="h-7 w-7 text-gray-400" />
-        <div>
-          <p className="text-sm font-bold text-gray-800">產品主圖 最多 5 張</p>
-        </div>
-        {(productUrls.length > 0 || uploadingProduct) && (
-          <div className="flex gap-1.5 flex-wrap justify-center">
-            {productUrls.map((url, i) => (
-              <div key={i} className="relative w-12 h-12 shrink-0 group/thumb">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="w-12 h-12 object-cover rounded-lg border border-gray-200" />
-                <button type="button" onClick={() => onRemoveProduct(i)}
-                  className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
-                  <X className="h-2.5 w-2.5 text-gray-500" />
-                </button>
-              </div>
-            ))}
-            {uploadingProduct && <Loader2 className="h-5 w-5 text-gray-300 animate-spin self-center" />}
-          </div>
-        )}
-        <div className="flex items-center gap-2 w-full mt-auto">
-          <label className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium rounded-lg py-1.5 border transition-colors
-            ${productUrls.length >= PRODUCT_MAX ? "border-gray-100 text-gray-300 cursor-not-allowed" : "border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"}`}>
-            上傳圖片
-            {productUrls.length < PRODUCT_MAX && (
-              <input type="file" accept="image/*" multiple className="hidden"
-                onChange={(e) => e.target.files && onAddProduct(e.target.files)} />
+      {/* 卡 1：產品圖片 */}
+      <div className="rounded-xl border-[1.5px] border-[#ebeff5] bg-white flex flex-col overflow-hidden min-h-[190px]">
+        <div className="flex-1 p-5 flex flex-col gap-3.5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold text-gray-900">產品圖片 <span className="font-normal text-gray-400">(最多 5 張)</span></p>
+            {productUrls.length > 0 && (
+              <p className="text-xs font-semibold text-violet-600">已選 {productUrls.length}/5 張</p>
             )}
-          </label>
-          <button type="button" onClick={onPickProductLibrary}
-            disabled={productUrls.length >= PRODUCT_MAX}
-            className="flex-1 flex items-center justify-center gap-1 text-xs font-medium text-violet-600 border border-violet-200 rounded-lg py-1.5 hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-            <Images className="h-3 w-3" />從素材庫選擇
-          </button>
+          </div>
+          {(productUrls.length > 0 || uploadingProduct) && (
+            <div className="flex gap-2 flex-wrap">
+              {productUrls.map((url, i) => <Thumb key={i} url={url} onRemove={() => onRemoveProduct(i)} />)}
+              {uploadingProduct && <Loader2 className="h-5 w-5 text-gray-300 animate-spin self-center" />}
+            </div>
+          )}
         </div>
+        <UploadActionBar
+          onUpload={onAddProduct}
+          uploadDisabled={productUrls.length >= PRODUCT_MAX}
+          onPickLibrary={onPickProductLibrary}
+          pickDisabled={productUrls.length >= PRODUCT_MAX}
+          multiple
+        />
       </div>
 
-      {/* 欄 2：風格參考圖 */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center text-center gap-3">
-        <UploadCloud className="h-7 w-7 text-gray-400" />
-        <div>
-          <p className="text-sm font-bold text-gray-800">風格參考圖 1 張</p>
-        </div>
-        {(refUrls.length > 0 || uploadingRef) && (
-          <div className="flex gap-1.5 flex-wrap justify-center">
-            {refUrls.map((url, i) => (
-              <div key={i} className="relative w-12 h-12 shrink-0 group/thumb">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="w-12 h-12 object-cover rounded-lg border border-gray-200" />
-                <button type="button" onClick={() => onRemoveRef(i)}
-                  className="absolute -top-1 -right-1 bg-white rounded-full border shadow-sm p-0.5 hover:bg-red-50">
-                  <X className="h-2.5 w-2.5 text-gray-500" />
-                </button>
-              </div>
-            ))}
-            {uploadingRef && <Loader2 className="h-5 w-5 text-gray-300 animate-spin self-center" />}
+      {/* 卡 2：參考風格圖 */}
+      <div className="rounded-xl border-[1.5px] border-[#ebeff5] bg-white flex flex-col overflow-hidden min-h-[190px]">
+        <div className="flex-1 p-5 flex flex-col gap-3.5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold text-gray-900">參考風格圖 <span className="font-normal text-gray-400">(1 張)</span></p>
+            {refUrls.length > 0 && <p className="text-xs text-gray-400">已上傳</p>}
           </div>
-        )}
-        <div className="flex items-center gap-2 w-full mt-auto">
-          <label className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium rounded-lg py-1.5 border transition-colors
-            ${refUrls.length >= REF_MAX ? "border-gray-100 text-gray-300 cursor-not-allowed" : "border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"}`}>
-            上傳圖片
-            {refUrls.length < REF_MAX && (
-              <input type="file" accept="image/*" multiple className="hidden"
-                onChange={(e) => e.target.files && onAddRef(e.target.files)} />
-            )}
-          </label>
-          <button type="button" onClick={onPickRefLibrary}
-            className="flex-1 flex items-center justify-center gap-1 text-xs font-medium text-violet-600 border border-violet-200 rounded-lg py-1.5 hover:bg-violet-50 transition-colors">
-            <Images className="h-3 w-3" />從素材庫選擇
-          </button>
+          {(refUrls.length > 0 || uploadingRef) && (
+            <div className="flex items-center gap-3">
+              {refUrls.map((url, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Thumb url={url} onRemove={() => onRemoveRef(i)} />
+                  <p className="text-xs font-semibold text-gray-700">已上傳參考圖</p>
+                </div>
+              ))}
+              {uploadingRef && <Loader2 className="h-5 w-5 text-gray-300 animate-spin" />}
+            </div>
+          )}
         </div>
+        <UploadActionBar
+          onUpload={onAddRef}
+          uploadDisabled={refUrls.length >= REF_MAX}
+          onPickLibrary={onPickRefLibrary}
+        />
       </div>
 
-      {/* 欄 3：AI 反推提示詞 */}
-      <button
-        type="button"
-        onClick={onAnalyze}
-        disabled={!canAnalyze || analyzing}
-        className={`rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center gap-3 transition-all
-          ${done && !analyzing
-            ? "border-emerald-300 bg-emerald-50/40 cursor-pointer"
-            : canAnalyze && !analyzing
-            ? "border-violet-300 hover:bg-violet-50 cursor-pointer"
-            : "border-violet-100 bg-gray-50 cursor-not-allowed"}`}
-      >
-        {analyzing ? (
-          <>
-            <Loader2 className="h-7 w-7 text-violet-500 animate-spin" />
-            <div>
-              <p className="text-sm font-bold text-gray-800">AI 反推提示詞</p>
-              <p className="text-xs text-violet-500 mt-0.5">分析中…</p>
-            </div>
-          </>
-        ) : done ? (
-          <>
-            <Check className="h-7 w-7 text-emerald-500" />
-            <div>
-              <p className="text-sm font-bold text-gray-800">AI 反推提示詞</p>
-              <p className="text-xs text-emerald-600 mt-0.5">已帶入提示詞，可再撳重新帶入</p>
-            </div>
-          </>
-        ) : (
-          <>
-            <RefreshCw className={`h-7 w-7 ${canAnalyze ? "text-violet-400" : "text-gray-300"}`} />
-            <div>
-              <p className={`text-sm font-bold ${canAnalyze ? "text-gray-800" : "text-gray-400"}`}>AI 反推提示詞</p>
-              <p className="text-xs text-gray-400 mt-0.5">{canAnalyze ? "從參考圖智能分析風格並套用" : "需先加風格參考圖"}</p>
-            </div>
-          </>
-        )}
-      </button>
+      {/* 卡 3：AI 反推提示詞（填色卡）*/}
+      <div className="rounded-xl border-[1.5px] border-[#ebe4f9] bg-[#f9f6ff] p-5 flex flex-col justify-between gap-4 min-h-[190px]">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-violet-600" />
+            <p className="text-sm font-bold text-violet-700">AI 反推提示詞</p>
+          </div>
+          <p className="text-xs leading-relaxed text-gray-500">
+            偵測參考圖後，AI 智慧反推構圖、色調及場景等描述，並將其自動追加至下方 Prompt 中。
+          </p>
+        </div>
+        <button type="button" onClick={onAnalyze} disabled={!canAnalyze || analyzing}
+          className="w-full flex items-center justify-center gap-1.5 rounded-md bg-violet-600 text-white text-xs font-semibold py-2 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+          {analyzing
+            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />分析中…</>
+            : done
+            ? "已帶入，重新生成"
+            : "一鍵生成反推提示詞"}
+        </button>
+      </div>
     </div>
   );
 }
