@@ -662,7 +662,7 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setShowDescHelp(false)} />
                     <div className="absolute left-0 top-6 z-20 w-64 rounded-lg border border-[#ebeff5] bg-white p-3 text-xs leading-relaxed text-gray-500 shadow-md">
-                      可直接打字,或上傳產品圖片／選取風格積木自動幫你填入。
+                      可直接打字,或上傳產品圖片／選取風格積木自動幫你填入。需先有產品圖或主體描述才能生成。
                     </div>
                   </>
                 )}
@@ -725,9 +725,6 @@ export const PromptComposer = forwardRef<PromptComposerHandle, Props>(function P
                 </div>
               )}
             </div>
-          )}
-          {!hasSubject && (
-            <p className="text-[11px] text-amber-600">請先上傳產品圖片，或在上方填寫產品主體描述，才能生成。</p>
           )}
         </div>
 
