@@ -30,6 +30,7 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, hasPro
   const [error, setError] = useState("");
   const [confirmReplan, setConfirmReplan] = useState(false);
   const producedCount = topics.filter((t) => t.status && t.status !== "PLANNING").length; // 已製作/編輯過(非 PLANNING)
+  const emptyCampaigns = campaigns.filter((c) => !topics.some((t) => t.campaignId === c.id)); // 尚無任何 topic 的 campaign
 
   const confirmProductContext = () => hasProducts || window.confirm(MISSING_PRODUCT_WARNING);
   const generateStrategy = async (current?: PlannerStrategy, productWarningConfirmed = false) => {
@@ -113,6 +114,16 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, hasPro
               <button onClick={() => setConfirmReplan(true)} disabled={!!busy} title="清空所有主題重新規劃" className="rounded-lg border border-red-200 px-3 py-2 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">全部重新規劃</button>
             </div>
           </div>
+
+          {topics.length > 0 && emptyCampaigns.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800">
+              <span>⚠️ 「{emptyCampaigns.map((c) => c.name).join("、")}」尚無內容。可「重產未製作」自動分配，或「新增」後手動指定 Campaign。</span>
+              <div className="flex shrink-0 gap-2">
+                <button onClick={() => generateTopics()} disabled={!!busy} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium hover:bg-amber-100 disabled:opacity-50">重產未製作</button>
+                <button onClick={add} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium hover:bg-amber-100">新增</button>
+              </div>
+            </div>
+          )}
 
           {!topics.length ? (
             <div className="rounded-xl border border-dashed py-10 text-center text-sm text-gray-400">確認上方策略後，AI 會在這裡產生完整 Topics。</div>
