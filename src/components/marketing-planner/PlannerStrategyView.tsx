@@ -110,16 +110,16 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, hasPro
             </div>
             <div className="flex gap-2">
               <button onClick={add} className="rounded-lg border border-gray-200 px-3 py-2 text-xs hover:bg-gray-50"><Plus className="mr-1 inline h-3.5 w-3.5" />新增</button>
-              <button onClick={() => generateTopics()} disabled={!!busy} title="保留已製作的主題，只重產尚未製作的" className="rounded-lg border border-gray-200 px-3 py-2 text-xs hover:bg-gray-50 disabled:opacity-50"><RefreshCw className="mr-1 inline h-3.5 w-3.5" />重產未製作</button>
+              <button onClick={() => generateTopics()} disabled={!!busy} title="保留已製作的主題，只重產尚未製作的" className="rounded-lg border border-gray-200 px-3 py-2 text-xs hover:bg-gray-50 disabled:opacity-50"><RefreshCw className="mr-1 inline h-3.5 w-3.5" />重新產生（保留已製作）</button>
               <button onClick={() => setConfirmReplan(true)} disabled={!!busy} title="清空所有主題重新規劃" className="rounded-lg border border-red-200 px-3 py-2 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">全部重新規劃</button>
             </div>
           </div>
 
           {topics.length > 0 && emptyCampaigns.length > 0 && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800">
-              <span>⚠️ 「{emptyCampaigns.map((c) => c.name).join("、")}」尚無內容。可「重產未製作」自動分配，或「新增」後手動指定 Campaign。</span>
+              <span>⚠️ 「{emptyCampaigns.map((c) => c.name).join("、")}」尚無內容。可「重新產生（保留已製作）」自動分配，或「新增」後手動指定 Campaign。</span>
               <div className="flex shrink-0 gap-2">
-                <button onClick={() => generateTopics()} disabled={!!busy} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium hover:bg-amber-100 disabled:opacity-50">重產未製作</button>
+                <button onClick={() => generateTopics()} disabled={!!busy} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium hover:bg-amber-100 disabled:opacity-50">重新產生（保留已製作）</button>
                 <button onClick={add} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium hover:bg-amber-100">新增</button>
               </div>
             </div>
@@ -189,7 +189,7 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, hasPro
             <p className="mt-2 text-sm leading-6 text-gray-500">
               這會清空目前 {topics.length} 篇主題並重新產生
               {producedCount > 0 && <>，其中 <span className="font-semibold text-red-600">{producedCount} 篇已製作／編輯</span> 的也會一併清除</>}
-              。此動作無法復原。若只想補未製作的，請用「重產未製作」。
+              。此動作無法復原。若只想補未製作的，請用「重新產生（保留已製作）」。
             </p>
             <div className="mt-6 flex justify-end gap-2">
               <button onClick={() => setConfirmReplan(false)} className="rounded-lg px-4 py-2.5 text-sm text-gray-500 hover:bg-gray-100">取消</button>
