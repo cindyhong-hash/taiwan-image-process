@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { CalendarRange, ChevronLeft, GripVertical, Loader2 } from "lucide-react";
 import { CONTENT_TYPE_META, type ContentType } from "@/lib/marketing-planner";
 import { assignInitialSchedule, calendarDays, dateKey } from "@/lib/planner/calendar";
+import { ContentBriefDrawer } from "@/components/marketing-planner/ContentBriefDrawer";
+import type { BriefCampaign, BriefSignal } from "@/lib/planner/content-brief";
 
 type Topic = {
   id: string;
@@ -13,6 +15,11 @@ type Topic = {
   format: string;
   status: string;
   scheduledDate: string | null;
+  campaignId: string | null;
+  contentDirection: string;
+  platforms: string[];
+  recommendationReason: string;
+  sourceSignals: BriefSignal[];
   campaign?: { name: string } | null;
 };
 
@@ -32,11 +39,12 @@ const STATUS_STYLES: Record<string, { label: string; dot: string }> = {
   APPROVED: { label: "已完成", dot: "bg-emerald-500" },
 };
 
-export function PlannerCalendarView({ planId, clientId, year, month, initialTopics }: { planId: string; clientId: string; year: number; month: number; initialTopics: Topic[] }) {
+export function PlannerCalendarView({ planId, clientId, year, month, initialTopics, campaigns }: { planId: string; clientId: string; year: number; month: number; initialTopics: Topic[]; campaigns: BriefCampaign[] }) {
   const router = useRouter();
   const [topics, setTopics] = useState(initialTopics);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const initialized = useRef(false);
   const days = useMemo(() => calendarDays(year, month), [year, month]);
   const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
@@ -85,8 +93,8 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
     const type = (item.contentType in CONTENT_TYPE_META ? item.contentType : "BRAND") as ContentType;
     const status = STATUS_STYLES[item.status] ?? STATUS_STYLES.PLANNING;
     return (
-      <article key={item.id} draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)}
-        className={`group cursor-grab rounded-lg border border-gray-200 border-l-[3px] bg-white px-2.5 py-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:cursor-grabbing ${TYPE_STYLES[type]}`}>
+      <article key={item.id} role="button" tabIndex={0} draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)} onClick={() => setSelectedId(item.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedId(item.id); }}
+        className={`group cursor-grab rounded-lg border border-gray-200 border-l-[3px] bg-white px-2.5 py-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-300 active:cursor-grabbing ${TYPE_STYLES[type]}`}>
         <div className="flex items-start gap-1.5">
           <GripVertical className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-300" />
           <div className="min-w-0 flex-1">
@@ -141,6 +149,12 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
           {!unscheduled.length && <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 px-3 py-6 text-center text-xs text-emerald-700">本月 {topics.length} 篇內容皆已排期</div>}
         </aside>
       </div>
+      {selectedId && topics.find((item) => item.id === selectedId) && <ContentBriefDrawer
+        item={topics.find((item) => item.id === selectedId)!}
+        campaigns={campaigns}
+        onClose={() => setSelectedId(null)}
+        onSaved={(saved) => setTopics((items) => items.map((item) => item.id === saved.id ? { ...item, ...saved } : item))}
+      />}
     </div>
   );
 }
