@@ -1,20 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Check, ChevronRight, Loader2, X } from "lucide-react";
-import { buildContentBrief, type BriefCampaign, type BriefSourceItem } from "@/lib/planner/content-brief";
+import { buildContentBrief, plannerActivityDestination, type BriefCampaign, type BriefSourceItem } from "@/lib/planner/content-brief";
 
 const PLATFORMS = ["Instagram", "Facebook"];
 
-export function ContentBriefDrawer({ item, campaigns, onClose, onSaved }: {
+export function ContentBriefDrawer({ item, campaigns, clientId, onClose, onSaved }: {
   item: BriefSourceItem;
   campaigns: BriefCampaign[];
+  clientId: string;
   onClose: () => void;
   onSaved: (item: BriefSourceItem) => void;
 }) {
+  const router = useRouter();
   const initial = useMemo(() => buildContentBrief(item, campaigns), [campaigns, item]);
   const [draft, setDraft] = useState(item);
   const [saving, setSaving] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const campaign = campaigns.find((candidate) => candidate.id === draft.campaignId);
 
@@ -31,8 +35,7 @@ export function ContentBriefDrawer({ item, campaigns, onClose, onSaved }: {
     platforms: current.platforms.includes(platform) ? current.platforms.filter((value) => value !== platform) : [...current.platforms, platform],
   }));
 
-  const save = async () => {
-    setSaving(true); setError("");
+  const persist = async () => {
     try {
       const response = await fetch(`/api/content-plan-items/${draft.id}`, {
         method: "PATCH",
@@ -41,9 +44,26 @@ export function ContentBriefDrawer({ item, campaigns, onClose, onSaved }: {
       });
       if (!response.ok) throw new Error("save failed");
       onSaved(draft);
-      onClose();
-    } catch { setError("內容簡介未能儲存，請稍後再試。"); }
-    finally { setSaving(false); }
+      return true;
+    } catch { setError("內容簡介未能儲存，請稍後再試。"); return false; }
+  };
+
+  const save = async () => {
+    setSaving(true); setError("");
+    if (await persist()) onClose();
+    setSaving(false);
+  };
+
+  const startMaking = async () => {
+    setStarting(true); setError("");
+    try {
+      if (!await persist()) return;
+      const response = await fetch(`/api/content-plan-items/${draft.id}/activity`, { method: "POST" });
+      if (!response.ok) throw new Error("activity handoff failed");
+      const result = await response.json() as { activityId: string; format: string };
+      router.push(plannerActivityDestination(clientId, result.activityId, result.format));
+    } catch { setError("目前無法開始製作，請稍後再試。"); }
+    finally { setStarting(false); }
   };
 
   return (
@@ -80,7 +100,7 @@ export function ContentBriefDrawer({ item, campaigns, onClose, onSaved }: {
           {(initial.recommendationReason || initial.sourceSignals.length > 0) && <section className="mt-6 rounded-xl border border-amber-100 bg-amber-50/60 p-4"><h3 className="text-xs font-semibold text-amber-800">為什麼推薦這篇？</h3>{initial.recommendationReason && <p className="mt-2 text-sm leading-5 text-amber-900">{initial.recommendationReason}</p>}<div className="mt-2 flex flex-wrap gap-1.5">{initial.sourceSignals.map((signal) => <span key={signal.id} className="rounded-md bg-white px-2 py-1 text-[10px] text-amber-700 shadow-sm">來源：{signal.label}</span>)}</div></section>}
         </div>
 
-        <footer className="border-t border-gray-100 bg-white px-6 py-4"><div className="flex items-center justify-between gap-3"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm text-gray-500 hover:bg-gray-100">返回日曆</button><div className="flex gap-2"><button onClick={save} disabled={saving || !draft.topic.trim()} className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">{saving && <Loader2 className="mr-1.5 inline h-4 w-4 animate-spin" />}儲存變更</button><button disabled title="Activity 轉接將在下一階段接上" className="flex cursor-not-allowed items-center gap-1 rounded-lg bg-violet-600/45 px-4 py-2.5 text-sm font-medium text-white">開始製作<ChevronRight className="h-4 w-4" /></button></div></div></footer>
+        <footer className="border-t border-gray-100 bg-white px-6 py-4"><div className="flex items-center justify-between gap-3"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm text-gray-500 hover:bg-gray-100">返回日曆</button><div className="flex gap-2"><button onClick={save} disabled={saving || starting || !draft.topic.trim()} className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">{saving && <Loader2 className="mr-1.5 inline h-4 w-4 animate-spin" />}儲存變更</button><button onClick={startMaking} disabled={saving || starting || !draft.topic.trim()} className="flex items-center gap-1 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <>開始製作<ChevronRight className="h-4 w-4" /></>}</button></div></div></footer>
       </aside>
     </div>
   );

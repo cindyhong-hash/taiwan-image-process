@@ -152,6 +152,7 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
       {selectedId && topics.find((item) => item.id === selectedId) && <ContentBriefDrawer
         item={topics.find((item) => item.id === selectedId)!}
         campaigns={campaigns}
+        clientId={clientId}
         onClose={() => setSelectedId(null)}
         onSaved={(saved) => setTopics((items) => items.map((item) => item.id === saved.id ? { ...item, ...saved } : item))}
       />}

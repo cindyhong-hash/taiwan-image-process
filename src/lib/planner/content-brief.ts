@@ -45,3 +45,44 @@ export function buildContentBrief(item: BriefSourceItem, campaigns: BriefCampaig
     sourceSignals: item.sourceSignals,
   };
 }
+
+export type PlannerActivityDraft = {
+  theme: string;
+  focusPoint: string;
+  titleText: string;
+  imagePrompt: string;
+  productImageUrl: string;
+  productImageUrls: string;
+  referenceImageUrls: string;
+  selectedComponentIds: string;
+  layoutId: string;
+  genMode: "unified";
+  cells: string;
+  status: "DRAFT";
+};
+
+export function buildPlannerActivityDraft(brief: ContentBrief): PlannerActivityDraft {
+  const productUrls = brief.products.map((product) => product.imageUrl).filter(Boolean);
+  const promptParts = [brief.contentDirection.trim()];
+  if (brief.campaignDescription.trim()) promptParts.push(`Campaign 補充：${brief.campaignDescription.trim()}`);
+  return {
+    theme: brief.topic.slice(0, 30) || "未命名活動",
+    focusPoint: brief.topic,
+    titleText: brief.topic,
+    imagePrompt: promptParts.filter(Boolean).join("\n\n"),
+    productImageUrl: productUrls[0] ?? "",
+    productImageUrls: JSON.stringify(productUrls),
+    referenceImageUrls: "[]",
+    selectedComponentIds: "[]",
+    layoutId: brief.format === "CAROUSEL" ? "three-h-top" : "single",
+    genMode: "unified",
+    cells: "[]",
+    status: "DRAFT",
+  };
+}
+
+export function plannerActivityDestination(clientId: string, activityId: string, format: string): string {
+  return format === "CAROUSEL"
+    ? `/clients/${clientId}/activities/new/multi?edit=${activityId}`
+    : `/clients/${clientId}/activities/${activityId}/edit`;
+}
