@@ -11,6 +11,8 @@ export type BriefSourceItem = {
   platforms: string[];
   recommendationReason: string;
   sourceSignals: BriefSignal[];
+  status?: string;
+  generatedActivityId?: string | null;
 };
 
 export type ContentBrief = {

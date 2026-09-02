@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null; cellImageUrls?: string };
-type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string } };
+type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string }; plannerItem?: { monthlyPlanId: string } | null };
 
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
   const [clientId, setClientId] = useState<string>("");
@@ -150,10 +150,10 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
   return (
     <div>
       <Link
-        href={`/clients/${clientId}`}
+        href={activity.plannerItem ? `/clients/${clientId}/marketing-plans/${activity.plannerItem.monthlyPlanId}/calendar` : `/clients/${clientId}`}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 border border-gray-200 bg-white rounded-lg px-3 py-1.5 hover:bg-gray-50 hover:text-gray-800 transition-colors mb-6"
       >
-        <ArrowLeft className="h-4 w-4" />返回活動列表
+        <ArrowLeft className="h-4 w-4" />{activity.plannerItem ? "返回內容日曆" : "返回活動列表"}
       </Link>
       <div className="flex items-center justify-between mb-1">
         {editingTitle ? (

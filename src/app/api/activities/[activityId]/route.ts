@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { syncPlannerItemStatus } from "@/lib/planner/sync-activity-status";
 
 function parseActivity(activity: Record<string, unknown>) {
   return {
@@ -14,7 +15,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ activit
   const { activityId } = await params;
   const activity = await db.activity.findUnique({
     where: { id: activityId },
-    include: { generatedLayouts: { orderBy: { layoutType: "asc" } }, client: true },
+    include: {
+      generatedLayouts: { orderBy: { layoutType: "asc" } },
+      client: true,
+      plannerItem: { select: { monthlyPlanId: true } },
+    },
   });
   if (!activity) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({
@@ -61,5 +66,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ac
     where: { id: activityId },
     data: updateData,
   });
+  if (typeof updateData.status === "string") {
+    await syncPlannerItemStatus(activityId, updateData.status);
+  }
   return NextResponse.json(parseActivity(activity as unknown as Record<string, unknown>));
 }

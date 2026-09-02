@@ -11,6 +11,7 @@ import { generateFramePlans, type FramePlan } from "@/lib/multi/frame-planner";
 import { buildMultiImagePrompt, type LockBlocks } from "@/lib/multi/prompt-builder";
 import { VARIANT_STYLE } from "@/lib/multi/variant-style";
 import { pickVisualTemplate, visualTemplatePromptBlock } from "@/lib/multi/visual-template-selector";
+import { syncPlannerItemStatus } from "@/lib/planner/sync-activity-status";
 
 // 各圖獨立模式 B 組：內容＋色調＋人物都相同，只換「文字排版/底框/構圖角度」（附加在每格圖片 prompt 末尾）
 const VARIANT_B_STYLE_SUFFIX =
@@ -190,6 +191,7 @@ export async function generateMulti(activityId: string): Promise<NextResponse> {
   }
 
   await db.activity.update({ where: { id: activityId }, data: { status: "GENERATING", errorMessage: null } });
+  await syncPlannerItemStatus(activityId, "GENERATING");
 
   const { client } = activity;
 
@@ -719,6 +721,7 @@ ${cellNoProduct}${cellProductFreeNote}${razorExclusionNote}${subImageNoText}`;
     }
 
     await db.activity.update({ where: { id: activityId }, data: { status: "DONE" } });
+    await syncPlannerItemStatus(activityId, "DONE");
     console.log(`[generate][multi] ✅ done — ${layouts.length} set(s)`);
     return NextResponse.json({ ok: true, layouts });
   } catch (err) {
@@ -740,6 +743,7 @@ ${cellNoProduct}${cellProductFreeNote}${razorExclusionNote}${subImageNoText}`;
     const errorMessage = msg.slice(0, 500);
     console.error("[generate][multi] ❌ failed:", errorMessage);
     await db.activity.update({ where: { id: activityId }, data: { status: "FAILED", errorMessage } }).catch(() => {});
+    await syncPlannerItemStatus(activityId, "FAILED").catch(() => {});
     return NextResponse.json({ error: errorMessage, errorMessage }, { status: 500 });
   }
 }

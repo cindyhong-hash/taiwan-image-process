@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { generateImageFal, generateImageFluxSchnell, describeStyle, describeProduct, editImageFal } from "@/lib/fal";
 import { generateImageOpenRouter, chatTextOpenRouter } from "@/lib/openrouter";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
+import { syncPlannerItemStatus } from "@/lib/planner/sync-activity-status";
 
 /** 背景生成：優先 OpenRouter Gemini（更寫實），備援 Fal FLUX */
 async function generateBackground(opts: {
@@ -147,6 +148,7 @@ export async function POST(request: Request) {
   }
 
   await db.activity.update({ where: { id: activityId }, data: { status: "GENERATING" } });
+  await syncPlannerItemStatus(activityId, "GENERATING");
 
   const { client } = activity;
 
@@ -291,10 +293,12 @@ export async function POST(request: Request) {
       }
 
       await db.activity.update({ where: { id: activityId }, data: { status: "DONE" } });
+      await syncPlannerItemStatus(activityId, "DONE");
       return NextResponse.json({ layouts: saved, mode: "BASE_IMAGE" });
     } catch (err) {
       console.error("[generate] ❌ 底圖模式失敗:", err);
       await db.activity.update({ where: { id: activityId }, data: { status: "FAILED" } });
+      await syncPlannerItemStatus(activityId, "FAILED");
       return NextResponse.json({ error: String(err) }, { status: 500 });
     }
   }
@@ -583,11 +587,13 @@ export async function POST(request: Request) {
     }
 
     await db.activity.update({ where: { id: activityId }, data: { status: "DONE" } });
+    await syncPlannerItemStatus(activityId, "DONE");
     return NextResponse.json({ layouts });
 
   } catch (err) {
     console.error("[generate] ❌ Fatal error:", err);
     await db.activity.update({ where: { id: activityId }, data: { status: "FAILED" } });
+    await syncPlannerItemStatus(activityId, "FAILED");
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

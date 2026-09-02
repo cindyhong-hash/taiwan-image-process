@@ -20,6 +20,7 @@ type Topic = {
   platforms: string[];
   recommendationReason: string;
   sourceSignals: BriefSignal[];
+  generatedActivityId: string | null;
   campaign?: { name: string } | null;
 };
 
