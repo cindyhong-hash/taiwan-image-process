@@ -127,7 +127,8 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
   const pill = (on: boolean) => `rounded-lg border-[1.5px] px-3 py-2 text-sm transition-colors ${on ? "border-violet-600 bg-violet-50 text-violet-700" : "border-[#ebeff5] bg-white text-gray-500 hover:border-violet-300"}`;
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
+      <button onClick={() => router.push(`/clients/${plan.clientId}/marketing-plans`)} className="mb-2 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700"><ChevronLeft className="h-3.5 w-3.5" />返回月度企劃</button>
       {/* 頁首 + 月份切換 */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
