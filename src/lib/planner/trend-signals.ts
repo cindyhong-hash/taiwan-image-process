@@ -111,11 +111,11 @@ async function deriveTrendKeywords(ctx: TrendSignalContext): Promise<string[]> {
     ctx.goals?.length && `目標：${ctx.goals.join("、")}`,
   ].filter(Boolean).join("；");
   try {
-    const prompt = `根據以下品牌資訊，給 1-2 個「適合在社群平台(Threads/Instagram)搜尋、能找到相關消費者討論」的繁體中文關鍵字，聚焦『產品類別/用途』而非品牌名(品牌名太利基會搜不到)。只回 JSON 字串陣列，例如 ["除毛","除毛刀"]。\n${facts}`;
+    const prompt = `根據以下品牌資訊，給 2-3 個用來在社群平台(Threads/Instagram)搜尋的繁體中文關鍵字。\n規則：要「簡短、常見、大範圍」的單一詞(2-4 字，聚焦產品『大類別』)，不要加「女性/男性/居家」等修飾、也不要組合成長詞，太具體會搜不到。例：女除毛刀→「除毛」、精華液→「保養」、女鞋→「穿搭」。只回 JSON 字串陣列，例如 ["除毛","美體"]。\n${facts}`;
     const out = await chatTextOpenRouter(prompt, 200);
     const parsed = JSON.parse((out ?? "[]").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
     const kws = Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string" && k.trim().length > 0).map((k) => k.trim()) : [];
-    return kws.length ? kws.slice(0, 2) : fallback;
+    return kws.length ? kws.slice(0, 3) : fallback;
   } catch {
     return fallback;
   }
@@ -131,7 +131,7 @@ const threadsProvider: TrendSignalProvider = {
     const keywords = await deriveTrendKeywords(ctx);
     if (!keywords.length) return [];
     const texts: string[] = [];
-    for (const kw of keywords.slice(0, 2)) {
+    for (const kw of keywords.slice(0, 3)) {
       try {
         const res = await fetch(`https://threads-scraper-api2.p.rapidapi.com/api/v1/search/top?query=${encodeURIComponent(kw)}`, {
           headers: { "x-rapidapi-host": "threads-scraper-api2.p.rapidapi.com", "x-rapidapi-key": key },
@@ -139,7 +139,7 @@ const threadsProvider: TrendSignalProvider = {
         });
         if (res.ok) collectThreadTexts(await res.json().catch(() => null), texts);
       } catch { /* 跳過這個關鍵字 */ }
-      if (texts.length >= 30) break;
+      if (texts.length >= 20) break;
     }
     const uniq = [...new Set(texts)].slice(0, 25);
     if (!uniq.length) return [];
