@@ -13,6 +13,8 @@ type Signal = { id: string; source: string; label: string; score?: number };
 type Topic = { id: string; campaignId?: string | null; contentType: string; topic: string; contentDirection: string; format: string; platforms: string[]; recommendationReason?: string; sourceSignals?: Signal[]; status?: string };
 type Campaign = { id: string; name: string };
 
+const MISSING_PRODUCT_WARNING = "目前 Campaign 沒有關聯產品，AI 將只使用品牌資料，產品型主題可能較不精準。仍要繼續生成嗎？";
+
 function moveOne<T extends { count: number }>(items: T[], index: number, delta: number) {
   const next = items.map((x) => ({ ...x }));
   if (delta > 0) { const donor = next.map((x, i) => ({ i, count: i === index ? -1 : x.count })).sort((a, b) => b.count - a.count)[0]; if (!donor || donor.count <= 0) return items; next[index].count++; next[donor.i].count--; }
@@ -20,21 +22,23 @@ function moveOne<T extends { count: number }>(items: T[], index: number, delta: 
   return next;
 }
 
-export function PlannerStrategyView({ planId, clientId, total, campaigns, initialStrategy, initialTopics }: { planId: string; clientId: string; total: number; campaigns: Campaign[]; initialStrategy?: PlannerStrategy; initialTopics: Topic[] }) {
+export function PlannerStrategyView({ planId, clientId, total, campaigns, hasProducts, initialStrategy, initialTopics }: { planId: string; clientId: string; total: number; campaigns: Campaign[]; hasProducts: boolean; initialStrategy?: PlannerStrategy; initialTopics: Topic[] }) {
   const router = useRouter();
   const [strategy, setStrategy] = useState<PlannerStrategy | undefined>(initialStrategy?.contentMix?.length ? initialStrategy : undefined);
   const [topics, setTopics] = useState<Topic[]>(initialTopics);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const generateStrategy = async (current?: PlannerStrategy) => {
+  const confirmProductContext = () => hasProducts || window.confirm(MISSING_PRODUCT_WARNING);
+  const generateStrategy = async (current?: PlannerStrategy, productWarningConfirmed = false) => {
+    if (!productWarningConfirmed && !confirmProductContext()) return;
     setBusy("strategy"); setError("");
     try { const r = await fetch(`/api/marketing-plans/${planId}/strategy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(current ? { strategy: current } : {}) }); if (!r.ok) throw new Error(); setStrategy((await r.json()).strategy); }
     catch { setError("策略暫時無法產生，請稍後再試。"); } finally { setBusy(null); }
   };
   const generateTopics = async () => {
-    if (!strategy) return; setBusy("topics"); setError("");
-    try { await generateStrategy(strategy); const r = await fetch(`/api/marketing-plans/${planId}/topics`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); if (!r.ok) throw new Error(); setTopics((await r.json()).items); }
+    if (!strategy || !confirmProductContext()) return; setBusy("topics"); setError("");
+    try { await generateStrategy(strategy, true); const r = await fetch(`/api/marketing-plans/${planId}/topics`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); if (!r.ok) throw new Error(); setTopics((await r.json()).items); }
     catch { setError("Topics 暫時無法產生，請稍後再試。"); } finally { setBusy(null); }
   };
   const updateTopic = (id: string, patch: Partial<Topic>, save = false) => { setTopics((all) => all.map((x) => (x.id === id ? { ...x, ...patch } : x))); if (save) fetch(`/api/content-plan-items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }); };
@@ -56,6 +60,7 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, initia
       </div>
 
       {error && <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
+      {!hasProducts && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">目前 Campaign 尚未關聯產品。AI 不會從品牌名稱猜測產品；若要產生精準的產品主題，請先回 Brief 加入產品。</div>}
 
       {/* 策略 + Content Mix */}
       <section className="mb-4 rounded-2xl border border-gray-200 bg-white p-6">

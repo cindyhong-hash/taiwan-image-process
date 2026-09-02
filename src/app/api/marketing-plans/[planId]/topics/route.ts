@@ -3,11 +3,13 @@ import { db } from "@/lib/db";
 import { chatTextOpenRouter } from "@/lib/openrouter";
 import { CONTENT_TYPES, CONTENT_TYPE_META, createFallbackStrategy, parseJsonArray, parseJsonObject, type ContentType, type PlannerStrategy , parseJsonArrayAny} from "@/lib/marketing-planner";
 import { collectTrendSignals, filterCitedSignals, type TrendSignal } from "@/lib/planner/trend-signals";
+import { analyzePlannerProducts } from "@/lib/planner/analyze-products";
+import { buildPlannerContext, hasUngroundedProductClaim, hasUsableCampaignProducts, NO_PRODUCT_TOPIC_TEMPLATES } from "@/lib/planner/planner-context";
 
 type TopicDraft = { campaignId?: string; contentType?: string; topic?: string; contentDirection?: string; format?: string; platforms?: string[]; recommendationReason?: string; sourceSignals?: unknown };
 function extractArray(text: string | null): TopicDraft[] { if (!text) return []; try { const parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")); return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
 
-function fallbackTopics(plan: { totalPostCount: number; platforms: string; goals: string }, campaigns: { id: string; name: string; goals: string }[], strategy: PlannerStrategy): TopicDraft[] {
+function fallbackTopics(plan: { totalPostCount: number; platforms: string; goals: string }, campaigns: { id: string; name: string; goals: string }[], strategy: PlannerStrategy, hasProducts: boolean): TopicDraft[] {
   const typeQueue = strategy.contentMix.flatMap((x) => Array(x.count).fill(x.type)) as ContentType[];
   const campaignQueue = strategy.campaignAllocations.flatMap((x) => Array(x.count).fill(x.campaignId));
   const templates: Record<ContentType, string[]> = {
@@ -18,17 +20,25 @@ function fallbackTopics(plan: { totalPostCount: number; platforms: string; goals
     PROMOTION: ["本月限定優惠整理", "把握最後入手機會", "會員專屬好康提醒"],
   };
   return Array.from({ length: plan.totalPostCount }, (_, i) => {
-    const type = typeQueue[i] ?? CONTENT_TYPES[i % CONTENT_TYPES.length];
+    const queuedType = typeQueue[i] ?? CONTENT_TYPES[i % CONTENT_TYPES.length];
+    const type = (!hasProducts && queuedType === "PRODUCT" ? "ENGAGEMENT" : queuedType) as ContentType;
     const campaignId = campaignQueue[i] ?? campaigns[i % Math.max(1, campaigns.length)]?.id;
     const campaign = campaigns.find((c) => c.id === campaignId);
-    return { campaignId, contentType: type, topic: `${campaign?.name ?? "本月企劃"}｜${templates[type][i % templates[type].length]}`, contentDirection: `以清楚、符合品牌調性的方式切入，聚焦「${parseJsonArray(plan.goals).join("、") || "品牌溝通"}」。`, format: i % 3 === 1 ? "CAROUSEL" : "SINGLE", platforms: parseJsonArray(plan.platforms), recommendationReason: `符合本月「${CONTENT_TYPE_META[type].label}」內容節奏`, sourceSignals: [] };
+    const topicTemplates = hasProducts ? templates[type] : NO_PRODUCT_TOPIC_TEMPLATES[type];
+    return { campaignId, contentType: type, topic: `${campaign?.name ?? "本月企劃"}｜${topicTemplates[i % topicTemplates.length]}`, contentDirection: `以清楚、符合品牌調性的方式切入，聚焦「${parseJsonArray(plan.goals).join("、") || "品牌溝通"}」。`, format: i % 3 === 1 ? "CAROUSEL" : "SINGLE", platforms: parseJsonArray(plan.platforms), recommendationReason: `符合本月「${CONTENT_TYPE_META[type].label}」內容節奏`, sourceSignals: [] };
   });
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ planId: string }> }) {
   const { planId } = await params;
   const body = await request.json().catch(() => ({}));
-  const plan = await db.monthlyMarketingPlan.findUnique({ where: { id: planId }, include: { client: { select: { name: true } }, campaigns: { include: { importantDates: true }, orderBy: { sortOrder: "asc" } } } });
+  const plan = await db.monthlyMarketingPlan.findUnique({
+    where: { id: planId },
+    include: {
+      client: { select: { name: true, description: true, industry: true, toneLabels: true } },
+      campaigns: { include: { products: true, importantDates: true }, orderBy: { sortOrder: "asc" } },
+    },
+  });
   if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
   if (body.action === "add") {
     const item = await db.contentPlanItem.create({ data: { monthlyPlanId: plan.id, campaignId: plan.campaigns[0]?.id, contentType: "BRAND", topic: "新的內容主題", platforms: plan.platforms, sortOrder: await db.contentPlanItem.count({ where: { monthlyPlanId: plan.id } }) } });
@@ -37,6 +47,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pla
 
   const campaignInfo = plan.campaigns.map((c) => ({ id: c.id, name: c.name, goals: c.goals }));
   const strategy = parseJsonObject<PlannerStrategy>(plan.strategyJson, createFallbackStrategy(plan.totalPostCount, parseJsonArray(plan.goals), campaignInfo.map((c) => ({ ...c, goals: parseJsonArray(c.goals) }))));
+  const productAnalyses = await analyzePlannerProducts(plan.campaigns);
+  const plannerContext = buildPlannerContext(plan, productAnalyses);
+  const hasProducts = hasUsableCampaignProducts(plan.campaigns);
 
   // ── Trend Signals：收集（可空）→ 存快照 → 注入 prompt ─────────────────────────
   const signals: TrendSignal[] = await collectTrendSignals({
@@ -49,11 +62,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ pla
     ? `\n以下為本月外部趨勢訊號（僅供參考，可選用，不得杜撰未列出的訊號）：\n${JSON.stringify(signals.map((s) => ({ id: s.id, label: s.label, score: s.score })))}\n每個 topic 額外回傳 "recommendationReason"（一句話說明為何本月適合這主題）與 "sourceSignals"（字串陣列，只能填上面列出的 signal id，沒用到就 []）。`
     : `\n每個 topic 額外回傳 "recommendationReason"（一句話說明為何本月適合這主題）與 "sourceSignals"（沒有外部訊號時給 []）。`;
 
-  const prompt = `你是台灣社群內容企劃。為品牌 ${plan.client.name} 產生 ${plan.totalPostCount} 個不重複貼文 Topics。\n月目標：${parseJsonArray(plan.goals).join("、")}\nCampaign：${JSON.stringify(campaignInfo)}\n內容分配：${JSON.stringify(strategy)}${signalsBlock}\n只回傳 JSON array，每項：{"campaignId":"必須使用原 ID","contentType":"BRAND|EDUCATION|PRODUCT|ENGAGEMENT|PROMOTION","topic":"吸引人的繁中標題","contentDirection":"一句具體內容方向","format":"SINGLE|CAROUSEL","platforms":${JSON.stringify(parseJsonArray(plan.platforms))},"recommendationReason":"一句推薦理由","sourceSignals":[]}。`;
+  const prompt = `你是台灣社群內容企劃。產生 ${plan.totalPostCount} 個不重複貼文 Topics。\n本次可依據的品牌與產品事實：${JSON.stringify(plannerContext)}\n月目標：${parseJsonArray(plan.goals).join("、")}\n內容分配：${JSON.stringify(strategy)}${signalsBlock}\n請嚴格遵守 groundingRules。只回傳 JSON array，每項：{"campaignId":"必須使用原 ID","contentType":"BRAND|EDUCATION|PRODUCT|ENGAGEMENT|PROMOTION","topic":"吸引人的繁中標題","contentDirection":"一句具體內容方向","format":"SINGLE|CAROUSEL","platforms":${JSON.stringify(parseJsonArray(plan.platforms))},"recommendationReason":"一句推薦理由","sourceSignals":[]}。`;
 
   let drafts = extractArray(await chatTextOpenRouter(prompt, 4000));
-  const fallback = fallbackTopics(plan, campaignInfo, strategy);
+  const fallback = fallbackTopics(plan, campaignInfo, strategy, hasProducts);
   if (drafts.length !== plan.totalPostCount) drafts = fallback;
+  if (!hasProducts) drafts = drafts.map((draft, index) => hasUngroundedProductClaim(draft) ? fallback[index] : draft);
   const campaignIds = new Set(plan.campaigns.map((c) => c.id));
   const normalized = drafts.map((draft, i) => ({
     monthlyPlanId: plan.id,

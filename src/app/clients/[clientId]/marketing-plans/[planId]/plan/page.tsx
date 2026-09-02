@@ -10,7 +10,7 @@ export default async function MarketingPlanStrategyPage({ params }: { params: Pr
   const plan = await db.monthlyMarketingPlan.findUnique({
     where: { id: planId },
     include: {
-      campaigns: { orderBy: { sortOrder: "asc" } },
+      campaigns: { include: { products: { select: { id: true } } }, orderBy: { sortOrder: "asc" } },
       contentItems: { orderBy: { sortOrder: "asc" } },
     },
   });
@@ -28,6 +28,7 @@ export default async function MarketingPlanStrategyPage({ params }: { params: Pr
       clientId={clientId}
       total={serialized.totalPostCount}
       campaigns={serialized.campaigns.map((c) => ({ id: c.id, name: c.name }))}
+      hasProducts={plan.campaigns.some((campaign) => campaign.products.length > 0)}
       initialStrategy={strategy}
       initialTopics={serialized.contentItems}
     />
