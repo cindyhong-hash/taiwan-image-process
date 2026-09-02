@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { CalendarRange, ChevronRight, Plus } from "lucide-react";
+import { ArrowRight, CalendarRange, ChevronRight, Plus, Sparkles } from "lucide-react";
 
 /**
  * Planner Home — 月度企劃清單（Flow A 入口）。
@@ -45,6 +46,52 @@ export default function MarketingPlansHome({ params }: { params: Promise<{ clien
 
   if (!clientId || plans === null) return <div className="text-gray-400">載入中…</div>;
 
+  if (plans.length === 0) {
+    const steps = [
+      ["01", "設定本月目標", "決定品牌曝光、導購或互動等本月重點"],
+      ["02", "建立 Campaign", "整理產品、活動資訊與重要日期"],
+      ["03", "取得 AI 內容策略", "依目標分配整月內容組合與節奏"],
+      ["04", "完成 Topics 與內容日曆", "產生主題並安排整月發布日期"],
+    ];
+    return (
+      <div className="mx-auto max-w-5xl space-y-5">
+        <section className="grid overflow-hidden rounded-2xl border border-[#ebeff5] bg-white lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="flex flex-col justify-center p-7 sm:p-10 lg:p-12">
+            <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <p className="text-sm font-bold text-violet-600">AI 月度企劃</p>
+            <h1 className="mt-3 text-balance text-3xl font-bold leading-tight text-gray-900 sm:text-4xl">開始規劃這個月的社群內容</h1>
+            <p className="mt-4 max-w-md text-sm leading-6 text-gray-500">設定目標、Campaign 與產品資訊，AI 會協助你完成內容策略、Topics 與整月排程。</p>
+          </div>
+          <div className="flex min-h-64 items-center justify-center bg-gradient-to-br from-[#faf8ff] via-white to-[#fff8f2] p-5 sm:p-8">
+            <Image src="/images/monthly-planner-empty.jpg" alt="AI 月度企劃內容日曆示意圖" width={1080} height={576} priority className="h-auto w-full max-w-2xl rounded-xl object-contain" />
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-[#ebeff5] bg-white p-7 sm:p-10">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">月度企劃會怎麼進行？</h2>
+            <p className="mt-1 text-sm text-gray-400">跟著四個步驟，一步步完成整月內容規劃。</p>
+          </div>
+          <div className="mt-7 grid gap-3 sm:grid-cols-2">
+            {steps.map(([number, title, description]) => (
+              <div key={number} className="flex gap-3 rounded-xl border border-[#ebeff5] p-4">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[11px] font-bold text-white">{number}</span>
+                <div><h3 className="text-sm font-bold text-gray-900">{title}</h3><p className="mt-1 text-xs leading-5 text-gray-400">{description}</p></div>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-col items-center pt-8">
+            <button onClick={createPlan} disabled={creating} className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 px-12 py-4 text-base font-bold text-white shadow-[0_8px_8px_rgba(124,58,237,0.15)] transition-colors hover:bg-violet-700 disabled:opacity-50 sm:px-16">
+              <Sparkles className="h-[18px] w-[18px]" />開始建立月度企劃<ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-start justify-between mb-6">
@@ -52,28 +99,13 @@ export default function MarketingPlansHome({ params }: { params: Promise<{ clien
           <h1 className="text-2xl font-bold text-gray-900">月度企劃</h1>
           <p className="mt-1 text-sm text-gray-400">準備好規劃這個月的內容了嗎？先設定目標與 Campaign，AI 幫你排好整月內容。</p>
         </div>
-        {plans.length > 0 && (
-          <button onClick={createPlan} disabled={creating}
-            className="flex items-center gap-1.5 text-sm font-medium bg-violet-600 text-white px-4 py-2.5 rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-60">
-            <Plus className="h-4 w-4" />建立月度企劃
-          </button>
-        )}
+        <button onClick={createPlan} disabled={creating}
+          className="flex items-center gap-1.5 text-sm font-medium bg-violet-600 text-white px-4 py-2.5 rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-60">
+          <Plus className="h-4 w-4" />建立月度企劃
+        </button>
       </div>
 
-      {plans.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-gray-300 bg-gray-50/60 py-20 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-100">
-            <CalendarRange className="h-6 w-6 text-violet-600" />
-          </div>
-          <h2 className="text-lg font-semibold text-gray-800">還沒有月度企劃</h2>
-          <p className="max-w-md text-sm text-gray-500">建立第一份企劃，統一管理本月目標、Campaign、內容組合與內容日曆。</p>
-          <button onClick={createPlan} disabled={creating}
-            className="mt-2 inline-flex items-center gap-1.5 bg-violet-600 text-white rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-violet-700 transition-colors disabled:opacity-60">
-            <Plus className="h-4 w-4" />建立月度企劃
-          </button>
-        </div>
-      ) : (
-        <div>
+      <div>
           <h2 className="text-sm font-semibold text-gray-500 mb-3">最近企劃</h2>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {plans.map((plan) => {
@@ -102,8 +134,7 @@ export default function MarketingPlansHome({ params }: { params: Promise<{ clien
               );
             })}
           </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
