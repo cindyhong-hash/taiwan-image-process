@@ -40,7 +40,7 @@ const dateValue = (value: string | Date) => new Date(value).toISOString().slice(
 const mmdd = (value: string | Date) => dateValue(value).slice(5).replace("-", "/");
 const toggle = (items: string[], value: string) => (items.includes(value) ? items.filter((v) => v !== value) : [...items, value]);
 
-export function PlannerBriefEditor({ initialPlan }: { initialPlan: Plan }) {
+export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Plan; hasTopics?: boolean }) {
   const router = useRouter();
   const [plan, setPlan] = useState(initialPlan);
   const [openId, setOpenId] = useState("");            // 展開中的 Campaign（"" = 全收合，對齊 mockup）
@@ -101,14 +101,26 @@ export function PlannerBriefEditor({ initialPlan }: { initialPlan: Plan }) {
   };
   const addImportantDate = () => updateCampaign({ importantDates: [...(selected?.importantDates ?? []), { date: dateValue(selected?.startDate ?? new Date()), label: "重要日期", note: "" }] });
 
+  // 立即把 Brief 存檔（不等 debounce）
+  const saveBrief = async () => {
+    await fetch(`/api/marketing-plans/${plan.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year: plan.year, month: plan.month, goals: plan.goals, totalPostCount: plan.totalPostCount, platforms: plan.platforms, notes: plan.notes }) });
+    await Promise.all(plan.campaigns.map((c) => fetch(`/api/marketing-campaigns/${c.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: c.name, startDate: c.startDate, endDate: c.endDate, goals: c.goals, description: c.description, sortOrder: c.sortOrder, products: c.products, importantDates: c.importantDates }) })));
+  };
+  // 首次規劃 / 重新規劃：存檔 → 產生策略 → 進 ②
   const goPlan = async () => {
     if (planning) return;
     setPlanning(true);
     try {
-      await fetch(`/api/marketing-plans/${plan.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year: plan.year, month: plan.month, goals: plan.goals, totalPostCount: plan.totalPostCount, platforms: plan.platforms, notes: plan.notes }) });
-      await Promise.all(plan.campaigns.map((c) => fetch(`/api/marketing-campaigns/${c.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: c.name, startDate: c.startDate, endDate: c.endDate, goals: c.goals, description: c.description, sortOrder: c.sortOrder, products: c.products, importantDates: c.importantDates }) })));
+      await saveBrief();
       await fetch(`/api/marketing-plans/${plan.id}/strategy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     } catch { /* 策略失敗 ② 頁仍可手動重試 */ }
+    router.push(`/clients/${plan.clientId}/marketing-plans/${plan.id}/plan`);
+  };
+  // 已規劃過：只存檔 → 進 ②，不重產策略/topics（保留上次成果）
+  const continueToPlan = async () => {
+    if (planning) return;
+    setPlanning(true);
+    try { await saveBrief(); } catch { /* 忽略，仍可進頁 */ }
     router.push(`/clients/${plan.clientId}/marketing-plans/${plan.id}/plan`);
   };
 
@@ -307,14 +319,29 @@ export function PlannerBriefEditor({ initialPlan }: { initialPlan: Plan }) {
         )}
       </section>
 
-      {/* 主要 CTA（置中大圓角，依 DESIGN.md） */}
+      {/* 主要 CTA（置中大圓角，依 DESIGN.md）；已規劃過 → 繼續（不重產），未規劃 → AI 規劃 */}
       <div className="flex flex-col items-center gap-2 pt-1">
-        <button onClick={goPlan} disabled={planning || !plan.goals.length}
-          title={!plan.goals.length ? "請先選至少一個目標" : "產生本月內容策略"}
-          className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 px-16 py-4 text-base font-bold text-white shadow-[0_8px_8px_rgba(124,58,237,0.15)] transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">
-          {planning ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Sparkles className="h-[18px] w-[18px]" />}{planning ? "AI 規劃中…" : `AI 幫我規劃 ${plan.totalPostCount} 篇內容`}
-        </button>
-        <p className="text-xs text-gray-400">AI 將生成主題、內容策略與建議排程</p>
+        {hasTopics ? (
+          <>
+            <button onClick={continueToPlan} disabled={planning || !plan.goals.length}
+              title={!plan.goals.length ? "請先選至少一個目標" : "回到內容企劃繼續編輯（不會重新產生）"}
+              className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 px-16 py-4 text-base font-bold text-white shadow-[0_8px_8px_rgba(124,58,237,0.15)] transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">
+              {planning ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : null}繼續內容企劃 →
+            </button>
+            <button onClick={goPlan} disabled={planning} className="text-xs text-gray-400 underline-offset-2 hover:text-violet-600 hover:underline">
+              或重新用 AI 規劃（會重新產生策略，已編輯與已製作的主題不受影響）
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={goPlan} disabled={planning || !plan.goals.length}
+              title={!plan.goals.length ? "請先選至少一個目標" : "產生本月內容策略"}
+              className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 px-16 py-4 text-base font-bold text-white shadow-[0_8px_8px_rgba(124,58,237,0.15)] transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">
+              {planning ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Sparkles className="h-[18px] w-[18px]" />}{planning ? "AI 規劃中…" : `AI 幫我規劃 ${plan.totalPostCount} 篇內容`}
+            </button>
+            <p className="text-xs text-gray-400">AI 將生成主題、內容策略與建議排程</p>
+          </>
+        )}
       </div>
 
       {showLibrary && selected && (

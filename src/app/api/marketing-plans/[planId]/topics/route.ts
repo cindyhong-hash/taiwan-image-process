@@ -51,6 +51,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ pla
   const plannerContext = buildPlannerContext(plan, productAnalyses);
   const hasProducts = hasUsableCampaignProducts(plan.campaigns);
 
+  // 重產保護：mode=all 全部重來；否則(預設 keep)保留「已製作(有 Activity)」的，只補/重產其餘到目標篇數
+  const mode = body.mode === "all" ? "all" : "keep";
+  const existing = await db.contentPlanItem.findMany({ where: { monthlyPlanId: plan.id }, orderBy: { sortOrder: "asc" } });
+  const kept = mode === "all" ? [] : existing.filter((t) => t.generatedActivityId);
+  const keptCount = kept.length;
+  const targetNew = Math.max(0, plan.totalPostCount - keptCount);
+
   // ── Trend Signals：收集（可空）→ 存快照 → 注入 prompt ─────────────────────────
   const signals: TrendSignal[] = await collectTrendSignals({
     clientId: plan.clientId, clientName: plan.client.name, year: plan.year, month: plan.month,
@@ -62,30 +69,41 @@ export async function POST(request: Request, { params }: { params: Promise<{ pla
     ? `\n以下為本月外部趨勢訊號（僅供參考，可選用，不得杜撰未列出的訊號）：\n${JSON.stringify(signals.map((s) => ({ id: s.id, label: s.label, score: s.score })))}\n每個 topic 額外回傳 "recommendationReason"（一句話說明為何本月適合這主題）與 "sourceSignals"（字串陣列，只能填上面列出的 signal id，沒用到就 []）。`
     : `\n每個 topic 額外回傳 "recommendationReason"（一句話說明為何本月適合這主題）與 "sourceSignals"（沒有外部訊號時給 []）。`;
 
-  const prompt = `你是台灣社群內容企劃。產生 ${plan.totalPostCount} 個不重複貼文 Topics。\n本次可依據的品牌與產品事實：${JSON.stringify(plannerContext)}\n月目標：${parseJsonArray(plan.goals).join("、")}\n內容分配：${JSON.stringify(strategy)}${signalsBlock}\n請嚴格遵守 groundingRules。只回傳 JSON array，每項：{"campaignId":"必須使用原 ID","contentType":"BRAND|EDUCATION|PRODUCT|ENGAGEMENT|PROMOTION","topic":"吸引人的繁中標題","contentDirection":"一句具體內容方向","format":"SINGLE|CAROUSEL","platforms":${JSON.stringify(parseJsonArray(plan.platforms))},"recommendationReason":"一句推薦理由","sourceSignals":[]}。`;
-
-  let drafts = extractArray(await chatTextOpenRouter(prompt, 4000));
-  const fallback = fallbackTopics(plan, campaignInfo, strategy, hasProducts);
-  if (drafts.length !== plan.totalPostCount) drafts = fallback;
-  if (!hasProducts) drafts = drafts.map((draft, index) => hasUngroundedProductClaim(draft) ? fallback[index] : draft);
   const campaignIds = new Set(plan.campaigns.map((c) => c.id));
-  const normalized = drafts.map((draft, i) => ({
-    monthlyPlanId: plan.id,
-    campaignId: draft.campaignId && campaignIds.has(draft.campaignId) ? draft.campaignId : fallback[i].campaignId,
-    contentType: CONTENT_TYPES.includes(draft.contentType as ContentType) ? draft.contentType! : fallback[i].contentType!,
-    topic: String(draft.topic || fallback[i].topic),
-    contentDirection: String(draft.contentDirection || fallback[i].contentDirection),
-    recommendationReason: String(draft.recommendationReason || fallback[i].recommendationReason || ""),
-    sourceSignals: JSON.stringify(filterCitedSignals(draft.sourceSignals, signals)),
-    format: draft.format === "CAROUSEL" ? "CAROUSEL" : "SINGLE",
-    platforms: JSON.stringify(Array.isArray(draft.platforms) ? draft.platforms : fallback[i].platforms),
-    sortOrder: i,
-  }));
+  const fallbackAll = fallbackTopics(plan, campaignInfo, strategy, hasProducts);
+  const keptBlock = keptCount ? `\n已存在（請勿與這些主題重複）：${JSON.stringify(kept.map((k) => k.topic))}` : "";
+
+  // 只產生「需要補的」targetNew 篇；kept（已製作）保留不動
+  const generateNew = async () => {
+    const prompt = `你是台灣社群內容企劃。產生 ${targetNew} 個不重複貼文 Topics。\n本次可依據的品牌與產品事實：${JSON.stringify(plannerContext)}\n月目標：${parseJsonArray(plan.goals).join("、")}\n內容分配：${JSON.stringify(strategy)}${signalsBlock}${keptBlock}\n請嚴格遵守 groundingRules。只回傳 JSON array，每項：{"campaignId":"必須使用原 ID","contentType":"BRAND|EDUCATION|PRODUCT|ENGAGEMENT|PROMOTION","topic":"吸引人的繁中標題","contentDirection":"一句具體內容方向","format":"SINGLE|CAROUSEL","platforms":${JSON.stringify(parseJsonArray(plan.platforms))},"recommendationReason":"一句推薦理由","sourceSignals":[]}。`;
+    let drafts = extractArray(await chatTextOpenRouter(prompt, 4000));
+    const fallback = fallbackAll.slice(0, targetNew);
+    if (drafts.length !== targetNew) drafts = fallback;
+    if (!hasProducts) drafts = drafts.map((draft, index) => hasUngroundedProductClaim(draft) ? fallback[index] : draft);
+    return drafts.map((draft, i) => ({
+      monthlyPlanId: plan.id,
+      campaignId: draft.campaignId && campaignIds.has(draft.campaignId) ? draft.campaignId : fallback[i].campaignId,
+      contentType: CONTENT_TYPES.includes(draft.contentType as ContentType) ? draft.contentType! : fallback[i].contentType!,
+      topic: String(draft.topic || fallback[i].topic),
+      contentDirection: String(draft.contentDirection || fallback[i].contentDirection),
+      recommendationReason: String(draft.recommendationReason || fallback[i].recommendationReason || ""),
+      sourceSignals: JSON.stringify(filterCitedSignals(draft.sourceSignals, signals)),
+      format: draft.format === "CAROUSEL" ? "CAROUSEL" : "SINGLE",
+      platforms: JSON.stringify(Array.isArray(draft.platforms) ? draft.platforms : fallback[i].platforms),
+      sortOrder: keptCount + i,
+    }));
+  };
+  const normalized = targetNew > 0 ? await generateNew() : [];
+
+  const keptIds = kept.map((k) => k.id);
   await db.$transaction([
-    db.contentPlanItem.deleteMany({ where: { monthlyPlanId: plan.id } }),
-    db.contentPlanItem.createMany({ data: normalized }),
+    keptIds.length
+      ? db.contentPlanItem.deleteMany({ where: { monthlyPlanId: plan.id, id: { notIn: keptIds } } })
+      : db.contentPlanItem.deleteMany({ where: { monthlyPlanId: plan.id } }),
+    ...kept.map((k, i) => db.contentPlanItem.update({ where: { id: k.id }, data: { sortOrder: i } })),
+    ...(normalized.length ? [db.contentPlanItem.createMany({ data: normalized })] : []),
     db.monthlyMarketingPlan.update({ where: { id: plan.id }, data: { status: "TOPICS_READY", signalsJson: JSON.stringify(signals) } }),
   ]);
   const items = await db.contentPlanItem.findMany({ where: { monthlyPlanId: plan.id }, orderBy: { sortOrder: "asc" } });
-  return NextResponse.json({ items: items.map((x) => ({ ...x, platforms: parseJsonArray(x.platforms), sourceSignals: parseJsonArrayAny(x.sourceSignals) })), signals });
+  return NextResponse.json({ items: items.map((x) => ({ ...x, platforms: parseJsonArray(x.platforms), sourceSignals: parseJsonArrayAny(x.sourceSignals) })), signals, kept: keptCount });
 }

@@ -12,8 +12,9 @@ export default async function MarketingPlanPage({ params }: { params: Promise<{ 
     include: {
       client: { select: { id: true, name: true } },
       campaigns: { include: { products: true, importantDates: { orderBy: { date: "asc" } } }, orderBy: { sortOrder: "asc" } },
+      _count: { select: { contentItems: true } },
     },
   });
   if (!plan) notFound();
-  return <PlannerBriefEditor initialPlan={serializePlan(plan as unknown as Record<string, unknown>) as never} />;
+  return <PlannerBriefEditor initialPlan={serializePlan(plan as unknown as Record<string, unknown>) as never} hasTopics={plan._count.contentItems > 0} />;
 }
