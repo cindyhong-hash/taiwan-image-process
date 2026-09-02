@@ -878,7 +878,7 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
           <>
             <span style={S.divider} />
             {(saving || saved) && <span aria-live="polite" style={{ fontSize: 12, color: saved ? "#16a34a" : "#9ca3af" }}>{saving ? "儲存中…" : "✓ 已自動儲存"}</span>}
-            <button style={{ ...S.tbtn, border: "1px solid #7c3aed", background: "#7c3aed", color: "#fff" }} onClick={() => doSave(true)} disabled={saving} title="下載成 PNG，並存進素材庫"><Download size={15} />下載圖片</button>
+            <button style={{ ...S.tbtn, border: "1px solid #7c3aed", background: "#7c3aed", color: "#fff" }} onClick={() => doSave(true)} disabled={saving} title="下載成 PNG，並存進素材庫"><Download size={15} />下載並存入素材庫</button>
           </>
         )}
         <span style={{ flex: 1 }} />
