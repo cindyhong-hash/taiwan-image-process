@@ -33,7 +33,7 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
   // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
   // 同步喺首次 render 讀取並清走，令 ActivityForm mount 時已有預填。
-  type Handoff = { clientId?: string; imagePrompt?: string; requiredText?: string; productImageUrls?: string[]; referenceImageUrls?: string[] };
+  type Handoff = { clientId?: string; imagePrompt?: string; requiredText?: string; imageRatio?: string; productImageUrls?: string[]; referenceImageUrls?: string[] };
   const [initial] = useState<{ ref: string | null; base: string | null; prompt: string | null; handoff: Handoff | null }>(() => {
     if (typeof window === "undefined") return { ref: null, base: null, prompt: null, handoff: null };
     const ref = sessionStorage.getItem(ACTIVITY_REF_KEY);
@@ -160,6 +160,7 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
           // [UX] 從多圖頁帶回的共用欄位（優先於 prompt-only 帶入）
           ...(initial.handoff?.imagePrompt ? { imagePrompt: initial.handoff.imagePrompt } : {}),
           ...(initial.handoff?.requiredText ? { requiredText: initial.handoff.requiredText } : {}),
+          ...(initial.handoff?.imageRatio ? { imageRatio: initial.handoff.imageRatio } : {}),
           ...(initial.handoff?.productImageUrls?.length ? { productImageUrls: initial.handoff.productImageUrls } : {}),
           ...(initial.handoff?.referenceImageUrls?.length ? { referenceImageUrls: initial.handoff.referenceImageUrls } : {}),
         }} />

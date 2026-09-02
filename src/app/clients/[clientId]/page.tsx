@@ -11,6 +11,7 @@ import { BrandMemoryPanel } from "@/components/home/BrandMemoryPanel";
 import { AiLearnedCard } from "@/components/home/AiLearnedCard";
 import { PastActivityCard, type PastActivityItem } from "@/components/home/PastActivityCard";
 import { brandCompleteness } from "@/lib/brandCompleteness";
+import { buildQuickActivityPayload, classifyQuickCreate, type QuickCreateInput } from "@/lib/home/quick-create";
 
 // `/api/library/gallery` 回傳嘅其中一個 tile 形狀（見 src/types/library.ts GalleryItem）——
 // 呢度淨係攞右欄推薦用得到嘅欄位，唔想 import 成個 union type。
@@ -49,7 +50,7 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
   const router = useRouter();
   const [client, setClient] = useState<Client | null>(null);
   const [assets, setAssets] = useState<GalleryAsset[]>([]);
-  const [query, setQuery] = useState("");
+  const [quickCreating, setQuickCreating] = useState(false);
 
   useEffect(() => {
     params.then(({ clientId }) => {
@@ -98,10 +99,49 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
     } catch { /* ignore — 仍導去空白新增頁 */ }
     router.push(`/clients/${client!.id}/activities/new`);
   };
-  // 網站搜尋：比對活動(主題/焦點)與素材(名稱/主體/prompt)。
-  const qy = query.trim().toLowerCase();
-  const matchedActs = qy ? (client.activities ?? []).filter((a) => `${a.theme} ${a.focusPoint}`.toLowerCase().includes(qy)) : [];
-  const matchedAssets = qy ? assets.filter((a) => `${a.name ?? ""} ${a.subject ?? ""} ${a.prompt ?? ""}`.toLowerCase().includes(qy)) : [];
+
+  const handoffQuickCreate = (input: QuickCreateInput) => {
+    sessionStorage.setItem(ACTIVITY_HANDOFF_KEY, JSON.stringify({
+      clientId: client.id,
+      imagePrompt: input.prompt.trim(),
+      requiredText: "",
+      imageRatio: input.imageRatio,
+      productImageUrls: input.productImageUrls,
+      referenceImageUrls: input.referenceImageUrls,
+    }));
+  };
+
+  const openFullSettings = (input: QuickCreateInput) => {
+    handoffQuickCreate(input);
+    router.push(`/clients/${client.id}/activities/new`);
+  };
+
+  const handleQuickCreate = async (input: QuickCreateInput) => {
+    const route = classifyQuickCreate({
+      prompt: input.prompt,
+      attachmentCount: input.productImageUrls.length + input.referenceImageUrls.length,
+    });
+    if (route !== "direct") {
+      handoffQuickCreate(input);
+      router.push(route === "multi" ? `/clients/${client.id}/activities/new/multi` : `/clients/${client.id}/activities/new`);
+      return;
+    }
+
+    setQuickCreating(true);
+    try {
+      const response = await fetch("/api/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildQuickActivityPayload({ ...input, clientId: client.id })),
+      });
+      const activity = await response.json();
+      if (!response.ok || !activity.id) throw new Error("create failed");
+      router.push(`/clients/${client.id}/activities/${activity.id}`);
+    } catch (error) {
+      setQuickCreating(false);
+      throw error;
+    }
+  };
 
   const pastItems: PastActivityItem[] = (client.activities ?? [])
     .filter((a) => a.status === "DONE" && a.layoutId !== "magic-layers")
@@ -116,55 +156,9 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
   return (
     <div className="flex gap-6">
       <div className="min-w-0 flex-1 space-y-8">
-        <HomeHero query={query} onSearch={setQuery} />
-        {qy ? (
-          <section className="space-y-5">
-            <h2 className="text-base font-semibold text-gray-900">搜尋「{query.trim()}」</h2>
-            {matchedActs.length === 0 && matchedAssets.length === 0 && (
-              <div className="py-10 text-center text-sm text-gray-400">找不到符合的活動或素材</div>
-            )}
-            {matchedActs.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-gray-400">活動 {matchedActs.length}</div>
-                {matchedActs.map((a) => {
-                  const thumb = a.generatedLayouts?.find((l) => l.isSelected)?.imageUrl ?? a.generatedLayouts?.[0]?.imageUrl;
-                  return (
-                    <button key={a.id} type="button" onClick={() => router.push(`/clients/${client.id}/activities/${a.id}`)}
-                      className="flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left transition-all hover:border-gray-300 hover:shadow-sm">
-                      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        {thumb && <img src={thumb} alt="" className="h-full w-full object-cover" />}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-gray-800">{a.theme}</div>
-                        <div className="truncate text-xs text-gray-400">{new Date(a.createdAt).toLocaleDateString("zh-TW")}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {matchedAssets.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-gray-400">素材 {matchedAssets.length}</div>
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                  {matchedAssets.map((a, i) => (
-                    <button key={i} type="button" onClick={() => router.push(`/clients/${client.id}/components`)}
-                      className="overflow-hidden rounded-xl border border-gray-200 bg-white transition-all hover:border-violet-300 hover:shadow-md" title={a.name || a.subject || ""}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={a.imageUrl} alt="" loading="lazy" className="aspect-square w-full object-contain bg-gray-50" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-        ) : (
-          <>
-            <QuickStartCards clientId={client.id} />
-            <RecentWorks clientId={client.id} activities={client.activities ?? []} />
-          </>
-        )}
+        <HomeHero submitting={quickCreating} onQuickCreate={handleQuickCreate} onOpenFullSettings={openFullSettings} />
+        <QuickStartCards clientId={client.id} />
+        <RecentWorks clientId={client.id} activities={client.activities ?? []} />
       </div>
       <div className="w-64 shrink-0 space-y-4">
         <BrandMemoryPanel
