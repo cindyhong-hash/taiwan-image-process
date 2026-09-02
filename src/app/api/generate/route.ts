@@ -340,6 +340,16 @@ export async function POST(request: Request) {
   try {
     const layouts: Awaited<ReturnType<typeof db.generatedLayout.create>>[] = [];
 
+    // 產品圖 Vision 分析（迴圈外算一次；同時餵「文案」與「圖片」，避免文案只靠品牌名亂猜產品類別）
+    let productDesc: string | null = null;
+    if (productImageUrls.length > 0) {
+      const descs = await Promise.all(productImageUrls.slice(0, 3).map((url) => describeProduct(url)));
+      const valid = descs.filter(Boolean) as string[];
+      if (valid.length === 1) productDesc = valid[0];
+      else if (valid.length > 1) productDesc = valid.map((d, i) => `Product ${i + 1}: ${d}`).join(" ");
+      console.log(`[generate] Product descs (${valid.length} items): ${productDesc?.slice(0, 120)}`);
+    }
+
     for (const layoutConfig of LAYOUT_CONFIGS) {
       console.log(`[generate] Starting layout ${layoutConfig.type}`);
 
@@ -354,6 +364,7 @@ export async function POST(request: Request) {
         layoutType: layoutConfig.type,
         taboos,
         forceTitle: false, // 一律讓 AI 寫（有必放文字時只取佢嘅副標，主標用戶鎖定）
+        productContext: productDesc ?? undefined, // 產品圖 AI 認出的內容 → 文案扣住真實產品，不靠品牌名臆測
         brandDescription: client.description ?? undefined,
       });
       const rawCopy = (await chatTextOpenRouter(copyPrompt, 500)) ?? "";
@@ -411,21 +422,6 @@ export async function POST(request: Request) {
       console.log(`[generate] model=${imageModel} → ${useOpenRouter ? "OpenRouter" : "Fal"}`);
 
       let imageUrl: string;
-
-      // 用 Claude Vision 分析產品圖，加入 prompt（迴圈內每個版型都分析）
-      let productDesc: string | null = null;
-      if (productImageUrls.length > 0) {
-        const descs = await Promise.all(
-          productImageUrls.slice(0, 3).map(url => describeProduct(url))
-        );
-        const valid = descs.filter(Boolean) as string[];
-        if (valid.length === 1) {
-          productDesc = valid[0];
-        } else if (valid.length > 1) {
-          productDesc = valid.map((d, i) => `Product ${i + 1}: ${d}`).join(" ");
-        }
-        console.log(`[generate] Product descs (${valid.length} items): ${productDesc?.slice(0, 120)}`);
-      }
 
       if (hasProductImage) {
         // ── 有產品圖流程 ──────────────────────────────────────────────────────
