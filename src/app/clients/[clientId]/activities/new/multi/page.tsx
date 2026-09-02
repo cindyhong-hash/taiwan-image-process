@@ -485,7 +485,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
               genMode === "unified" ? "border-violet-600 bg-violet-50 text-violet-700" : "border-[#ebeff5] bg-white text-gray-500 hover:border-violet-300"
             }`}
           >
-            統一主題（AI 自動分鏡）
+            AI 規劃整組
           </button>
           <button
             type="button"
@@ -494,7 +494,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
               genMode === "perCell" ? "border-violet-600 bg-violet-50 text-violet-700" : "border-[#ebeff5] bg-white text-gray-500 hover:border-violet-300"
             }`}
           >
-            各圖獨立填寫（進階）
+            自己逐張設定
           </button>
         </div>
 
