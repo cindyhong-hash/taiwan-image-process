@@ -7,8 +7,9 @@
  * 3. Topic 生成時把 signals 當 grounding；每篇保存 recommendationReason + sourceSignals。
  * 4. 第一版只用「重要日期」(真實) + Mock，不接任何第三方。
  *
- * 未來要接 Google Trends / RapidAPI：實作一個新的 TrendSignalProvider 加進 getTrendProviders()。
+ * 已接：重要日期(真實) + Mock + Threads(RapidAPI，有 RAPIDAPI_KEY 才啟用)。
  */
+import { chatTextOpenRouter } from "@/lib/openrouter";
 
 export type TrendSignalKind = "event" | "keyword" | "hashtag" | "season";
 
@@ -30,6 +31,8 @@ export type TrendSignalContext = {
   goals: string[];
   campaigns: { id: string; name: string; goals: string[] }[];
   importantDates: { date: string | Date; label: string }[];
+  industry?: string;      // 品牌產業（讓趨勢查詢貼著產品類別）
+  products?: string[];    // 關聯產品名稱（查詢/相關性用）
 };
 
 export interface TrendSignalProvider {
@@ -82,9 +85,59 @@ const mockProvider: TrendSignalProvider = {
   },
 };
 
-/** 本版啟用的 providers。未來依 env / client 設定加掛第三方。 */
+/** 遞迴撈出 Threads 回應裡的貼文文字（欄位埋很深，只抓 plaintext，避開雜訊）。 */
+function collectThreadTexts(node: unknown, out: string[], depth = 0): void {
+  if (node == null || depth > 12 || out.length >= 40) return;
+  if (Array.isArray(node)) { for (const x of node) collectThreadTexts(x, out, depth + 1); return; }
+  if (typeof node === "object") {
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      if (k === "plaintext" && typeof v === "string" && v.trim().length > 4) out.push(v.trim());
+      else collectThreadTexts(v, out, depth + 1);
+    }
+  }
+}
+
+/** Threads 趨勢 provider（RapidAPI）：用產品/品牌關鍵字搜近期貼文 → LLM 萃取可做的題材。
+ *  需 RAPIDAPI_KEY；沒設就不啟用。任何失敗都回空，不阻斷主題生成。 */
+const threadsProvider: TrendSignalProvider = {
+  name: "threads",
+  async fetch(ctx) {
+    const key = process.env.RAPIDAPI_KEY;
+    if (!key) return [];
+    const generic = (p: string) => /^產品\s*\d*$/.test(p.trim()) || !p.trim();
+    const keyword = (ctx.products?.find((p) => !generic(p)) || ctx.clientName || "").trim();
+    if (!keyword) return [];
+    try {
+      const res = await fetch(`https://threads-scraper-api2.p.rapidapi.com/api/v1/search/top?query=${encodeURIComponent(keyword)}`, {
+        headers: { "x-rapidapi-host": "threads-scraper-api2.p.rapidapi.com", "x-rapidapi-key": key },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) return [];
+      const json = await res.json().catch(() => null);
+      const texts: string[] = [];
+      collectThreadTexts(json, texts);
+      const uniq = [...new Set(texts)].slice(0, 25);
+      if (!uniq.length) return [];
+      const prompt = `以下是 Threads 上搜尋「${keyword}」的近期貼文文字。請萃取 5-8 個與「${keyword}」相關、適合台灣品牌社群貼文的「近期話題／角度」。只回 JSON array，每項 {"label":"繁中短語(≤16字)","score":0到1熱度}。不得杜撰與貼文無關的內容；若都不相關就回 []。\n貼文：\n${uniq.map((t, i) => `${i + 1}. ${t.slice(0, 200)}`).join("\n")}`;
+      const out = await chatTextOpenRouter(prompt, 800);
+      const parsed = JSON.parse((out ?? "[]").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+      if (!Array.isArray(parsed)) return [];
+      return parsed.slice(0, 8).map((s: Record<string, unknown>, i: number) => ({
+        id: `threads:${normLabel(keyword)}:${i}`,
+        source: "threads",
+        kind: "keyword" as const,
+        label: String(s.label ?? "").trim(),
+        score: typeof s.score === "number" ? Math.max(0, Math.min(1, s.score)) : 0.6,
+        meta: { keyword },
+        fetchedAt: nowIso(),
+      })).filter((s) => s.label);
+    } catch { return []; }
+  },
+};
+
+/** 本版啟用的 providers。Threads 只在有 RAPIDAPI_KEY 時掛上（沒設自動跳過、不影響現有）。 */
 export function getTrendProviders(): TrendSignalProvider[] {
-  return [importantDateProvider, mockProvider];
+  return [importantDateProvider, mockProvider, ...(process.env.RAPIDAPI_KEY ? [threadsProvider] : [])];
 }
 
 const normLabel = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");

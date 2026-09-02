@@ -64,6 +64,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pla
     goals: parseJsonArray(plan.goals),
     campaigns: campaignInfo.map((c) => ({ id: c.id, name: c.name, goals: parseJsonArray(c.goals) })),
     importantDates: plan.campaigns.flatMap((c) => c.importantDates.map((d) => ({ date: d.date, label: d.label }))),
+    industry: plan.client.industry ?? undefined,
+    products: plan.campaigns.flatMap((c) => c.products.map((p) => p.label)),
   });
   const signalsBlock = signals.length
     ? `\n以下為本月外部趨勢訊號（僅供參考，可選用，不得杜撰未列出的訊號）：\n${JSON.stringify(signals.map((s) => ({ id: s.id, label: s.label, score: s.score })))}\n每個 topic 額外回傳 "recommendationReason"（一句話說明為何本月適合這主題）與 "sourceSignals"（字串陣列，只能填上面列出的 signal id，沒用到就 []）。`
