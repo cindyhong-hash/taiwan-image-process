@@ -119,6 +119,7 @@ model MonthlyMarketingPlan {
   status         String   @default("DRAFT") // DRAFT→STRATEGY_READY→TOPICS_READY→GENERATION_READY→REVIEW→COMPLETED
   strategyJson   String   @default("{}")    // AI 內容策略（summary + contentMix + campaignAllocations）
   signalsJson    String   @default("[]")    // [TREND-SIGNALS] 本次規劃收集到的外部趨勢訊號快照（可空）
+  notes          String   @default("")      // 補充說明（選填）：優惠機制/溝通重點/不可出現內容等，供 AI 規劃參考
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   campaigns      MarketingCampaign[]

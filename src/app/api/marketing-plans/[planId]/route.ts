@@ -15,6 +15,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pl
   if (body.year !== undefined) data.year = Number(body.year); if (body.month !== undefined) data.month = Number(body.month);
   if (body.goals !== undefined) data.goals = JSON.stringify(parseJsonArray(body.goals)); if (body.platforms !== undefined) data.platforms = JSON.stringify(parseJsonArray(body.platforms));
   if (body.totalPostCount !== undefined) data.totalPostCount = Math.max(1, Math.min(60, Number(body.totalPostCount))); if (body.status !== undefined) data.status = String(body.status);
+  if (body.notes !== undefined) data.notes = String(body.notes);
   const plan = await db.monthlyMarketingPlan.update({ where: { id: planId }, data, include }); return NextResponse.json(serializePlan(plan as unknown as Record<string, unknown>));
 }
 

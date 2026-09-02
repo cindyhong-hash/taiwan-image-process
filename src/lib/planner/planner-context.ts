@@ -17,6 +17,7 @@ export type PlannerContextInput = {
     toneLabels: string;
   };
   campaigns: ContextCampaign[];
+  notes?: string; // 月度企劃補充說明（選填）
 };
 
 function parseStrings(value: string): string[] {
@@ -101,6 +102,7 @@ export function buildPlannerContext(input: PlannerContextInput, imageAnalyses = 
         imageAnalysis: imageAnalyses.get(product.id) ?? "",
       })),
     })),
+    notes: input.notes ?? "",
     groundingRules: PLANNER_GROUNDING_RULES,
   };
 }
