@@ -97,38 +97,65 @@ function collectThreadTexts(node: unknown, out: string[], depth = 0): void {
   }
 }
 
-/** Threads 趨勢 provider（RapidAPI）：用產品/品牌關鍵字搜近期貼文 → LLM 萃取可做的題材。
+const isGenericProduct = (p: string) => /^產品\s*\d*$/.test(p.trim()) || !p.trim();
+
+/** 自動推導「適合社群搜尋」的產品類別關鍵字（避免用太利基的品牌名，如 舒適牌女刀 → 除毛/除毛刀）。
+ *  LLM 失敗時退回描述性產品名 → 品牌名。 */
+async function deriveTrendKeywords(ctx: TrendSignalContext): Promise<string[]> {
+  const products = (ctx.products ?? []).filter((p) => !isGenericProduct(p));
+  const fallback = [products[0] || ctx.clientName].filter((k): k is string => !!k && k.trim().length > 0).map((k) => k.trim());
+  const facts = [
+    ctx.clientName && `品牌：${ctx.clientName}`,
+    ctx.industry && `產業：${ctx.industry}`,
+    products.length && `產品：${products.join("、")}`,
+    ctx.goals?.length && `目標：${ctx.goals.join("、")}`,
+  ].filter(Boolean).join("；");
+  try {
+    const prompt = `根據以下品牌資訊，給 1-2 個「適合在社群平台(Threads/Instagram)搜尋、能找到相關消費者討論」的繁體中文關鍵字，聚焦『產品類別/用途』而非品牌名(品牌名太利基會搜不到)。只回 JSON 字串陣列，例如 ["除毛","除毛刀"]。\n${facts}`;
+    const out = await chatTextOpenRouter(prompt, 200);
+    const parsed = JSON.parse((out ?? "[]").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+    const kws = Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string" && k.trim().length > 0).map((k) => k.trim()) : [];
+    return kws.length ? kws.slice(0, 2) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Threads 趨勢 provider（RapidAPI）：自動推導產品類別關鍵字 → 搜近期貼文 → LLM 萃取可做的題材。
  *  需 RAPIDAPI_KEY；沒設就不啟用。任何失敗都回空，不阻斷主題生成。 */
 const threadsProvider: TrendSignalProvider = {
   name: "threads",
   async fetch(ctx) {
     const key = process.env.RAPIDAPI_KEY;
     if (!key) return [];
-    const generic = (p: string) => /^產品\s*\d*$/.test(p.trim()) || !p.trim();
-    const keyword = (ctx.products?.find((p) => !generic(p)) || ctx.clientName || "").trim();
-    if (!keyword) return [];
+    const keywords = await deriveTrendKeywords(ctx);
+    if (!keywords.length) return [];
+    const texts: string[] = [];
+    for (const kw of keywords.slice(0, 2)) {
+      try {
+        const res = await fetch(`https://threads-scraper-api2.p.rapidapi.com/api/v1/search/top?query=${encodeURIComponent(kw)}`, {
+          headers: { "x-rapidapi-host": "threads-scraper-api2.p.rapidapi.com", "x-rapidapi-key": key },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.ok) collectThreadTexts(await res.json().catch(() => null), texts);
+      } catch { /* 跳過這個關鍵字 */ }
+      if (texts.length >= 30) break;
+    }
+    const uniq = [...new Set(texts)].slice(0, 25);
+    if (!uniq.length) return [];
+    const kwLabel = keywords.join("、");
     try {
-      const res = await fetch(`https://threads-scraper-api2.p.rapidapi.com/api/v1/search/top?query=${encodeURIComponent(keyword)}`, {
-        headers: { "x-rapidapi-host": "threads-scraper-api2.p.rapidapi.com", "x-rapidapi-key": key },
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) return [];
-      const json = await res.json().catch(() => null);
-      const texts: string[] = [];
-      collectThreadTexts(json, texts);
-      const uniq = [...new Set(texts)].slice(0, 25);
-      if (!uniq.length) return [];
-      const prompt = `以下是 Threads 上搜尋「${keyword}」的近期貼文文字。請萃取 5-8 個與「${keyword}」相關、適合台灣品牌社群貼文的「近期話題／角度」。只回 JSON array，每項 {"label":"繁中短語(≤16字)","score":0到1熱度}。不得杜撰與貼文無關的內容；若都不相關就回 []。\n貼文：\n${uniq.map((t, i) => `${i + 1}. ${t.slice(0, 200)}`).join("\n")}`;
+      const prompt = `以下是 Threads 上搜尋「${kwLabel}」的近期貼文文字。請萃取 5-8 個與「${kwLabel}」相關、適合台灣品牌社群貼文的「近期話題／角度」。只回 JSON array，每項 {"label":"繁中短語(≤16字)","score":0到1熱度}。不得杜撰與貼文無關的內容；若都不相關就回 []。\n貼文：\n${uniq.map((t, i) => `${i + 1}. ${t.slice(0, 200)}`).join("\n")}`;
       const out = await chatTextOpenRouter(prompt, 800);
       const parsed = JSON.parse((out ?? "[]").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
       if (!Array.isArray(parsed)) return [];
       return parsed.slice(0, 8).map((s: Record<string, unknown>, i: number) => ({
-        id: `threads:${normLabel(keyword)}:${i}`,
+        id: `threads:${normLabel(kwLabel)}:${i}`,
         source: "threads",
         kind: "keyword" as const,
         label: String(s.label ?? "").trim(),
         score: typeof s.score === "number" ? Math.max(0, Math.min(1, s.score)) : 0.6,
-        meta: { keyword },
+        meta: { keywords },
         fetchedAt: nowIso(),
       })).filter((s) => s.label);
     } catch { return []; }
