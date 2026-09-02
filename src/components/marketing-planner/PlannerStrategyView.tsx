@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarRange, ChevronLeft, Loader2, Minus, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { CalendarRange, ChevronLeft, Loader2, Minus, Plus, RefreshCw, Sparkles, Trash2, TrendingUp } from "lucide-react";
 import { CONTENT_TYPE_META, CONTENT_TYPES, type ContentType, type PlannerStrategy } from "@/lib/marketing-planner";
 
 type Signal = { id: string; source: string; label: string; score?: number };
@@ -22,10 +22,11 @@ function moveOne<T extends { count: number }>(items: T[], index: number, delta: 
   return next;
 }
 
-export function PlannerStrategyView({ planId, clientId, total, campaigns, hasProducts, initialStrategy, initialTopics }: { planId: string; clientId: string; total: number; campaigns: Campaign[]; hasProducts: boolean; initialStrategy?: PlannerStrategy; initialTopics: Topic[] }) {
+export function PlannerStrategyView({ planId, clientId, total, campaigns, hasProducts, initialStrategy, initialTopics, initialSignals }: { planId: string; clientId: string; total: number; campaigns: Campaign[]; hasProducts: boolean; initialStrategy?: PlannerStrategy; initialTopics: Topic[]; initialSignals?: Signal[] }) {
   const router = useRouter();
   const [strategy, setStrategy] = useState<PlannerStrategy | undefined>(initialStrategy?.contentMix?.length ? initialStrategy : undefined);
   const [topics, setTopics] = useState<Topic[]>(initialTopics);
+  const [signals, setSignals] = useState<Signal[]>(initialSignals ?? []);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [confirmReplan, setConfirmReplan] = useState(false);
@@ -41,7 +42,7 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, hasPro
   };
   const generateTopics = async (mode?: "all") => {
     if (!strategy || !confirmProductContext()) return; setConfirmReplan(false); setBusy("topics"); setError("");
-    try { await generateStrategy(strategy, true); const r = await fetch(`/api/marketing-plans/${planId}/topics`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mode ? { mode } : {}) }); if (!r.ok) throw new Error(); setTopics((await r.json()).items); }
+    try { await generateStrategy(strategy, true); const r = await fetch(`/api/marketing-plans/${planId}/topics`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mode ? { mode } : {}) }); if (!r.ok) throw new Error(); const data = await r.json(); setTopics(data.items ?? []); if (Array.isArray(data.signals)) setSignals(data.signals); }
     catch { setError("Topics 暫時無法產生，請稍後再試。"); } finally { setBusy(null); }
   };
   const updateTopic = (id: string, patch: Partial<Topic>, save = false) => { setTopics((all) => all.map((x) => (x.id === id ? { ...x, ...patch } : x))); if (save) fetch(`/api/content-plan-items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }); };
@@ -64,6 +65,25 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, hasPro
 
       {error && <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
       {!hasProducts && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">目前 Campaign 尚未關聯產品。AI 不會從品牌名稱猜測產品；若要產生精準的產品主題，請先回 Brief 加入產品。</div>}
+
+      {/* 本次參考的近期題材（趨勢訊號快照） */}
+      {signals.length > 0 && (
+        <section className="mb-4 rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-violet-600" />
+            <h2 className="text-sm font-semibold text-gray-900">本次參考的近期題材</h2>
+            <span className="text-xs text-gray-400">來自重要日期與社群(Threads)近期討論</span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {signals.slice(0, 12).map((s) => (
+              <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-600" title={s.source === "threads" ? "Threads 近期討論" : s.source === "important-date" ? "重要日期" : s.source}>
+                <span className={`h-1.5 w-1.5 rounded-full ${s.source === "threads" ? "bg-violet-500" : s.source === "important-date" ? "bg-amber-500" : "bg-gray-400"}`} />
+                {s.label}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 策略 + Content Mix */}
       <section className="mb-4 rounded-2xl border border-gray-200 bg-white p-6">

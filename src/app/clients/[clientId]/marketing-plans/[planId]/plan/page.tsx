@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { parseJsonObject, serializePlan, type PlannerStrategy } from "@/lib/marketing-planner";
+import { parseJsonArrayAny, parseJsonObject, serializePlan, type PlannerStrategy } from "@/lib/marketing-planner";
 import { PlannerStrategyView } from "@/components/marketing-planner/PlannerStrategyView";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +20,10 @@ export default async function MarketingPlanStrategyPage({ params }: { params: Pr
     campaigns: { id: string; name: string }[];
     contentItems: never[];
     strategyJson: unknown;
+    signalsJson: unknown;
   };
   const strategy = parseJsonObject<PlannerStrategy>(serialized.strategyJson, {} as PlannerStrategy);
+  const initialSignals = parseJsonArrayAny<{ id: string; source: string; label: string; score?: number }>(serialized.signalsJson);
   return (
     <PlannerStrategyView
       planId={planId}
@@ -31,6 +33,7 @@ export default async function MarketingPlanStrategyPage({ params }: { params: Pr
       hasProducts={plan.campaigns.some((campaign) => campaign.products.length > 0)}
       initialStrategy={strategy}
       initialTopics={serialized.contentItems}
+      initialSignals={initialSignals}
     />
   );
 }
