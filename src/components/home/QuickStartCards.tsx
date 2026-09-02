@@ -5,9 +5,9 @@ import { FreeLayoutIcon } from "@/components/icons/FreeLayoutIcon";
 
 export function QuickStartCards({ clientId }: { clientId: string }) {
   const cards = [
-    { title: "AI 廣告圖", sub: "IG / FB 廣告素材", icon: ShoppingBag, href: `/clients/${clientId}/activities/new`, tint: "bg-[#fff0f6] text-pink-500", preview: "/quickstart/ad.png" },
-    { title: "產品情境", sub: "產品情境圖", icon: ImageIcon, href: `/clients/${clientId}/components/new`, tint: "bg-[#e6f7ff] text-blue-500", preview: "/quickstart/scene.png" },
-    { title: "自由排版", sub: "選擇專業的底圖與素材，自由移動，打造專屬設計", icon: FreeLayoutIcon, href: `/magic-layers/compose?blank=1&clientId=${clientId}`, tint: "bg-[#ecdfff] text-violet-600", preview: "/quickstart/freelayout.png" },
+    { title: "建立社群圖文", sub: "單圖 / 多圖，一次完成圖文", icon: ShoppingBag, href: `/clients/${clientId}/activities/new`, tint: "bg-[#fff0f6] text-pink-500", preview: "/quickstart/ad.png" },
+    { title: "商品情境", sub: "一個產品，快速生成整套商品素材", icon: ImageIcon, href: `/clients/${clientId}/components/new`, tint: "bg-[#e6f7ff] text-blue-500", preview: "/quickstart/scene.png" },
+    { title: "自由排版", sub: "自由移動素材，打造專屬設計", icon: FreeLayoutIcon, href: `/magic-layers/compose?blank=1&clientId=${clientId}`, tint: "bg-[#ecdfff] text-violet-600", preview: "/quickstart/freelayout.png" },
   ];
   return (
     <section>
