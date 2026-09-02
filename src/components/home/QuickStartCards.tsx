@@ -29,9 +29,9 @@ export function QuickStartCards({ clientId }: { clientId: string }) {
                 <ChevronRight className="h-3.5 w-3.5" />
               </span>
             </div>
-            {/* 預覽圖 */}
+            {/* 預覽圖：完整顯示不裁切 */}
             <div className="relative h-[210px] w-full overflow-hidden rounded-xl bg-gray-50">
-              <Image src={c.preview} alt="" fill className="object-cover" sizes="(max-width: 768px) 100vw, 33vw" />
+              <Image src={c.preview} alt="" fill className="object-contain" sizes="(max-width: 768px) 100vw, 33vw" />
             </div>
           </Link>
         ))}
