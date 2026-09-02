@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ activit
     include: {
       generatedLayouts: { orderBy: { layoutType: "asc" } },
       client: true,
-      plannerItem: { select: { monthlyPlanId: true } },
+      plannerItem: { select: { id: true, monthlyPlanId: true, status: true } },
     },
   });
   if (!activity) return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -1,14 +1,17 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { LayoutPicker } from "@/components/activities/LayoutPicker";
-import { Loader2, Pencil, SlidersHorizontal, ArrowLeft } from "lucide-react";
+import { Check, Loader2, Pencil, SlidersHorizontal, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null; cellImageUrls?: string };
-type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string }; plannerItem?: { monthlyPlanId: string } | null };
+type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string }; plannerItem?: { id: string; monthlyPlanId: string; status: string } | null };
 
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
+  const router = useRouter();
+  const [approving, setApproving] = useState(false);
   const [clientId, setClientId] = useState<string>("");
   const [activityId, setActivityId] = useState<string>("");
   const [activity, setActivity] = useState<Activity | null>(null);
@@ -17,6 +20,19 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
   const [titleDraft, setTitleDraft] = useState("");
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationTriggered = useRef(false);
+
+  // 結果頁核准：把連動的 planner topic 標記已完成，回內容日曆（Flow A ⑤ Review 收尾）
+  const approveAndBackToCalendar = async () => {
+    if (!activity?.plannerItem || approving) return;
+    setApproving(true);
+    try {
+      await fetch(`/api/content-plan-items/${activity.plannerItem.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "APPROVED" }),
+      });
+      router.push(`/clients/${clientId}/marketing-plans/${activity.plannerItem.monthlyPlanId}/calendar`);
+    } catch { setApproving(false); }
+  };
 
   const saveTitle = async () => {
     const v = titleDraft.trim();
@@ -189,6 +205,12 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
               <Pencil className="h-4 w-4 mr-1" />編輯 / 重新生成
             </Button>
           </Link>
+          {/* Flow A ⑤：屬於月度企劃、已生成、尚未核准 → 一鍵核准並回日曆 */}
+          {activity.plannerItem && activity.status === "DONE" && activity.plannerItem.status !== "APPROVED" && (
+            <Button size="sm" onClick={approveAndBackToCalendar} disabled={approving} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+              {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}核准並回日曆
+            </Button>
+          )}
         </div>
       </div>
       <p className="text-gray-500 text-sm mb-6">選擇一款版型</p>
