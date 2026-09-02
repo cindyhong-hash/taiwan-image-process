@@ -195,10 +195,10 @@ export function PlannerBriefEditor({ initialPlan }: { initialPlan: Plan }) {
             const open = openId === campaign.id;
             const thumb = campaign.products[0]?.imageUrl;
             return (
-              <div key={campaign.id} className={`overflow-hidden rounded-2xl border-[1.5px] transition-colors ${open ? "border-violet-300" : "border-[#ebeff5]"}`}>
-                {/* 卡片頭列（可點展開） */}
+              <div key={campaign.id} className={`rounded-2xl border-[1.5px] transition-colors ${open ? "border-violet-300" : "border-[#ebeff5]"}`}>
+                {/* 卡片頭列（可點展開）; 不用 overflow-hidden 以免裁切 ⋯ 選單 */}
                 <div role="button" tabIndex={0} onClick={() => setOpenId(open ? "" : campaign.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(open ? "" : campaign.id); } }}
-                  className="flex cursor-pointer items-center gap-4 p-4 hover:bg-gray-50/60">
+                  className={`flex cursor-pointer items-center gap-4 p-4 hover:bg-gray-50/60 ${open ? "rounded-t-2xl" : "rounded-2xl"}`}>
                   <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-[#ebeff5] bg-gray-50">
                     {thumb
                       // eslint-disable-next-line @next/next/no-img-element
