@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { normalizeQuickOutputCount, selectQuickVariants } from "./quick-output-count.ts";
+import { formatQuickSettingsLabel, normalizeQuickOutputCount, selectQuickVariants } from "./quick-output-count.ts";
 
 test("normalizeQuickOutputCount accepts only one to three candidate images", () => {
   assert.equal(normalizeQuickOutputCount(1), 1);
@@ -17,4 +17,9 @@ test("selectQuickVariants limits generation to the requested candidate count", (
   assert.deepEqual(selectQuickVariants(variants, 1), ["A"]);
   assert.deepEqual(selectQuickVariants(variants, 2), ["A", "B"]);
   assert.deepEqual(selectQuickVariants(variants, 3), ["A", "B", "C"]);
+});
+
+test("formatQuickSettingsLabel summarizes the selected ratio and candidate count", () => {
+  assert.equal(formatQuickSettingsLabel("4:5", 2), "4:5 · 2 張");
+  assert.equal(formatQuickSettingsLabel("16:9", 3), "16:9 · 3 張");
 });

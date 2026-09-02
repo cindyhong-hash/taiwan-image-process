@@ -8,3 +8,7 @@ export function normalizeQuickOutputCount(value: unknown): QuickOutputCount {
 export function selectQuickVariants<T>(variants: readonly T[], value: unknown): T[] {
   return variants.slice(0, normalizeQuickOutputCount(value));
 }
+
+export function formatQuickSettingsLabel(imageRatio: string, outputCount: QuickOutputCount): string {
+  return `${imageRatio} · ${outputCount} 張`;
+}

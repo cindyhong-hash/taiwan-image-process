@@ -1,7 +1,8 @@
 "use client";
-import { useRef, useState } from "react";
-import { ImagePlus, Loader2, Package, Palette, Plus, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ImagePlus, Loader2, Package, Palette, Plus, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import type { QuickCreateInput } from "@/lib/home/quick-create";
+import { formatQuickSettingsLabel } from "@/lib/home/quick-output-count";
 
 const RATIOS = ["1:1", "4:5", "16:9", "9:16"];
 
@@ -31,6 +32,7 @@ export function HomeHero({ submitting, onQuickCreate, onOpenFullSettings }: Prop
   const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([]);
   const [attachmentKind, setAttachmentKind] = useState<AttachmentKind>("product");
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
@@ -41,6 +43,13 @@ export function HomeHero({ submitting, onQuickCreate, onOpenFullSettings }: Prop
     setAttachmentMenuOpen(false);
     fileInputRef.current?.click();
   };
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setSettingsOpen(false); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [settingsOpen]);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -115,7 +124,7 @@ export function HomeHero({ submitting, onQuickCreate, onOpenFullSettings }: Prop
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               {attachmentMenuOpen && <button type="button" aria-label="關閉圖片選單" onClick={() => setAttachmentMenuOpen(false)} className="fixed inset-0 z-10 cursor-default" />}
-              <button type="button" aria-label="加入圖片" aria-expanded={attachmentMenuOpen} onClick={() => setAttachmentMenuOpen((open) => !open)} disabled={uploading} className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#ebeff5] text-gray-500 transition-colors hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600 disabled:opacity-50">
+              <button type="button" aria-label="加入圖片" aria-expanded={attachmentMenuOpen} onClick={() => { setSettingsOpen(false); setAttachmentMenuOpen((open) => !open); }} disabled={uploading} className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#ebeff5] text-gray-500 transition-colors hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600 disabled:opacity-50">
                 {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               </button>
               {attachmentMenuOpen && (
@@ -127,19 +136,37 @@ export function HomeHero({ submitting, onQuickCreate, onOpenFullSettings }: Prop
               <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => handleFiles(event.target.files)} />
             </div>
 
-            <div className="flex items-center rounded-lg border border-[#ebeff5] bg-[#f8f9fb] p-0.5" aria-label="圖片比例">
-              {RATIOS.map((ratio) => (
-                <button key={ratio} type="button" onClick={() => setImageRatio(ratio)} aria-pressed={imageRatio === ratio} className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${imageRatio === ratio ? "bg-white text-violet-600 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}>{ratio}</button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-gray-400">生成</span>
-              <div className="flex items-center rounded-lg border border-[#ebeff5] bg-[#f8f9fb] p-0.5" aria-label="候選圖款數">
-                {([1, 2, 3] as const).map((count) => (
-                  <button key={count} type="button" onClick={() => setOutputCount(count)} aria-pressed={outputCount === count} className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${outputCount === count ? "bg-white text-violet-600 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}>{count} 張</button>
-                ))}
-              </div>
+            <div className="relative">
+              {settingsOpen && <button type="button" aria-label="關閉生成設定" onClick={() => setSettingsOpen(false)} className="fixed inset-0 z-10 cursor-default" />}
+              <button type="button" aria-label={`生成設定：${formatQuickSettingsLabel(imageRatio, outputCount)}`} aria-expanded={settingsOpen} onClick={() => { setAttachmentMenuOpen(false); setSettingsOpen((open) => !open); }} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${settingsOpen ? "border-violet-300 bg-violet-50 text-violet-700" : "border-[#ebeff5] bg-white text-gray-600 hover:border-violet-300 hover:text-violet-600"}`}>
+                {formatQuickSettingsLabel(imageRatio, outputCount)}<ChevronDown className={`h-3.5 w-3.5 transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
+              </button>
+              {settingsOpen && (
+                <div className="absolute bottom-11 left-0 z-20 w-[320px] max-w-[calc(100vw-3rem)] rounded-2xl border border-[#ebeff5] bg-white p-4 shadow-[0_14px_40px_rgba(31,41,55,0.14)]">
+                  <div>
+                    <p className="text-xs font-bold text-gray-900">圖片比例</p>
+                    <div className="mt-3 grid grid-cols-4 gap-2" aria-label="圖片比例">
+                      {RATIOS.map((ratio) => {
+                        const shape = ratio === "1:1" ? "h-4 w-4" : ratio === "4:5" ? "h-5 w-4" : ratio === "16:9" ? "h-3 w-5" : "h-5 w-3";
+                        return (
+                          <button key={ratio} type="button" onClick={() => setImageRatio(ratio)} aria-pressed={imageRatio === ratio} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border text-[11px] font-medium transition-colors ${imageRatio === ratio ? "border-violet-300 bg-violet-50 text-violet-700" : "border-[#ebeff5] text-gray-500 hover:border-violet-200 hover:bg-[#fcfbff]"}`}>
+                            <span aria-hidden="true" className={`block rounded-[3px] border-[1.5px] ${shape} ${imageRatio === ratio ? "border-violet-500" : "border-gray-400"}`} />
+                            {ratio}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="mt-4 border-t border-[#ebeff5] pt-4">
+                    <p className="text-xs font-bold text-gray-900">生成張數</p>
+                    <div className="mt-3 grid grid-cols-3 rounded-lg bg-[#f8f9fb] p-1" aria-label="候選圖款數">
+                      {([1, 2, 3] as const).map((count) => (
+                        <button key={count} type="button" onClick={() => setOutputCount(count)} aria-pressed={outputCount === count} className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${outputCount === count ? "bg-white text-violet-600 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}>{count} 張</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
