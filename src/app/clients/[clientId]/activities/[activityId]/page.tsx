@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { LayoutPicker } from "@/components/activities/LayoutPicker";
-import { Check, Loader2, Pencil, SlidersHorizontal, ArrowLeft } from "lucide-react";
+import { CalendarPlus, Check, Loader2, Pencil, SlidersHorizontal, ArrowLeft, X } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -12,6 +12,13 @@ type Activity = { id: string; theme: string; focusPoint: string; titleText?: str
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
   const router = useRouter();
   const [approving, setApproving] = useState(false);
+  // B：把這張作品/設計稿指派到某月度企劃的某篇主題
+  const [showAssign, setShowAssign] = useState(false);
+  const [assignPlans, setAssignPlans] = useState<{ id: string; year: number; month: number }[]>([]);
+  const [assignPlanId, setAssignPlanId] = useState("");
+  const [assignTopics, setAssignTopics] = useState<{ id: string; topic: string; status: string }[]>([]);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assigning, setAssigning] = useState(false);
   const [clientId, setClientId] = useState<string>("");
   const [activityId, setActivityId] = useState<string>("");
   const [activity, setActivity] = useState<Activity | null>(null);
@@ -32,6 +39,33 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
       });
       router.push(`/clients/${clientId}/marketing-plans/${activity.plannerItem.monthlyPlanId}/calendar`);
     } catch { setApproving(false); }
+  };
+
+  const loadAssignTopics = async (planId: string) => {
+    setAssignPlanId(planId); setAssignTopics([]);
+    if (!planId) return;
+    try {
+      const p = await fetch(`/api/marketing-plans/${planId}`).then((r) => r.json());
+      setAssignTopics((p?.contentItems ?? []).map((t: { id: string; topic: string; status: string }) => ({ id: t.id, topic: t.topic, status: t.status })));
+    } catch { /* ignore */ }
+  };
+  const openAssign = async () => {
+    setShowAssign(true); setAssignLoading(true);
+    try {
+      const plans = await fetch(`/api/marketing-plans?clientId=${clientId}`).then((r) => r.json());
+      const list = (plans ?? []).map((p: { id: string; year: number; month: number }) => ({ id: p.id, year: p.year, month: p.month }));
+      setAssignPlans(list);
+      if (list[0]) await loadAssignTopics(list[0].id);
+    } catch { /* ignore */ }
+    finally { setAssignLoading(false); }
+  };
+  const assignTopic = async (itemId: string) => {
+    setAssigning(true);
+    try {
+      const r = await fetch(`/api/content-plan-items/${itemId}/attach`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ activityId }) });
+      if (!r.ok) throw new Error();
+      router.push(`/clients/${clientId}/marketing-plans/${assignPlanId}/calendar`);
+    } catch { setAssigning(false); }
   };
 
   const saveTitle = async () => {
@@ -211,6 +245,12 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
               {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}核准並回日曆
             </Button>
           )}
+          {/* B：尚未屬於任何企劃、已有成品 → 指派到月度企劃某篇 */}
+          {!activity.plannerItem && activity.generatedLayouts.length > 0 && (
+            <Button variant="outline" size="sm" onClick={openAssign} className="gap-1">
+              <CalendarPlus className="h-4 w-4" />指派到企劃
+            </Button>
+          )}
         </div>
       </div>
       <p className="text-gray-500 text-sm mb-6">選擇一款版型</p>
@@ -222,6 +262,43 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
         clientName={activity.client?.name}
         onSelect={handleSelect}
       />
+
+      {showAssign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button aria-label="取消" onClick={() => setShowAssign(false)} className="absolute inset-0 cursor-default bg-gray-950/25 backdrop-blur-[1px]" />
+          <div role="dialog" aria-modal="true" className="relative flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div><h2 className="text-lg font-bold text-gray-900">指派到月度企劃</h2><p className="mt-1 text-xs text-gray-400">把這張作品掛到某份企劃的一篇主題，之後可在內容日曆審核。</p></div>
+              <button aria-label="關閉" onClick={() => setShowAssign(false)} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-4 w-4" /></button>
+            </div>
+            {assignLoading ? (
+              <div className="flex justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
+            ) : assignPlans.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 py-10 text-center text-sm text-gray-400">這個品牌還沒有月度企劃。</div>
+            ) : (
+              <>
+                <label className="text-xs font-medium text-gray-600">選擇企劃</label>
+                <select value={assignPlanId} onChange={(e) => loadAssignTopics(e.target.value)} className="mb-4 mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                  {assignPlans.map((p) => <option key={p.id} value={p.id}>{p.year} 年 {p.month} 月企劃</option>)}
+                </select>
+                <label className="text-xs font-medium text-gray-600">選擇要掛上的主題</label>
+                <div className="mt-2 flex-1 space-y-2 overflow-y-auto">
+                  {assignTopics.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-200 px-3 py-6 text-center text-xs text-gray-400">這份企劃還沒有主題。</div>
+                  ) : assignTopics.map((t) => (
+                    <button key={t.id} disabled={assigning} onClick={() => assignTopic(t.id)}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2.5 text-left text-sm hover:border-violet-300 hover:bg-violet-50/40 disabled:opacity-50">
+                      <span className="truncate text-gray-800">{t.topic}</span>
+                      <span className="shrink-0 text-[11px] text-gray-400">{t.status === "APPROVED" ? "已完成" : t.status === "NEEDS_REVIEW" ? "待審核" : t.status === "PLANNING" ? "尚未製作" : "製作中"}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {assigning && <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/60"><Loader2 className="h-6 w-6 animate-spin text-violet-600" /></div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
