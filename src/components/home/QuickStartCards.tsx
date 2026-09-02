@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { ShoppingBag, Image as ImageIcon, ChevronRight } from "lucide-react";
 import { FreeLayoutIcon } from "@/components/icons/FreeLayoutIcon";
 
@@ -29,9 +28,10 @@ export function QuickStartCards({ clientId }: { clientId: string }) {
                 <ChevronRight className="h-3.5 w-3.5" />
               </span>
             </div>
-            {/* 預覽圖：完整顯示不裁切 */}
-            <div className="relative h-[210px] w-full overflow-hidden rounded-xl bg-gray-50">
-              <Image src={c.preview} alt="" fill className="object-contain" sizes="(max-width: 768px) 100vw, 33vw" />
+            {/* 預覽圖：依原圖比例、滿版寬度、不裁切不變形 */}
+            <div className="w-full overflow-hidden rounded-xl bg-gray-50">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={c.preview} alt="" loading="lazy" className="block h-auto w-full" />
             </div>
           </Link>
         ))}
