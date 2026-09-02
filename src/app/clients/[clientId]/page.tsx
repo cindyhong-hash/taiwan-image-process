@@ -106,6 +106,7 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
       imagePrompt: input.prompt.trim(),
       requiredText: "",
       imageRatio: input.imageRatio,
+      variantCount: input.outputCount,
       productImageUrls: input.productImageUrls,
       referenceImageUrls: input.referenceImageUrls,
     }));

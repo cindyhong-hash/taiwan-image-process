@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null; cellImageUrls?: string };
-type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string }; plannerItem?: { id: string; monthlyPlanId: string; status: string } | null };
+type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; genMode?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string }; plannerItem?: { id: string; monthlyPlanId: string; status: string } | null };
 
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
   const router = useRouter();
@@ -169,7 +169,7 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
           {(() => {
             // 多圖：款數＝生成組數（variantCount）；單圖：固定 3 款(A/B/C)
             const isMulti = !!activity.layoutId && activity.layoutId !== "single";
-            const n = isMulti ? (activity.variantCount === 2 ? 2 : 1) : 3;
+            const n = isMulti ? (activity.variantCount === 2 ? 2 : 1) : (activity.genMode === "quick" ? (activity.variantCount ?? 3) : 3);
             const cn = ["", "一", "兩", "三"][n] ?? String(n);
             return `AI 正在生成${cn}款版型，請稍候...`;
           })()}

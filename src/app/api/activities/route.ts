@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { normalizeQuickOutputCount } from "@/lib/home/quick-output-count";
 
 export async function POST(request: Request) {
   try {
@@ -42,10 +43,10 @@ export async function POST(request: Request) {
         typographyMood:       typographyMood || null, // [2b] 特效字風格 override
         // [MULTI] 多圖版型欄位（single 時走他的單圖流程）
         layoutId:             layoutId ?? "single",
-        genMode:              genMode ?? "unified",
+        genMode:              genMode === "quick" ? "quick" : (genMode ?? "unified"),
         cells:                JSON.stringify(cells ?? []),
         logoMode:             logoMode ?? "first",
-        variantCount:         Number(variantCount) === 2 ? 2 : 1,
+        variantCount:         genMode === "quick" ? normalizeQuickOutputCount(variantCount) : (Number(variantCount) === 2 ? 2 : 1),
         variantChoice:        variantChoice === "B" ? "B" : "A",
         status:               status === "DRAFT" ? "DRAFT" : "PENDING",
       },

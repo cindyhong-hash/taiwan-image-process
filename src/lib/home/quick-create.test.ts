@@ -23,6 +23,7 @@ test("buildQuickActivityPayload uses the selected ratio and existing generation 
     clientId: "client-1",
     prompt: " 清爽明亮的夏季產品情境圖 ",
     imageRatio: "4:5",
+    outputCount: 2,
     productImageUrls: ["/product.png"],
     referenceImageUrls: ["/reference.png"],
   }), {
@@ -37,5 +38,7 @@ test("buildQuickActivityPayload uses the selected ratio and existing generation 
     referenceImageUrls: ["/reference.png"],
     selectedComponentIds: [],
     layoutId: "single",
+    genMode: "quick",
+    variantCount: 2,
   });
 });

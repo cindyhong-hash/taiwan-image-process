@@ -41,6 +41,7 @@ import { extractStyleComponents, buildAiPromptText } from "@/lib/extract-compone
 import { LAYOUT_CONFIGS } from "@/types";
 import type { LayoutType } from "@/types";
 import { generateMulti } from "@/lib/generate-multi";  // [MULTI] 多圖拼版流程（獨立模組）
+import { selectQuickVariants } from "@/lib/home/quick-output-count";
 
 export const maxDuration = 180;
 
@@ -350,7 +351,11 @@ export async function POST(request: Request) {
       console.log(`[generate] Product descs (${valid.length} items): ${productDesc?.slice(0, 120)}`);
     }
 
-    for (const layoutConfig of LAYOUT_CONFIGS) {
+    const requestedLayouts = activity.genMode === "quick"
+      ? selectQuickVariants(LAYOUT_CONFIGS, activity.variantCount)
+      : LAYOUT_CONFIGS;
+
+    for (const layoutConfig of requestedLayouts) {
       console.log(`[generate] Starting layout ${layoutConfig.type}`);
 
       // ── 1. Claude 文案 ──────────────────────────────────────────────────────

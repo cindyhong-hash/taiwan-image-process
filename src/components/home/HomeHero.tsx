@@ -26,6 +26,7 @@ export function HomeHero({ submitting, onQuickCreate, onOpenFullSettings }: Prop
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [prompt, setPrompt] = useState("");
   const [imageRatio, setImageRatio] = useState("1:1");
+  const [outputCount, setOutputCount] = useState<1 | 2 | 3>(3);
   const [productImageUrls, setProductImageUrls] = useState<string[]>([]);
   const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([]);
   const [attachmentKind, setAttachmentKind] = useState<AttachmentKind>("product");
@@ -33,7 +34,7 @@ export function HomeHero({ submitting, onQuickCreate, onOpenFullSettings }: Prop
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
-  const input = (): QuickCreateInput => ({ prompt, imageRatio, productImageUrls, referenceImageUrls });
+  const input = (): QuickCreateInput => ({ prompt, imageRatio, outputCount, productImageUrls, referenceImageUrls });
 
   const chooseAttachment = (kind: AttachmentKind) => {
     setAttachmentKind(kind);
@@ -130,6 +131,15 @@ export function HomeHero({ submitting, onQuickCreate, onOpenFullSettings }: Prop
               {RATIOS.map((ratio) => (
                 <button key={ratio} type="button" onClick={() => setImageRatio(ratio)} aria-pressed={imageRatio === ratio} className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${imageRatio === ratio ? "bg-white text-violet-600 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}>{ratio}</button>
               ))}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-gray-400">生成</span>
+              <div className="flex items-center rounded-lg border border-[#ebeff5] bg-[#f8f9fb] p-0.5" aria-label="候選圖款數">
+                {([1, 2, 3] as const).map((count) => (
+                  <button key={count} type="button" onClick={() => setOutputCount(count)} aria-pressed={outputCount === count} className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${outputCount === count ? "bg-white text-violet-600 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}>{count} 張</button>
+                ))}
+              </div>
             </div>
           </div>
 

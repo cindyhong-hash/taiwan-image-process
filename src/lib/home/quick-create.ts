@@ -3,6 +3,7 @@ export type QuickCreateRoute = "direct" | "single" | "multi";
 export type QuickCreateInput = {
   prompt: string;
   imageRatio: string;
+  outputCount: 1 | 2 | 3;
   productImageUrls: string[];
   referenceImageUrls: string[];
 };
@@ -35,5 +36,7 @@ export function buildQuickActivityPayload(input: QuickCreateInput & { clientId: 
     referenceImageUrls: input.referenceImageUrls,
     selectedComponentIds: [],
     layoutId: "single",
+    genMode: "quick",
+    variantCount: input.outputCount,
   };
 }
