@@ -12,7 +12,7 @@ export function HomeHero({ query, onSearch }: { query: string; onSearch: (q: str
     <section className="space-y-6">
       <div>
         <h1 className="flex items-center gap-2 text-3xl font-bold text-gray-900">
-          今天，想做什麼 <span className="text-violet-600">素材</span>呢？
+          今天，想<span className="text-violet-600">創作</span>什麼？
           <Sparkles className="h-6 w-6 text-violet-500" />
         </h1>
         <p className="mt-2 text-sm text-gray-400">描述需求、貼上參考，AI 會依照品牌記憶自動生成素材</p>
