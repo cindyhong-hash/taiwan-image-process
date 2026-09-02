@@ -24,6 +24,7 @@ model Client {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   activities     Activity[]
+  marketingPlans MonthlyMarketingPlan[]  // [PLANNER] AI 月度企劃
 }
 
 model Activity {
@@ -55,6 +56,7 @@ model Activity {
   status               String            @default("PENDING")
   createdAt            DateTime          @default(now())
   generatedLayouts     GeneratedLayout[]
+  plannerItem          ContentPlanItem?  @relation("GeneratedActivity")  // [PLANNER] 由某篇 Topic 生成而來（反向關聯）
 }
 
 model GeneratedLayout {
@@ -98,4 +100,101 @@ model LibraryImage {
   errorMessage String?                     // 生成失敗時嘅真正原因（顯示喺 UI，免翻 log）
   batchId      String?                     // 同一次「生成 N 張」嘅群組 id，畫廊用嚟顯示「批次 x/N」
   createdAt    DateTime @default(now())
+}
+
+// ── AI 月度企劃（Monthly Marketing Planner）────────────────────────────────────
+// 來源：功能包「AI月度行銷企劃-獨立功能包」。流程以 Flow A 為準，
+// 完整對映見 docs/monthly-planner-flow-A-spec.md、docs/monthly-planner-trend-signals-spec.md。
+// 生成沿用既有 Activity 管線（ContentPlanItem.generatedActivity），不做獨立批次器。
+
+model MonthlyMarketingPlan {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+  goals          String   @default("[]")   // JSON string[]：行銷目標
+  totalPostCount Int      @default(12)      // 本月預計篇數
+  platforms      String   @default("[]")   // JSON string[]：Instagram / Facebook
+  status         String   @default("DRAFT") // DRAFT→STRATEGY_READY→TOPICS_READY→GENERATION_READY→REVIEW→COMPLETED
+  strategyJson   String   @default("{}")    // AI 內容策略（summary + contentMix + campaignAllocations）
+  signalsJson    String   @default("[]")    // [TREND-SIGNALS] 本次規劃收集到的外部趨勢訊號快照（可空）
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  campaigns      MarketingCampaign[]
+  contentItems   ContentPlanItem[]
+
+  @@unique([clientId, year, month])
+  @@index([clientId, updatedAt])
+}
+
+model MarketingCampaign {
+  id             String   @id @default(cuid())
+  monthlyPlanId  String
+  monthlyPlan    MonthlyMarketingPlan @relation(fields: [monthlyPlanId], references: [id], onDelete: Cascade)
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  goals          String   @default("[]")
+  description    String   @default("")
+  sortOrder      Int      @default(0)
+  allocationJson String   @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  products       CampaignProduct[]
+  importantDates CampaignImportantDate[]
+  contentItems   ContentPlanItem[]
+
+  @@index([monthlyPlanId, sortOrder])
+}
+
+model CampaignProduct {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  label      String
+  imageUrl   String
+  sourceKind String   @default("library")  // library＝從素材庫選；upload＝使用者自行上傳
+  sourceId   String?                        // sourceKind=library 時對應 LibraryImage.id
+  createdAt  DateTime @default(now())
+
+  @@index([campaignId])
+}
+
+model CampaignImportantDate {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  date       DateTime
+  label      String
+  note       String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@index([campaignId, date])
+}
+
+model ContentPlanItem {
+  id                   String   @id @default(cuid())
+  monthlyPlanId        String
+  monthlyPlan          MonthlyMarketingPlan @relation(fields: [monthlyPlanId], references: [id], onDelete: Cascade)
+  campaignId           String?
+  campaign             MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  contentType          String   // BRAND｜EDUCATION｜PRODUCT｜ENGAGEMENT｜PROMOTION
+  topic                String
+  contentDirection     String   @default("")
+  recommendationReason String   @default("")   // [TREND-SIGNALS] 為何本月推這個 topic（② 每篇的短理由）
+  sourceSignals        String   @default("[]") // [TREND-SIGNALS] JSON：[{ id, source, label, score }]，引用了哪些訊號
+  format               String   @default("SINGLE")  // SINGLE｜CAROUSEL
+  platforms            String   @default("[]")
+  scheduledDate        DateTime?                     // ③ 內容日曆拖曳寫入
+  status               String   @default("PLANNING") // PLANNING→DRAFT→GENERATING→NEEDS_REVIEW→APPROVED
+  sortOrder            Int      @default(0)
+  generatedActivityId  String?  @unique
+  generatedActivity    Activity? @relation("GeneratedActivity", fields: [generatedActivityId], references: [id], onDelete: SetNull)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([monthlyPlanId, sortOrder])
+  @@index([campaignId])
+  @@index([scheduledDate])
 }

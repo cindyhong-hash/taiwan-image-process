@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ShoppingBag, Image as ImageIcon, Settings } from "lucide-react";
+import { Home, ShoppingBag, Image as ImageIcon, Settings, CalendarRange } from "lucide-react";
 
 export function SidebarNav({ currentClientId, collapsed }: { currentClientId: string; collapsed?: boolean }) {
   const pathname = usePathname();
   const base = `/clients/${currentClientId}`;
   const items = [
     { label: "首頁", href: base, icon: Home, tour: "nav-home", match: (p: string) => p === base },
+    { label: "月度企劃", href: `${base}/marketing-plans`, icon: CalendarRange, tour: "nav-planner", match: (p: string) => p.startsWith(`${base}/marketing-plans`) },
     { label: "廣告圖文", href: `${base}/activities`, icon: ShoppingBag, tour: "nav-activities", match: (p: string) => p.startsWith(`${base}/activities`) },
     { label: "素材庫", href: `${base}/components`, icon: ImageIcon, tour: "nav-library", match: (p: string) => p.startsWith(`${base}/components`) },
     { label: "品牌設定", href: `${base}/settings`, icon: Settings, tour: "nav-settings", match: (p: string) => p.startsWith(`${base}/settings`) },
