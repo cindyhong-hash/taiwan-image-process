@@ -1,7 +1,7 @@
 "use client";
 /**
  * ② AI 內容企劃（Flow A）— 單頁分段：策略摘要 + Content Mix + Topics（含推薦理由/來源訊號）。
- * 底部 CTA「確認企劃 → 安排到內容日曆」是 P3→P4 接點（③ 內容日曆尚未建置）。
+ * 底部 CTA「確認企劃 → 安排到內容日曆」進入③內容日曆。
  * 生成邏輯沿用 pack StrategyAndTopics；改為 redesign 白卡樣式，移除日曆與批次器。
  */
 import { useState } from "react";
@@ -153,9 +153,9 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, initia
           {topics.length > 0 && (
             <div className="mt-6 flex items-center justify-between border-t pt-5">
               <p className="text-xs text-gray-400">確認後，AI 會把這些主題排進內容日曆。</p>
-              <button disabled title="③ 內容日曆（下一階段）即將接上"
-                className="flex cursor-not-allowed items-center gap-1.5 rounded-lg bg-violet-600/50 px-5 py-2.5 text-sm font-medium text-white">
-                <CalendarRange className="h-4 w-4" />確認企劃 → 安排到內容日曆（即將開放）
+              <button onClick={() => router.push(`/clients/${clientId}/marketing-plans/${planId}/calendar`)}
+                className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-700">
+                <CalendarRange className="h-4 w-4" />確認企劃 → 安排到內容日曆
               </button>
             </div>
           )}
