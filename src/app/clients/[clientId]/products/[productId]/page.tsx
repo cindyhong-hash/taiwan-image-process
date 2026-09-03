@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw } from "lucide-react";
 import { ASSET_ROLE_LABELS, type Product } from "@/lib/productMeta";
+import { ImageSetModal } from "@/components/products/ImageSetModal";
 
 export default function ProductDetailPage({
   params,
@@ -16,6 +17,7 @@ export default function ProductDetailPage({
   const [loading, setLoading] = useState(true);
   const [recutting, setRecutting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [showSet, setShowSet] = useState(false);
 
   useEffect(() => {
     params.then(({ clientId, productId }) => { setClientId(clientId); setProductId(productId); });
@@ -127,7 +129,7 @@ export default function ProductDetailPage({
           {/* 建立商品套圖 CTA（單元 D 接上生成流程） */}
           <div className="mt-6">
             <button
-              onClick={() => setNote("套圖生成流程將在下一步（單元 D）接上。")}
+              onClick={() => setShowSet(true)}
               className="inline-flex items-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 text-sm font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)]"
             >
               <Sparkles className="h-[18px] w-[18px]" /> AI 建立商品套圖
@@ -162,6 +164,14 @@ export default function ProductDetailPage({
           </div>
         )}
       </div>
+
+      {showSet && (
+        <ImageSetModal
+          productId={productId}
+          onClose={() => setShowSet(false)}
+          onFinished={load}
+        />
+      )}
     </div>
   );
 }
