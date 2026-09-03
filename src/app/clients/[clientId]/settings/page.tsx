@@ -100,7 +100,7 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
                 <p className="text-sm font-medium text-gray-800">刪除品牌</p>
                 <p className="text-xs text-gray-500 mt-0.5">會一併刪除此品牌的所有活動、圖文與素材，無法復原。</p>
               </div>
-              <button type="button" onClick={() => setConfirmDelete(true)}
+              <button type="button" data-tour="settings-delete" onClick={() => setConfirmDelete(true)}
                 className="flex items-center gap-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg px-3 py-2 hover:bg-red-100 transition-colors shrink-0">
                 <Trash2 className="h-4 w-4" />刪除品牌
               </button>

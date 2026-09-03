@@ -35,6 +35,7 @@ export default function BrandComponentsPage({ params }: { params: Promise<{ clie
         </div>
         {tab === "assets" ? (
           <button
+            data-tour="lib-add"
             onClick={() => libRef.current?.openAddPicker()}
             className="flex items-center gap-1.5 text-sm font-medium bg-violet-600 text-white px-4 py-2 rounded-xl hover:bg-violet-700 transition-colors shrink-0"
           >

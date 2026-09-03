@@ -27,7 +27,7 @@ export function GuidedTour({ steps, onClose }: { steps: TourStep[]; onClose: () 
     if (!step?.anchor) { setAnchorRect(null); return; }
     const el = document.querySelector(step.anchor) as HTMLElement | null;
     if (!el) { setAnchorRect(null); return; }
-    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    el.scrollIntoView({ block: "center", inline: "nearest" });
     const r = el.getBoundingClientRect();
     setAnchorRect({ top: r.top, left: r.left, width: r.width, height: r.height });
   }, [step?.anchor]);

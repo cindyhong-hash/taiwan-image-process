@@ -34,22 +34,22 @@ const CALENDAR_STEPS: TourStep[] = [
 // 建立圖文（活動列表）
 const ACTIVITIES_STEPS: TourStep[] = [
   { anchor: '[data-tour="nav-activities"]', title: "這裡是建立圖文", desc: "你所有的社群圖文活動都列在這裡。" },
-  { title: "第一步：新增活動", desc: "點「新增活動」，選單圖或多圖版型。" },
+  { anchor: '[data-tour="act-create"]', title: "第一步：選一種方式開始", desc: "全新生成、套用素材底圖，或自由排版 —— 挑一個開始建立。" },
   { title: "填主題 → AI 生成", desc: "填畫面描述與必放文字，AI 會依品牌記憶生成圖文。" },
 ];
 
 // 素材庫
 const LIBRARY_STEPS: TourStep[] = [
   { anchor: '[data-tour="nav-library"]', title: "這裡是素材庫", desc: "集中管理產品圖、背景、人像、插圖等素材。" },
-  { title: "第一步：新增素材", desc: "點「新增素材」，上傳圖片或用 AI 生成。" },
+  { anchor: '[data-tour="lib-add"]', title: "第一步：新增素材", desc: "點「新增素材」，上傳圖片或用 AI 生成。" },
   { title: "重複使用", desc: "素材可在建立圖文時直接挑選，不用重複上傳。" },
 ];
 
 // 品牌設定
 const SETTINGS_STEPS: TourStep[] = [
   { anchor: '[data-tour="nav-settings"]', title: "這裡是品牌設定", desc: "填品牌資訊，AI 生成才會貼近你的品牌調性。" },
-  { title: "第一步：填品牌基本資訊", desc: "品牌名稱、簡介、色彩、產業；越完整，AI 越懂你的品牌。" },
-  { title: "刪除品牌", desc: "拉到最下方「危險操作」可刪除整個品牌（含所有活動與素材）。" },
+  { anchor: '[data-tour="settings-name"]', title: "第一步：填品牌基本資訊", desc: "品牌名稱、簡介、色彩、產業；越完整，AI 越懂你的品牌。" },
+  { anchor: '[data-tour="settings-delete"]', title: "刪除品牌", desc: "「危險操作」可刪除整個品牌（含所有活動與素材），無法復原。" },
 ];
 
 // 依 pathname 選對應頁面的教學步驟

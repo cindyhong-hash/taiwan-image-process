@@ -247,7 +247,9 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
         taboos={client.taboos}
       />
 
-      <CreationCards onNewGenerate={() => setShowTypeModal(true)} onApplyBase={() => setShowBasePicker(true)} onFreeLayout={() => setShowFreeWizard(true)} />
+      <div data-tour="act-create">
+        <CreationCards onNewGenerate={() => setShowTypeModal(true)} onApplyBase={() => setShowBasePicker(true)} onFreeLayout={() => setShowFreeWizard(true)} />
+      </div>
 
       <h2 className="text-lg font-semibold text-gray-900 mb-3">最近圖文</h2>
 

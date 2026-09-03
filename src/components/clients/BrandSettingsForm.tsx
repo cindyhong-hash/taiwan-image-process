@@ -194,7 +194,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
           </div>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1" data-tour="settings-name">
           <Label>品牌名稱 *</Label>
           <Input
             value={values.name}
