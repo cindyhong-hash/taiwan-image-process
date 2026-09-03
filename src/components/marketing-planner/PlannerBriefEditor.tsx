@@ -55,7 +55,15 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
 
   const updatePlan = (patch: Partial<Plan>) => { setPlan((p) => ({ ...p, ...patch })); setSaveState("dirty"); };
   const updateCampaign = (patch: Partial<Campaign>) => { if (!selected) return; setPlan((p) => ({ ...p, campaigns: p.campaigns.map((c) => (c.id === selected.id ? { ...c, ...patch } : c)) })); setSaveState("dirty"); };
-  const shiftMonth = (delta: number) => { let y = plan.year, m = plan.month + delta; if (m < 1) { m = 12; y -= 1; } if (m > 12) { m = 1; y += 1; } updatePlan({ year: y, month: m }); };
+  // 月份切換：不是改當前企劃的月份，而是導到「該月份自己的企劃」(有就載入、沒有就建立)。
+  // 先存好當前 brief 再切，避免 debounce 未寫入就離開。
+  const shiftMonth = async (delta: number) => {
+    let y = plan.year, m = plan.month + delta; if (m < 1) { m = 12; y -= 1; } if (m > 12) { m = 1; y += 1; }
+    if (saveState !== "saved") { setSaveState("saving"); await saveBrief(); setSaveState("saved"); }
+    const res = await fetch(`/api/marketing-plans`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: plan.clientId, year: y, month: m }) });
+    const target = await res.json();
+    if (target?.id) router.push(`/clients/${plan.clientId}/marketing-plans/${target.id}`);
+  };
   const isPreset = (g: string) => MARKETING_GOALS.includes(g as typeof MARKETING_GOALS[number]);
   const otherOn = plan.goals.includes("其他");
   // 目標切換：一般預設照舊；「其他」關閉時連帶清掉自訂目標
