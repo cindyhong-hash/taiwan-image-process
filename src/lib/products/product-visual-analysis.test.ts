@@ -59,7 +59,7 @@ test("falls back without inventing facts when model JSON is invalid", async () =
   assert.equal(result.appearance.distinctiveDetails.length, 0);
 });
 
-test("deduplicates references and caps vision input at five images", async () => {
+test("deduplicates references, caps input at five images, and preserves the hero", async () => {
   const seen: string[] = [];
   await analyzeProductVisualProfile(
     {
@@ -81,8 +81,17 @@ test("deduplicates references and caps vision input at five images", async () =>
     "data:image/png;base64,two.png",
     "data:image/png;base64,three.png",
     "data:image/png;base64,four.png",
-    "data:image/png;base64,five.png",
+    "data:image/png;base64,six.png",
   ]);
+});
+
+test("records the number of references actually analyzed instead of the model count", async () => {
+  const result = await analyzeProductVisualProfile(productWithThreeReferences, {
+    loadAsDataUrl: async (url) => `data:image/png;base64,${url}`,
+    completeVision: async () => JSON.stringify({ ...beautyDeviceProfile, sourceImageCount: 99 }),
+  });
+
+  assert.equal(result.sourceImageCount, 3);
 });
 
 test("uses product colors as dominant and brand color as accent", () => {

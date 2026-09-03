@@ -61,8 +61,11 @@ Return exactly this ProductVisualProfile JSON contract:
 }`;
 
 function uniqueReferenceUrls(input: ProductVisualProfileInput): string[] {
-  const urls = [...(input.rawImageUrls ?? []), input.heroImageUrl ?? ""];
-  return [...new Set(urls.map((url) => url.trim()).filter(Boolean))].slice(0, MAX_REFERENCE_IMAGES);
+  const rawUrls = [...new Set((input.rawImageUrls ?? []).map((url) => url.trim()).filter(Boolean))];
+  const heroUrl = input.heroImageUrl?.trim() ?? "";
+  if (!heroUrl) return rawUrls.slice(0, MAX_REFERENCE_IMAGES);
+
+  return [...rawUrls.filter((url) => url !== heroUrl).slice(0, MAX_REFERENCE_IMAGES - 1), heroUrl];
 }
 
 async function defaultLoadAsDataUrl(url: string): Promise<string> {
@@ -150,7 +153,7 @@ export async function analyzeProductVisualProfile(
     const completeVision = deps.completeVision ?? defaultCompleteVision;
     const imageDataUrls = await Promise.all(urls.map(loadAsDataUrl));
     const profile = parseVisionJson(await completeVision({ imageDataUrls, systemPrompt: SYSTEM_PROMPT, product: input }));
-    return profile ?? fallbackProductVisualProfile(input);
+    return profile ? { ...profile, sourceImageCount: imageDataUrls.length } : fallbackProductVisualProfile(input);
   } catch {
     return fallbackProductVisualProfile(input);
   }
