@@ -60,3 +60,6 @@ prisma/dev.db.pre-merge-bak
 
 # packed material bundles (pack-materials.sh)
 dist/
+
+# Local isolated feature worktrees
+/.worktrees/
