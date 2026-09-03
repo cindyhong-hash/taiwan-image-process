@@ -5,10 +5,13 @@ import { HelpCircle, Bell, CheckCircle2, Sparkles, X } from "lucide-react";
 import { GuidedTour, type TourStep } from "./GuidedTour";
 
 // 快速教學步驟：錨在每頁都有的側欄 + 說明鈕（找不到錨點會置中顯示）。
+// 依「設定 → 規劃 → 排程 → 產出 → 資源」的操作流程排序，讓使用者一眼看懂能做什麼。
 const TOUR_STEPS: TourStep[] = [
-  { anchor: '[data-tour="nav-settings"]', title: "先設定品牌規範", desc: "到品牌設定填品牌名稱、簡介、色彩與產業，AI 生成才會貼近你的品牌調性。" },
-  { anchor: '[data-tour="nav-activities"]', title: "建立廣告圖文", desc: "單圖或多圖活動都在這裡：填主題 → AI 幫你生成。" },
-  { anchor: '[data-tour="nav-library"]', title: "素材庫", desc: "產品圖、背景、人像、插圖素材集中管理，可再拿去生成。" },
+  { anchor: '[data-tour="nav-settings"]', title: "① 先設定品牌規範", desc: "填品牌名稱、簡介、色彩與產業，AI 生成才會貼近你的品牌調性。" },
+  { anchor: '[data-tour="nav-planner"]', title: "② AI 月度企劃", desc: "讓 AI 依品牌與目標，一次規劃整個月的內容主題與方向。" },
+  { anchor: '[data-tour="nav-calendar"]', title: "③ 內容日曆", desc: "把規劃好的內容排進日曆，清楚掌握每篇的發布安排。" },
+  { anchor: '[data-tour="nav-activities"]', title: "④ 建立圖文", desc: "單圖或多圖：填主題，AI 幫你生成社群圖文。" },
+  { anchor: '[data-tour="nav-library"]', title: "⑤ 素材庫", desc: "產品圖、背景、人像、插圖集中管理，可重複拿來生成。" },
   { anchor: '[data-tour="help"]', title: "隨時回來看說明", desc: "點這顆問號，可看目前頁面說明，或再看一次這個教學。" },
 ];
 
