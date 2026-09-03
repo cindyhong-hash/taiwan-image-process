@@ -29,6 +29,37 @@ test("beauty devices receive detail and usage roles instead of texture and ingre
   assert.match(roles[1].label, /刀頭|功能細節/);
   assert.match(roles[1].sceneCn, /刀頭|按鍵/);
   assert.match(roles[2].sceneCn, /護理|使用情境/);
+  assert.match(roles[2].sceneCn, /腿部日常修整/);
+});
+
+test("sparse archetype profiles keep detail and lifestyle copy generic", () => {
+  const inventedNouns = /刀頭|按鍵|質地|成分|食材|餐桌|享用|介面|接口|布料|五金|車縫|穿搭/;
+
+  for (const productArchetype of ["skincare", "food_beverage", "electronics", "fashion"] as const) {
+    const roles = planImageSetRoles({
+      ...beautyDeviceProfile,
+      productType: "測試商品",
+      productArchetype,
+      appearance: {
+        shape: "",
+        materials: [],
+        colors: [],
+        distinctiveDetails: [],
+        visibleTextOrLogos: [],
+      },
+      useCases: [],
+      suitableScenes: [],
+      visualMotifs: [],
+      prohibitedChanges: [],
+      confidence: 0,
+      sourceImageCount: 0,
+    });
+
+    assert.doesNotMatch(roles[1].sceneCn, inventedNouns, `${productArchetype} detail should not invent facts`);
+    assert.doesNotMatch(roles[2].sceneCn, inventedNouns, `${productArchetype} lifestyle should not invent facts`);
+    assert.match(roles[1].sceneCn, /可見|商品/);
+    assert.match(roles[2].sceneCn, /使用情境/);
+  }
 });
 
 test("unknown products still receive five safe generic roles", () => {

@@ -51,14 +51,17 @@ export function buildImageSetSuggestions(
   const artDirection = inputs.artDirection ?? buildImageSetArtDirection(profile, {
     primaryColor: product.primaryColorOverride || client?.primaryColor,
   });
-  void artDirection;
+  const paletteDirection = [
+    artDirection.palette.dominant.length ? `產品主色：${artDirection.palette.dominant.join("、")}` : "",
+    artDirection.palette.accent.length ? `品牌輔色：${artDirection.palette.accent.join("、")}，僅作點綴，不作主色` : "",
+  ].filter(Boolean).join("；");
 
   return planImageSetRoles(profile).map(({ role, label, path, cutout, sceneCn }) => ({
     role,
     label,
     path,
     cutout,
-    sceneCn,
+    sceneCn: [sceneCn, artDirection.concept && `視覺方向：${artDirection.concept}`, paletteDirection].filter(Boolean).join("；"),
   }));
 }
 

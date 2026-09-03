@@ -28,6 +28,8 @@ export function compileImageSetPrompt({ product, profile, artDirection, role }: 
     `Colors: ${list(appearance.colors, "only visibly supported colors")}`,
     `Visible details: ${list(appearance.distinctiveDetails, "no extra details")}`,
     `Visible text or logos: ${list(appearance.visibleTextOrLogos, "none supplied")}`,
+    `Use cases: ${list(profile.useCases, "none supplied")}`,
+    `Suitable scenes: ${list(profile.suitableScenes, "none supplied")}`,
   ].join("\n");
   const identityLocks = [
     `不得改變／100% unchanged: ${list([appearance.shape, ...appearance.distinctiveDetails].filter(Boolean), "supplied product identity")}`,

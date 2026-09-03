@@ -54,6 +54,14 @@ test("product roles contain identity locks", () => {
   assert.match(prompt, /\[ROLE OBJECTIVE\][\s\S]*\[PRODUCT FACTS\][\s\S]*\[MUST PRESERVE\][\s\S]*\[SHARED ART DIRECTION\][\s\S]*\[COMPOSITION AND CAMERA\][\s\S]*\[MUST NOT SHOW\]/);
 });
 
+test("product facts include supplied use cases and suitable scenes", () => {
+  const role = planImageSetRoles(beautyDeviceProfile)[2];
+  const prompt = compileImageSetPrompt({ product, profile: beautyDeviceProfile, artDirection, role });
+
+  assert.match(prompt, /Use cases: 腿部日常修整/);
+  assert.match(prompt, /Suitable scenes: 明亮浴室/);
+});
+
 test("background forbids the product and reserves layout space", () => {
   const role = planImageSetRoles(beautyDeviceProfile)[3];
   const prompt = compileImageSetPrompt({ product, profile: beautyDeviceProfile, artDirection, role });
