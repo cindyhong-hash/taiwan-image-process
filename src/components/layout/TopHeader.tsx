@@ -20,7 +20,7 @@ const OVERVIEW_STEPS: TourStep[] = [
 // AI 月度企劃
 const PLANNER_STEPS: TourStep[] = [
   { anchor: '[data-tour="nav-planner"]', title: "這裡是 AI 月度企劃", desc: "讓 AI 依你的品牌與目標，一次規劃整個月的內容主題與方向。" },
-  { title: "第一步：建立當月企劃", desc: "設定這個月的目標與檔期，AI 會產出一組內容主題建議。" },
+  { anchor: '[data-tour="planner-new"]', title: "第一步：建立當月企劃", desc: "點「建立月度企劃」，設定這個月的目標與檔期，AI 會產出一組內容主題建議。" },
   { title: "接著：挑主題 → 產出", desc: "從建議主題挑選，直接帶進「建立圖文」生成，或排進「內容日曆」。" },
 ];
 

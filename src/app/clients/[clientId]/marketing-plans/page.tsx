@@ -150,7 +150,7 @@ export default function MarketingPlansHome({ params }: { params: Promise<{ clien
           <h1 className="text-2xl font-bold text-gray-900">月度企劃列表</h1>
           <p className="mt-1 text-sm text-gray-400">管理每個月的內容企劃，快速掌握規劃與製作進度。</p>
         </div>
-        <button onClick={createPlan} disabled={creating}
+        <button data-tour="planner-new" onClick={createPlan} disabled={creating}
           className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white shadow-[0_6px_12px_rgba(124,58,237,0.18)] transition-colors hover:bg-violet-700 disabled:opacity-60">
           <Plus className="h-4 w-4" />建立月度企劃
         </button>
