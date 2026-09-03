@@ -122,6 +122,9 @@ model Product {
   rawImageUrls         String   @default("[]")      // 使用者上傳的原始商品照（JSON string[]）
   heroImageUrl         String?                      // 自動去背後的乾淨主圖：所有實拍套圖的錨點
   primaryColorOverride String?                      // 品牌主色覆寫（null＝沿用 Client）
+  visualProfileJson       String    @default("{}")
+  visualProfileSourceHash String?
+  visualProfileUpdatedAt  DateTime?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   assets               LibraryImage[]               // 這支產品擁有的資產（套圖積木＋回存成品）
