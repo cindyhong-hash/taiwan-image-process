@@ -25,6 +25,7 @@ model Client {
   updatedAt      DateTime   @updatedAt
   activities     Activity[]
   marketingPlans MonthlyMarketingPlan[]  // [PLANNER] AI 月度企劃
+  products       Product[]               // [PRODUCT] 商品套圖：品牌旗下產品
 }
 
 model Activity {
@@ -99,7 +100,33 @@ model LibraryImage {
   status       String   @default("DONE")  // PENDING｜GENERATING｜DONE｜FAILED（舊資料一律當 DONE）
   errorMessage String?                     // 生成失敗時嘅真正原因（顯示喺 UI，免翻 log）
   batchId      String?                     // 同一次「生成 N 張」嘅群組 id，畫廊用嚟顯示「批次 x/N」
+  productId    String?                     // [PRODUCT] 所屬產品（null＝一般素材）
+  product      Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  assetRole    String?                     // [PRODUCT] 積木角色：hero｜product｜texture｜ingredient｜background｜decoration｜finished
   createdAt    DateTime @default(now())
+
+  @@index([productId])
+}
+
+// ── AI 商品套圖（Product Image Set）──────────────────────────────────────────
+// 產品是平台的資料骨幹：品牌 > 產品 > 資產。產品擁有一組可複用素材（去背主圖＋套圖積木），
+// 之後內容製作可「選產品、資產自動帶入」。詳見 docs/product-image-set-guide.md。
+
+model Product {
+  id                   String   @id @default(cuid())
+  clientId             String
+  client               Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name                 String                       // 產品名稱（例：水光精華）
+  description          String?                      // 賣點／定位：生成套圖時作為 AI 提示
+  category             String?                      // 產品類型：保養／彩妝／3C／食品…（驅動套圖建議清單）
+  rawImageUrls         String   @default("[]")      // 使用者上傳的原始商品照（JSON string[]）
+  heroImageUrl         String?                      // 自動去背後的乾淨主圖：所有實拍套圖的錨點
+  primaryColorOverride String?                      // 品牌主色覆寫（null＝沿用 Client）
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  assets               LibraryImage[]               // 這支產品擁有的資產（套圖積木＋回存成品）
+
+  @@index([clientId, updatedAt])
 }
 
 // ── AI 月度企劃（Monthly Marketing Planner）────────────────────────────────────
