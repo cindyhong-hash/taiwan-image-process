@@ -6,7 +6,7 @@ import { CalendarPlus, Check, Loader2, Pencil, SlidersHorizontal, ArrowLeft, X }
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null; cellImageUrls?: string };
+type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; isSelected?: boolean; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null; cellImageUrls?: string };
 type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; genMode?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string }; plannerItem?: { id: string; monthlyPlanId: string; status: string } | null };
 
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
@@ -30,9 +30,13 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
 
   // 結果頁核准：把連動的 planner topic 標記已完成，回內容日曆（Flow A ⑤ Review 收尾）
   const approveAndBackToCalendar = async () => {
-    if (!activity?.plannerItem || approving) return;
+    if (!activity?.plannerItem || approving || !selectedId) return;
     setApproving(true);
     try {
+      // 確保選定那張已持久化 isSelected（自動選單一版型時可能還沒 PATCH），日曆縮圖才會對。
+      if (!activity.generatedLayouts.find((l) => l.id === selectedId)?.isSelected) {
+        await handleSelect(selectedId);
+      }
       await fetch(`/api/content-plan-items/${activity.plannerItem.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "APPROVED" }),
@@ -94,6 +98,11 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
         .then((r) => r.json())
         .then((data: Activity) => {
           setActivity(data);
+
+          // 還原先前選定的版型：優先取已持久化的 isSelected，只有一款則自動選它。
+          // 用 prev ?? 避免蓋掉使用者當下的點選。
+          setSelectedId((prev) => prev ?? (data.generatedLayouts?.find((l) => l.isSelected)?.id
+            ?? (data.generatedLayouts?.length === 1 ? data.generatedLayouts[0].id : undefined)));
 
           // If PENDING and not yet triggered, kick off generation
           if (data.status === "PENDING" && !generationTriggered.current) {
@@ -241,8 +250,11 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
           </Link>
           {/* Flow A ⑤：屬於月度企劃、已生成、尚未核准 → 一鍵核准並回日曆 */}
           {activity.plannerItem && activity.status === "DONE" && activity.plannerItem.status !== "APPROVED" && (
-            <Button size="sm" onClick={approveAndBackToCalendar} disabled={approving} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white">
-              {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}核准並回日曆
+            <Button size="sm" onClick={approveAndBackToCalendar} disabled={approving || !selectedId}
+              title={selectedId ? "核准選定的版型並回內容日曆" : "請先選一款版型"}
+              className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">
+              {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {selectedId ? "核准並回日曆" : "選一款後核准"}
             </Button>
           )}
           {/* B：尚未屬於任何企劃、已有成品 → 指派到月度企劃某篇 */}

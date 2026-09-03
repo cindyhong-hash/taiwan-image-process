@@ -48,37 +48,60 @@ export function buildContentBrief(item: BriefSourceItem, campaigns: BriefCampaig
   };
 }
 
+// AI 在 handoff 時先想好的整份創意 brief（單圖：主標/副標/畫面；多圖：另含逐頁拆解）
+export type CreativeBrief = {
+  headline?: string;
+  subtitle?: string;
+  visual?: string;
+  slides?: { text: string; visual: string }[];
+};
+
 export type PlannerActivityDraft = {
   theme: string;
   focusPoint: string;
   titleText: string;
+  subtitleText: string | null;
   imagePrompt: string;
   productImageUrl: string;
   productImageUrls: string;
   referenceImageUrls: string;
   selectedComponentIds: string;
   layoutId: string;
-  genMode: "unified";
+  genMode: "unified" | "perCell";
   cells: string;
   status: "DRAFT";
 };
 
-export function buildPlannerActivityDraft(brief: ContentBrief): PlannerActivityDraft {
+export function buildPlannerActivityDraft(brief: ContentBrief, creative?: CreativeBrief): PlannerActivityDraft {
   const productUrls = brief.products.map((product) => product.imageUrl).filter(Boolean);
-  const promptParts = [brief.contentDirection.trim()];
+  const isCarousel = brief.format === "CAROUSEL";
+  const hasSlides = isCarousel && !!creative?.slides?.length;
+
+  // 圖上文字：優先用 AI 想好的主標/副標，退回主題。編成「主標題：X 副標題：Y」讓既有生圖流程鎖定沿用。
+  const headline = (creative?.headline ?? "").trim() || brief.topic;
+  const subtitle = (creative?.subtitle ?? "").trim();
+  const titleText = subtitle ? `主標題：${headline} 副標題：${subtitle}` : headline;
+
+  // 畫面描述：優先用 AI 想好的 visual，退回內容方向（＋ Campaign 補充）
+  const promptParts = [(creative?.visual ?? "").trim() || brief.contentDirection.trim()];
   if (brief.campaignDescription.trim()) promptParts.push(`Campaign 補充：${brief.campaignDescription.trim()}`);
+
   return {
     theme: brief.topic.slice(0, 30) || "未命名活動",
     focusPoint: brief.topic,
-    titleText: brief.topic,
+    titleText,
+    subtitleText: subtitle || null,
     imagePrompt: promptParts.filter(Boolean).join("\n\n"),
     productImageUrl: productUrls[0] ?? "",
     productImageUrls: JSON.stringify(productUrls),
     referenceImageUrls: "[]",
     selectedComponentIds: "[]",
-    layoutId: brief.format === "CAROUSEL" ? "three-h-top" : "single",
-    genMode: "unified",
-    cells: "[]",
+    layoutId: isCarousel ? "three-h-top" : "single",
+    // 多圖有逐頁拆解 → perCell（吃每頁內容）；否則 unified
+    genMode: hasSlides ? "perCell" : "unified",
+    cells: hasSlides
+      ? JSON.stringify(creative!.slides!.map((s) => ({ description: (s.visual ?? "").trim(), mustText: (s.text ?? "").trim(), assetUrls: [] })))
+      : "[]",
     status: "DRAFT",
   };
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronRight, ExternalLink, Images, Loader2, X } from "lucide-react";
+import { Check, ChevronRight, Copy, ExternalLink, Images, Loader2, X } from "lucide-react";
 import { buildContentBrief, plannerActivityDestination, type BriefCampaign, type BriefSourceItem } from "@/lib/planner/content-brief";
 
 const PLATFORMS = ["Instagram", "Facebook"];
@@ -26,7 +26,34 @@ export function ContentBriefDrawer({ item, campaigns, clientId, onClose, onSaved
   const [works, setWorks] = useState<Work[]>([]);
   const [worksLoading, setWorksLoading] = useState(false);
   const [attaching, setAttaching] = useState(false);
+  const [preview, setPreview] = useState<{ imageUrl: string; copyText: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
   const campaign = campaigns.find((candidate) => candidate.id === draft.campaignId);
+  const isProduced = !!draft.generatedActivityId;
+
+  // 已製作的主題：抓出成品圖 + 文案（選定那張，退回第一張），讓抽屜直接看到完整貼文
+  useEffect(() => {
+    if (!draft.generatedActivityId) { setPreview(null); return; }
+    let alive = true;
+    setPreviewLoading(true);
+    fetch(`/api/activities/${draft.generatedActivityId}`)
+      .then((r) => r.json())
+      .then((activity: { generatedLayouts?: { imageUrl: string; copyText: string; isSelected?: boolean }[] }) => {
+        if (!alive) return;
+        const layouts = activity.generatedLayouts ?? [];
+        const chosen = layouts.find((l) => l.isSelected) ?? layouts[0];
+        setPreview(chosen ? { imageUrl: chosen.imageUrl, copyText: chosen.copyText ?? "" } : null);
+      })
+      .catch(() => { if (alive) setPreview(null); })
+      .finally(() => { if (alive) setPreviewLoading(false); });
+    return () => { alive = false; };
+  }, [draft.generatedActivityId]);
+
+  const copyCaption = async () => {
+    if (!preview?.copyText) return;
+    try { await navigator.clipboard.writeText(preview.copyText); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -127,13 +154,39 @@ export function ContentBriefDrawer({ item, campaigns, clientId, onClose, onSaved
       <aside role="dialog" aria-modal="true" aria-labelledby="content-brief-title"
         className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col bg-white shadow-2xl">
         <header className="flex items-start justify-between border-b border-gray-100 px-6 py-5">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-600">Content Brief</p><h2 id="content-brief-title" className="mt-1 text-xl font-bold text-gray-900">製作這篇內容</h2><p className="mt-1 text-xs text-gray-400">確認企劃資訊，下一步將帶入既有創作流程。</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-600">Content Brief</p><h2 id="content-brief-title" className="mt-1 text-xl font-bold text-gray-900">{isProduced ? "檢視這篇貼文" : "製作這篇內容"}</h2><p className="mt-1 text-xs text-gray-400">{isProduced ? "以下是已完成的成品與文案，企劃資訊仍可調整。" : "確認企劃資訊，下一步將帶入既有創作流程。"}</p></div>
           <button aria-label="關閉" onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-5 w-5" /></button>
         </header>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {error && <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
 
+          {isProduced && (
+            <section className="mb-6">
+              <h3 className="mb-3 text-sm font-semibold text-gray-800">貼文預覽</h3>
+              {previewLoading ? (
+                <div className="flex justify-center rounded-xl border border-gray-200 py-12 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
+              ) : preview ? (
+                <div className="overflow-hidden rounded-xl border border-gray-200">
+                  {preview.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={preview.imageUrl} alt={draft.topic} className="w-full bg-gray-50 object-contain" />
+                  )}
+                  <div className="border-t border-gray-100 px-4 py-3">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <span className="text-[11px] font-medium text-gray-500">文案</span>
+                      {preview.copyText && <button onClick={copyCaption} className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-50">{copied ? <><Check className="h-3 w-3" />已複製</> : <><Copy className="h-3 w-3" />複製文案</>}</button>}
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">{preview.copyText || "這篇還沒有文案，可到成品頁重新生成。"}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center text-xs text-gray-400">尚未有成品，點下方「{draft.status === "NEEDS_REVIEW" ? "前往審核" : "查看成品"}」查看。</div>
+              )}
+            </section>
+          )}
+
+          {isProduced && <h3 className="mb-3 text-sm font-semibold text-gray-800">企劃資訊</h3>}
           <section className="space-y-4">
             <div><label className="text-xs font-medium text-gray-600">Campaign</label><select value={draft.campaignId ?? ""} onChange={(event) => setDraft((current) => ({ ...current, campaignId: event.target.value || null }))} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm">
               <option value="">未指定 Campaign</option>{campaigns.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}

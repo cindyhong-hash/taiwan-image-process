@@ -21,6 +21,7 @@ type Topic = {
   recommendationReason: string;
   sourceSignals: BriefSignal[];
   generatedActivityId: string | null;
+  previewImageUrl?: string | null;   // 核准選定的成品圖縮圖（已製作／已完成才有）
   campaign?: { name: string } | null;
 };
 
@@ -154,6 +155,10 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
     return (
       <article key={item.id} role="button" tabIndex={0} draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)} onClick={() => setSelectedId(item.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedId(item.id); }}
         className={`group cursor-grab rounded-lg border border-gray-200 border-l-[3px] bg-white px-2.5 py-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-300 active:cursor-grabbing ${TYPE_STYLES[type]}`}>
+        {item.previewImageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.previewImageUrl} alt="" className="mb-1.5 h-16 w-full rounded-md object-cover" />
+        )}
         <div className="flex items-start gap-1.5">
           <GripVertical className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-300" />
           <div className="min-w-0 flex-1">
