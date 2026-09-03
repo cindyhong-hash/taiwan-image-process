@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw } from "lucide-react";
-import { ASSET_ROLE_LABELS, type Product } from "@/lib/productMeta";
+import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw, PenLine } from "lucide-react";
+import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, type Product } from "@/lib/productMeta";
 import { ImageSetModal } from "@/components/products/ImageSetModal";
+import { ACTIVITY_REF_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
 
 export default function ProductDetailPage({
   params,
@@ -63,6 +64,22 @@ export default function ProductDetailPage({
     const role = a.assetRole ?? "finished";
     (grouped[role] ??= []).push(a);
   }
+
+  // [單元E] 完整度：核心套圖角色有幾種已備齊（只算已完成的素材）
+  const presentRoles = new Set(assets.filter((a) => a.status === "DONE" && a.assetRole).map((a) => a.assetRole as string));
+  const doneCount = CORE_ROLES.filter((r) => presentRoles.has(r)).length;
+  const missingRoles = CORE_ROLES.filter((r) => !presentRoles.has(r));
+
+  // [單元F] 用這組素材建立圖文：把主圖（或第一張素材）當參考圖帶進單圖流程
+  const bridgeImage = product.heroImageUrl || assets[0]?.imageUrl || product.rawImageUrls[0] || "";
+  const useForContent = () => {
+    try {
+      if (bridgeImage) sessionStorage.setItem(ACTIVITY_REF_KEY, bridgeImage);
+      const hint = [product.name, product.description].filter(Boolean).join("｜");
+      if (hint) sessionStorage.setItem(ACTIVITY_IMAGE_PROMPT_KEY, hint);
+    } catch { /* ignore */ }
+    router.push(`/clients/${clientId}/activities/new`);
+  };
 
   return (
     <div className="max-w-4xl">
@@ -126,15 +143,47 @@ export default function ProductDetailPage({
             </div>
           )}
 
-          {/* 建立商品套圖 CTA（單元 D 接上生成流程） */}
-          <div className="mt-6">
+          {/* CTA 列：建立套圖 + 用這組素材建立圖文（橋接單圖流程） */}
+          <div className="mt-6 flex flex-wrap items-center gap-2">
             <button
               onClick={() => setShowSet(true)}
               className="inline-flex items-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 text-sm font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)]"
             >
               <Sparkles className="h-[18px] w-[18px]" /> AI 建立商品套圖
             </button>
-            {note && <p className="mt-2 text-xs text-gray-400">{note}</p>}
+            <button
+              onClick={useForContent}
+              disabled={!bridgeImage}
+              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <PenLine className="h-[18px] w-[18px]" /> 使用這組素材建立圖文
+            </button>
+          </div>
+          {note && <p className="mt-2 text-xs text-gray-400">{note}</p>}
+
+          {/* [單元E] 資產完整度儀表 */}
+          <div className="mt-5">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-bold text-gray-900">資產完整度</span>
+              <span className="text-xs text-gray-400">{doneCount}/{CORE_ROLES.length}</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+              <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${(doneCount / CORE_ROLES.length) * 100}%` }} />
+            </div>
+            {missingRoles.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-gray-400">待補：</span>
+                {missingRoles.map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setShowSet(true)}
+                    className="text-xs px-2 py-0.5 rounded-full border border-[#ebeff5] text-gray-500 hover:border-violet-300 hover:text-violet-600 transition-colors"
+                  >
+                    + {ASSET_ROLE_LABELS[r] ?? r}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -11,6 +11,9 @@ export const PRODUCT_CATEGORIES = [
   "其他",
 ] as const;
 
+// 核心套圖角色（完整度儀表以此計算「N/5」；對應 buildImageSetSuggestions 的建議清單）
+export const CORE_SET_ROLES = ["hero", "texture", "background", "ingredient", "decoration"];
+
 // 套圖積木角色 → 使用者可見標籤（產品詳情頁分區用）
 export const ASSET_ROLE_LABELS: Record<string, string> = {
   hero: "主視覺",
