@@ -1,189 +1,364 @@
 "use client";
-import { useEffect, useState } from "react";
-import { X, Sparkles, Loader2, Check, AlertCircle } from "lucide-react";
-import { pollLibraryImage } from "@/lib/pollLibraryImage";
-import type { SetItem } from "@/lib/imageSet";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { AlertCircle, Check, Clock3, Loader2, LockKeyhole, Palette, RefreshCw, Sparkles, X } from "lucide-react";
+import type { ImageSetArtDirection, ProductVisualProfile, SetItem } from "@/lib/imageSet";
+import {
+  imageSetBatchProgress,
+  imageSetProgressLabel,
+  isImageSetBatchSettled,
+  mergeImageSetPollResult,
+  type ImageSetUiPhase,
+  type ImageSetUiRoleStatus,
+} from "@/lib/products/image-set-ui";
 
 type ItemState = SetItem & { checked: boolean };
-type GenState = { id: string; role: string; label: string; status: "GENERATING" | "DONE" | "FAILED"; imageUrl?: string };
+type GenState = {
+  id: string;
+  role: string;
+  label: string;
+  status: ImageSetUiRoleStatus;
+  imageUrl?: string;
+  errorMessage?: string | null;
+};
+type ImageSetPayload = {
+  profile: ProductVisualProfile | null;
+  artDirection: ImageSetArtDirection | null;
+  suggestions: SetItem[];
+  needsAnalysis?: boolean;
+  sourceHash: string;
+};
+type SavedBatch = { batchId: string; items: Array<Pick<GenState, "id" | "role" | "label">> };
 
-// [PRODUCT] AI 建立商品套圖：勾選 AI 建議的積木 → 批次生成 → 逐張輪詢進度
-export function ImageSetModal({
-  productId,
-  onClose,
-  onFinished,
-}: {
+const POLL_INTERVAL_MS = 2_000;
+const POLL_WINDOW_MS = 150_000;
+const batchKey = (productId: string) => `product-image-set:${productId}:latest-batch`;
+
+function isRoleStatus(value: unknown): value is ImageSetUiRoleStatus {
+  return value === "PENDING" || value === "GENERATING" || value === "DONE" || value === "FAILED";
+}
+
+function readBatch(productId: string): SavedBatch | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(batchKey(productId)) ?? "null") as SavedBatch | null;
+    return saved?.batchId && saved.items?.length && saved.items.every((item) => item.id && item.role && item.label) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveBatch(productId: string, batch: SavedBatch) {
+  localStorage.setItem(batchKey(productId), JSON.stringify(batch));
+}
+
+function clearBatch(productId: string) {
+  localStorage.removeItem(batchKey(productId));
+}
+
+function selection(payload: ImageSetPayload): ItemState[] {
+  return payload.suggestions.map((item) => ({
+    ...item,
+    checked: (payload.profile?.sourceImageCount ?? 0) > 0 || item.path !== "edit",
+  }));
+}
+
+async function loadRows(items: SavedBatch["items"]): Promise<GenState[]> {
+  const response = await fetch(`/api/library/images?ids=${items.map(({ id }) => id).join(",")}`);
+  if (!response.ok) throw new Error("無法讀取套圖進度");
+  const data = await response.json() as { items?: Array<Record<string, unknown>> };
+  const rows = new Map((data.items ?? []).map((row) => [String(row.id), row]));
+  return items.flatMap((item) => {
+    const row = rows.get(item.id);
+    if (!row || !isRoleStatus(row.status)) return [];
+    return [{
+      ...item,
+      status: row.status,
+      imageUrl: typeof row.imageUrl === "string" ? row.imageUrl : undefined,
+      errorMessage: typeof row.errorMessage === "string" ? row.errorMessage : null,
+    }];
+  });
+}
+
+export function ImageSetModal({ productId, onClose, onFinished }: {
   productId: string;
   onClose: () => void;
   onFinished: () => void;
 }) {
   const [items, setItems] = useState<ItemState[]>([]);
-  const [hasHero, setHasHero] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [phase, setPhase] = useState<"pick" | "generating" | "done">("pick");
+  const [phase, setPhase] = useState<ImageSetUiPhase>("analyzing");
+  const [profile, setProfile] = useState<ProductVisualProfile | null>(null);
+  const [artDirection, setArtDirection] = useState<ImageSetArtDirection | null>(null);
+  const [sourceHash, setSourceHash] = useState("");
+  const [sourceImageCount, setSourceImageCount] = useState(0);
   const [gen, setGen] = useState<GenState[]>([]);
+  const [creatingRows, setCreatingRows] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [pollingTimedOut, setPollingTimedOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const finishedNotified = useRef(false);
+  const genRef = useRef(gen);
+  const onFinishedRef = useRef(onFinished);
+  const batchItemsKey = gen.map(({ id }) => id).join(",");
+
+  useEffect(() => { genRef.current = gen; }, [gen]);
+  useEffect(() => { onFinishedRef.current = onFinished; }, [onFinished]);
+
+  const showPicker = (payload: ImageSetPayload) => {
+    setProfile(payload.profile);
+    setArtDirection(payload.artDirection);
+    setSourceHash(payload.sourceHash);
+    setSourceImageCount(payload.profile?.sourceImageCount ?? 0);
+    setItems(selection(payload));
+    setPhase("pick");
+  };
+
+  const analyzeProduct = async (force: boolean, fallback?: ImageSetPayload) => {
+    setAnalyzing(true);
+    setPhase("analyzing");
+    setError(null);
+    try {
+      const response = await fetch(`/api/products/${productId}/image-set/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const data = await response.json().catch(() => ({})) as ImageSetPayload & { error?: string };
+      if (!response.ok) throw new Error(data.error || "產品分析失敗，請稍後再試");
+      showPicker(data);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "產品分析失敗，請稍後再試");
+      if (fallback) showPicker(fallback);
+      else setPhase("pick");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
-    fetch(`/api/products/${productId}/image-set`)
-      .then((r) => r.json())
-      .then((data) => {
+    void (async () => {
+      try {
+        const response = await fetch(`/api/products/${productId}/image-set`);
+        const payload = await response.json() as ImageSetPayload & { error?: string };
+        if (!response.ok) throw new Error(payload.error || "無法載入套圖建議");
         if (!alive) return;
-        const hero = !!data.hasHero;
-        setHasHero(hero);
-        setItems((data.suggestions as SetItem[]).map((s) => ({ ...s, checked: hero || s.path !== "edit" })));
-      })
-      .catch(() => setError("無法載入套圖建議"))
-      .finally(() => { if (alive) setLoading(false); });
+        setSourceImageCount(payload.profile?.sourceImageCount ?? 0);
+        const saved = readBatch(productId);
+        if (saved) {
+          const persisted = await loadRows(saved.items);
+          if (!alive) return;
+          if (persisted.length === saved.items.length) {
+            setProfile(payload.profile);
+            setArtDirection(payload.artDirection);
+            setSourceHash(payload.sourceHash);
+            setItems(selection(payload));
+            setGen(persisted);
+            setPhase(isImageSetBatchSettled(persisted) ? "done" : "generating");
+            return;
+          }
+          clearBatch(productId);
+        }
+        if (payload.needsAnalysis) await analyzeProduct(false, payload);
+        else showPicker(payload);
+      } catch (reason) {
+        if (!alive) return;
+        setError(reason instanceof Error ? reason.message : "無法載入套圖建議");
+        setPhase("pick");
+      }
+    })();
     return () => { alive = false; };
+    // Opening the modal is the intended request lifecycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
-  const toggle = (role: string) =>
-    setItems((prev) => prev.map((it) => (it.role === role ? { ...it, checked: !it.checked } : it)));
+  useEffect(() => {
+    if (phase !== "generating" || !batchItemsKey || isImageSetBatchSettled(genRef.current)) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    const poll = async () => {
+      if (cancelled) return;
+      if (Date.now() - startedAt > POLL_WINDOW_MS) {
+        setPollingTimedOut(true);
+        return;
+      }
+      try {
+        const rows = await loadRows(genRef.current.map(({ id, role, label }) => ({ id, role, label })));
+        if (!cancelled) {
+          setGen((current) => current.map((item) => {
+            const row = rows.find(({ id }) => id === item.id);
+            return row ? mergeImageSetPollResult(item, { kind: "row", row }) : item;
+          }));
+          if (rows.length === genRef.current.length && isImageSetBatchSettled(rows)) {
+            setPhase("done");
+            if (!finishedNotified.current) {
+              finishedNotified.current = true;
+              onFinishedRef.current();
+            }
+            return;
+          }
+        }
+      } catch {
+        // Polling failures never overwrite persisted row status.
+      }
+      if (!cancelled) timer = setTimeout(poll, POLL_INTERVAL_MS);
+    };
+    timer = setTimeout(poll, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [phase, batchItemsKey]);
 
-  const chosen = items.filter((it) => it.checked);
+  const chosen = useMemo(() => items.filter(({ checked }) => checked), [items]);
+  const progress = imageSetBatchProgress(gen);
+  const progressLabel = phase === "analyzing"
+    ? imageSetProgressLabel({ phase: "analyzing", sourceImageCount })
+    : imageSetProgressLabel({ phase: "generating", ...progress });
+  const requestClose = () => { if (!creatingRows) onClose(); };
 
-  async function handleGenerate() {
-    if (!chosen.length) return;
+  async function generate() {
+    if (!chosen.length || creatingRows) return;
+    setCreatingRows(true);
+    setPollingTimedOut(false);
     setError(null);
     setPhase("generating");
+    finishedNotified.current = false;
     try {
-      const res = await fetch(`/api/products/${productId}/image-set`, {
+      const response = await fetch(`/api/products/${productId}/image-set`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: chosen.map(({ role, label, path, cutout, sceneCn }) => ({ role, label, path, cutout, sceneCn })) }),
+        body: JSON.stringify({ sourceHash, items: chosen.map(({ role }) => ({ role })) }),
       });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "生成失敗"); }
-      const data = await res.json();
-      const created: GenState[] = data.items.map((i: { id: string; role: string; label: string }) => ({ ...i, status: "GENERATING" as const }));
+      const data = await response.json().catch(() => ({})) as {
+        batchId?: string;
+        items?: Array<Pick<GenState, "id" | "role" | "label"> & { status?: ImageSetUiRoleStatus }>;
+        error?: string;
+      };
+      if (!response.ok || !data.batchId || !data.items?.length) throw new Error(data.error || "無法開始生成，請稍後再試");
+      const created = data.items.map((item) => ({ ...item, status: item.status ?? "PENDING" }));
       setGen(created);
-
-      // 逐張輪詢，完成/失敗即更新該張狀態
-      await Promise.all(
-        created.map(async (c) => {
-          const result = await pollLibraryImage(c.id);
-          setGen((prev) => prev.map((g) => (g.id === c.id
-            ? { ...g, status: result.status === "DONE" ? "DONE" : "FAILED", imageUrl: result.imageUrl }
-            : g)));
-        }),
-      );
-      setPhase("done");
-      onFinished(); // 讓詳情頁刷新資產
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "生成失敗");
+      saveBatch(productId, { batchId: data.batchId, items: created.map(({ id, role, label }) => ({ id, role, label })) });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法開始生成，請稍後再試");
       setPhase("pick");
+    } finally {
+      setCreatingRows(false);
+    }
+  }
+
+  async function retry(item: GenState) {
+    setError(null);
+    setPollingTimedOut(false);
+    try {
+      const response = await fetch(`/api/library/images/${item.id}/regenerate`, { method: "POST" });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error || `${item.label}目前無法重新產生`);
+      setGen((current) => current.map((row) => row.id === item.id ? { ...row, status: "GENERATING", errorMessage: null } : row));
+      setPhase("generating");
+      finishedNotified.current = false;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : `${item.label}目前無法重新產生`);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-lg rounded-2xl bg-white p-6 sm:p-8 shadow-xl max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between mb-5">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-violet-600" /> AI 建立商品套圖
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-3 sm:p-6" onClick={requestClose}>
+      <section role="dialog" aria-modal="true" aria-labelledby="image-set-title" className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#ebeff5] bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <header className="flex items-start justify-between gap-4 border-b border-[#ebeff5] px-5 py-4 sm:px-7 sm:py-5">
+          <div className="min-w-0">
+            <h2 id="image-set-title" className="flex items-center gap-2 text-lg font-bold text-gray-900">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-50"><Sparkles className="h-4 w-4 text-violet-600" /></span>
+              AI 建立商品套圖
             </h2>
-            <p className="mt-1 text-xs text-gray-400">生成一組可疊積木，存回這支產品，之後排版/生成直接複用</p>
+            <p className="mt-1 text-xs leading-5 text-gray-400">先確認產品識別與套圖方向，再建立可重複使用的商品素材。</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="關閉">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+          <button type="button" onClick={requestClose} disabled={creatingRows} className="rounded-lg p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40" aria-label={creatingRows ? "正在建立素材，暫時無法關閉" : "關閉"}><X className="h-5 w-5" /></button>
+        </header>
 
-        {loading ? (
-          <div className="py-12 text-center text-gray-400 text-sm">載入建議中…</div>
-        ) : phase === "pick" ? (
-          <>
-            {!hasHero && (
-              <div className="mb-4 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>尚無去背主圖。實拍類（主視覺／質地）需要主圖當錨點，已先取消勾選；可先生成概念／背景類，或回產品頁產生主圖。</span>
-              </div>
-            )}
-            <div className="space-y-2">
-              {items.map((it) => {
-                const disabled = it.path === "edit" && !hasHero;
-                return (
-                  <label
-                    key={it.role}
-                    className={`flex items-start gap-3 rounded-xl border-[1.5px] p-3 cursor-pointer transition-colors ${
-                      it.checked ? "border-violet-600 bg-violet-50" : "border-[#ebeff5] bg-white hover:border-violet-300"
-                    } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={it.checked}
-                      disabled={disabled}
-                      onChange={() => toggle(it.role)}
-                      className="mt-0.5 accent-violet-600"
-                    />
-                    <div className="min-w-0">
-                      <div className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                        {it.label}
-                        <span className="text-[10px] font-normal text-gray-400">{it.path === "edit" ? "以主圖合成" : "概念生圖"}</span>
-                      </div>
-                      <div className="text-xs text-gray-500 truncate">{it.sceneCn}</div>
+        <div className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+          {phase === "analyzing" ? (
+            <div className="flex min-h-64 flex-col items-center justify-center text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f9f6ff]"><Loader2 className="h-6 w-6 animate-spin text-violet-600" /></span>
+              <p className="mt-5 max-w-md text-sm font-medium leading-6 text-gray-700">{progressLabel}</p>
+              <p className="mt-2 text-xs text-gray-400">會依商品照片整理色彩、外觀細節與一致的視覺方向。</p>
+            </div>
+          ) : phase === "pick" ? (
+            <div className="space-y-5">
+              {profile && (
+                <div className="rounded-2xl border border-[#ebe4f9] bg-[#f9f6ff] p-4 sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-violet-600">AI 產品視覺分析</p>
+                      {profile.confidence > 0 ? <p className="mt-1 text-base font-bold text-gray-900">{profile.productType}<span className="ml-2 text-xs font-medium text-gray-400">信心度 {Math.round(profile.confidence * 100)}%</span></p> : <p className="mt-1 text-sm font-medium text-gray-600">使用基本產品資料規劃套圖</p>}
                     </div>
-                  </label>
-                );
-              })}
-            </div>
-
-            {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
-
-            <div className="flex flex-col items-center pt-6">
-              <button
-                onClick={handleGenerate}
-                disabled={!chosen.length}
-                className="inline-flex items-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-12 py-3.5 text-sm font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Sparkles className="h-[18px] w-[18px]" /> 生成 {chosen.length} 張商品素材
-              </button>
-            </div>
-          </>
-        ) : (
-          // generating / done
-          <div className="space-y-2">
-            {gen.map((g) => (
-              <div key={g.id} className="flex items-center gap-3 rounded-xl border border-[#ebeff5] p-2.5">
-                <div className="h-12 w-12 shrink-0 rounded-lg bg-gray-50 border border-[#ebeff5] overflow-hidden flex items-center justify-center">
-                  {g.status === "DONE" && g.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={g.imageUrl} alt="" className="h-full w-full object-contain p-1" />
-                  ) : g.status === "GENERATING" ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-violet-500" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 text-red-400" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-900">{g.label}</div>
-                  <div className="text-xs text-gray-400">
-                    {g.status === "GENERATING" ? "生成中…" : g.status === "DONE" ? "完成" : "失敗（可稍後重生）"}
+                    <button type="button" onClick={() => void analyzeProduct(true, { profile, artDirection, suggestions: items, sourceHash })} disabled={analyzing} className="inline-flex items-center gap-1.5 rounded-lg border border-[#ebe4f9] bg-white px-3 py-2 text-xs font-bold text-violet-600 hover:bg-violet-50 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${analyzing ? "animate-spin" : ""}`} />重新分析產品</button>
                   </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <InfoCard icon={<Palette className="h-3.5 w-3.5 text-violet-500" />} title="產品主色" text={artDirection?.palette.dominant.length ? artDirection.palette.dominant.join("、") : "依商品原貌保留"} />
+                    <InfoCard icon={<Sparkles className="h-3.5 w-3.5 text-violet-500" />} title="品牌點綴色" text={artDirection?.palette.accent.length ? artDirection.palette.accent.join("、") : "未設定，維持產品色彩"} />
+                  </div>
+                  {!!profile.prohibitedChanges.length && <div className="mt-4"><div className="flex items-center gap-1.5 text-xs font-bold text-gray-700"><LockKeyhole className="h-3.5 w-3.5 text-violet-500" />商品識別鎖定</div><div className="mt-2 flex flex-wrap gap-2">{profile.prohibitedChanges.slice(0, 3).map((lock) => <span key={lock} className="rounded-full border border-[#ebe4f9] bg-white px-2.5 py-1 text-[11px] leading-4 text-gray-600">{lock}</span>)}</div></div>}
                 </div>
-                {g.status === "DONE" && <Check className="h-4 w-4 text-emerald-500 shrink-0" />}
-              </div>
-            ))}
+              )}
 
-            {phase === "done" && (
-              <div className="flex flex-col items-center pt-4">
-                <div className="text-sm text-gray-500 mb-3">✓ 已儲存至產品素材</div>
-                <button
-                  onClick={onClose}
-                  className="rounded-full bg-violet-600 hover:bg-violet-700 text-white px-10 py-3 text-sm font-bold"
-                >
-                  完成
-                </button>
+              {(profile?.sourceImageCount ?? 0) === 0 && <Notice>尚無可用的商品參考圖。需要商品外觀的角色已先取消勾選；仍可建立情境背景與裝飾素材。</Notice>}
+              <div>
+                <div className="mb-3 flex items-end justify-between gap-3"><div><h3 className="text-sm font-bold text-gray-900">選擇這次要建立的素材</h3><p className="mt-1 text-xs text-gray-400">角色可自由取消；各張會共用同一套視覺方向。</p></div><span className="shrink-0 text-xs font-medium text-violet-600">已選 {chosen.length}/{items.length}</span></div>
+                <div className="space-y-2.5">{items.map((item) => {
+                  const disabled = item.path === "edit" && (profile?.sourceImageCount ?? 0) === 0;
+                  return <label key={item.role} className={`flex items-start gap-3 rounded-xl border-[1.5px] p-3.5 transition-colors ${item.checked ? "border-violet-600 bg-violet-50" : "border-[#ebeff5] bg-white hover:border-violet-300"} ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer"}`}>
+                    <input type="checkbox" checked={item.checked} disabled={disabled} onChange={() => setItems((current) => current.map((candidate) => candidate.role === item.role ? { ...candidate, checked: !candidate.checked } : candidate))} className="mt-1 accent-violet-600" />
+                    <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-gray-900">{item.label}<span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-gray-400">{item.path === "edit" ? "商品參考生成" : "視覺概念生成"}</span></span><span className="mt-1 block whitespace-normal break-words text-xs leading-5 text-gray-500">{item.sceneCn}</span></span>
+                  </label>;
+                })}</div>
               </div>
-            )}
-          </div>
-        )}
-      </div>
+              {error && <ErrorMessage>{error}</ErrorMessage>}
+              <div className="flex flex-col items-center pt-1"><button type="button" onClick={() => void generate()} disabled={!chosen.length || creatingRows} className="inline-flex items-center justify-center gap-2 rounded-full bg-violet-600 px-10 py-3.5 text-sm font-bold text-white shadow-[0_8px_8px_rgba(124,58,237,0.15)] hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-[#F8F9FB] disabled:text-[#868D99] disabled:shadow-none sm:px-14">{creatingRows ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Sparkles className="h-[18px] w-[18px]" />}{creatingRows ? "正在建立素材清單…" : `生成 ${chosen.length} 張商品素材`}</button></div>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-[#ebe4f9] bg-[#f9f6ff] p-4">
+                <div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white">{phase === "done" ? <Check className="h-5 w-5 text-emerald-500" /> : <Loader2 className="h-5 w-5 animate-spin text-violet-600" />}</span><div className="min-w-0"><p className="text-sm font-bold text-gray-900">{phase === "done" ? `套圖已完成 ${progress.completed}/${progress.total}` : progressLabel}</p><p className="mt-1 text-xs leading-5 text-gray-500">{phase === "done" ? "完成的素材已存回產品；失敗項目可以單獨重試。" : "建立完成後會自動更新；現在可以關閉視窗，生成仍會繼續。"}</p></div></div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-violet-600 transition-[width] duration-500" style={{ width: `${progress.total ? (progress.completed / progress.total) * 100 : 0}%` }} /></div>
+              </div>
+              {creatingRows && !gen.length ? <div className="flex min-h-40 flex-col items-center justify-center text-sm text-gray-500"><Loader2 className="mb-3 h-5 w-5 animate-spin text-violet-600" />正在建立素材清單，請稍候…</div> : <div className="space-y-2.5">{gen.map((item) => <RoleRow key={item.id} item={item} onRetry={() => void retry(item)} />)}</div>}
+              {pollingTimedOut && phase !== "done" && <Notice icon={<Clock3 className="mt-0.5 h-4 w-4 shrink-0" />}>等待時間較長，已暫停更新畫面。生成仍在背景進行；關閉後重新開啟即可繼續查看。</Notice>}
+              {error && <ErrorMessage>{error}</ErrorMessage>}
+              <div className="flex flex-col-reverse items-stretch justify-center gap-2 pt-1 sm:flex-row">
+                {phase === "done" && <button type="button" onClick={() => { clearBatch(productId); setGen([]); setPollingTimedOut(false); finishedNotified.current = false; setPhase("pick"); }} className="rounded-full border border-[#ebe4f9] bg-white px-6 py-3 text-sm font-bold text-violet-600 hover:bg-violet-50">建立另一組</button>}
+                <button type="button" onClick={requestClose} disabled={creatingRows} className="rounded-full bg-violet-600 px-9 py-3 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">{phase === "done" ? "完成" : "關閉並在背景繼續"}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
+}
+
+function InfoCard({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
+  return <div className="rounded-xl border border-white/80 bg-white/80 p-3"><div className="flex items-center gap-1.5 text-xs font-bold text-gray-700">{icon}{title}</div><p className="mt-1.5 text-xs leading-5 text-gray-500">{text}</p></div>;
+}
+
+function Notice({ children, icon = <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> }: { children: ReactNode; icon?: ReactNode }) {
+  return <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-700">{icon}<span>{children}</span></div>;
+}
+
+function ErrorMessage({ children }: { children: ReactNode }) {
+  return <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{children}</p>;
+}
+
+function RoleRow({ item, onRetry }: { item: GenState; onRetry: () => void }) {
+  return <div className="flex items-center gap-3 rounded-xl border border-[#ebeff5] bg-white p-3">
+    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#ebeff5] bg-gray-50">
+      {item.status === "DONE" && item.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={item.imageUrl} alt={`${item.label}生成結果`} className="h-full w-full object-cover" />
+      ) : item.status === "GENERATING" ? <Loader2 className="h-4 w-4 animate-spin text-violet-500" /> : item.status === "FAILED" ? <AlertCircle className="h-4 w-4 text-red-400" /> : <Clock3 className="h-4 w-4 text-gray-400" />}
+    </div>
+    <div className="min-w-0 flex-1"><div className="text-sm font-bold text-gray-900">{item.label}</div><div className={`mt-0.5 text-xs leading-5 ${item.status === "FAILED" ? "text-red-500" : "text-gray-400"}`}>{item.status === "PENDING" ? "等待生成" : item.status === "GENERATING" ? "正在生成…" : item.status === "DONE" ? "已完成" : (item.errorMessage || `${item.label}生成失敗，可單獨重新產生。`)}</div></div>
+    {item.status === "FAILED" ? <button type="button" onClick={onRetry} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#ebe4f9] bg-[#f9f6ff] px-3 py-2 text-xs font-bold text-violet-600 hover:bg-violet-100"><RefreshCw className="h-3.5 w-3.5" />重新產生</button> : item.status === "DONE" ? <Check className="h-4 w-4 shrink-0 text-emerald-500" /> : null}
+  </div>;
 }
