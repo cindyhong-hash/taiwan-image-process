@@ -1,6 +1,7 @@
 export type ImageSetUiPhase = "analyzing" | "pick" | "generating" | "done";
 
 export type ImageSetUiRoleStatus = "PENDING" | "GENERATING" | "DONE" | "FAILED";
+export type ImageSetRecoveryKind = "initial" | "resume" | "analysis";
 
 export type ImageSetUiRole = {
   status: ImageSetUiRoleStatus;
@@ -60,6 +61,20 @@ export function shouldNotifySettledBatch(
   alreadyNotified: boolean,
 ): boolean {
   return !alreadyNotified && isImageSetBatchSettled(items);
+}
+
+export function imageSetRecoveryAction(kind: ImageSetRecoveryKind): { title: string; actionLabel: string } {
+  if (kind === "resume") return { title: "無法讀取既有套圖進度", actionLabel: "重新讀取生成進度" };
+  if (kind === "analysis") return { title: "產品分析未完成", actionLabel: "重新分析" };
+  return { title: "無法載入商品套圖資料", actionLabel: "重新載入" };
+}
+
+export function shouldRenderDeterminateImageSetProgress(input: { creatingRows: boolean; itemCount: number }): boolean {
+  return input.itemCount > 0 && !(input.creatingRows && input.itemCount === 0);
+}
+
+export function imageSetGenerationAnnouncement(input: { creatingRows: boolean; itemCount: number }): string | null {
+  return input.creatingRows && input.itemCount === 0 ? "正在建立素材清單…" : null;
 }
 
 /** Returns a wrapped focus target only when Tab would otherwise leave the dialog. */

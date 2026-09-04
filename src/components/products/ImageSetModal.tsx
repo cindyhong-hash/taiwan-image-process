@@ -8,14 +8,18 @@ import {
   clearSavedImageSetBatch,
   dialogFocusTargetIndex,
   imageSetBatchProgress,
+  imageSetGenerationAnnouncement,
   imageSetProgressLabel,
+  imageSetRecoveryAction,
   isImageSetBatchSettled,
   mergeImageSetPollResult,
   readSavedImageSetBatch,
   shouldAnalyzeBeforeImageSetPicker,
   shouldNotifySettledBatch,
+  shouldRenderDeterminateImageSetProgress,
   writeSavedImageSetBatch,
   type SavedImageSetBatch,
+  type ImageSetRecoveryKind,
   type ImageSetUiPhase,
   type ImageSetUiRoleStatus,
 } from "@/lib/products/image-set-ui";
@@ -37,6 +41,7 @@ type ImageSetPayload = {
   sourceImageCount?: number;
   sourceHash: string;
 };
+type ResumeRecovery = { payload: ImageSetPayload; saved: SavedImageSetBatch };
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_WINDOW_MS = 150_000;
@@ -86,6 +91,8 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
   const [analyzing, setAnalyzing] = useState(false);
   const [pollingTimedOut, setPollingTimedOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recoveryKind, setRecoveryKind] = useState<ImageSetRecoveryKind | null>(null);
+  const [resumeRecovery, setResumeRecovery] = useState<ResumeRecovery | null>(null);
   const finishedNotified = useRef(false);
   const genRef = useRef(gen);
   const onFinishedRef = useRef(onFinished);
@@ -110,6 +117,8 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
     setSourceHash(payload.sourceHash);
     setSourceImageCount(payload.profile?.sourceImageCount ?? 0);
     setNeedsAnalysis(false);
+    setRecoveryKind(null);
+    setResumeRecovery(null);
     setItems(selection(payload));
     setPhase("pick");
   };
@@ -118,6 +127,7 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
     setAnalyzing(true);
     setPhase("analyzing");
     setError(null);
+    setRecoveryKind(null);
     try {
       const response = await fetch(`/api/products/${productId}/image-set/analyze`, {
         method: "POST",
@@ -130,52 +140,81 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "產品分析失敗，請稍後再試");
       if (fallback && !shouldAnalyzeBeforeImageSetPicker(fallback)) showPicker(fallback);
+      else setRecoveryKind("analysis");
     } finally {
       setAnalyzing(false);
     }
   };
 
+  const applySavedBatch = async (
+    payload: ImageSetPayload,
+    saved: SavedImageSetBatch,
+    isActive: () => boolean = () => true,
+  ) => {
+    try {
+      const persisted = await loadRows(saved.items);
+      if (!isActive()) return;
+      if (persisted.length !== saved.items.length) {
+        clearSavedImageSetBatch(window.localStorage, productId);
+        if (shouldAnalyzeBeforeImageSetPicker(payload)) await analyzeProduct(false);
+        else showPicker(payload);
+        return;
+      }
+      setError(null);
+      setRecoveryKind(null);
+      setResumeRecovery(null);
+      setProfile(payload.profile);
+      setArtDirection(payload.artDirection);
+      setSourceHash(payload.sourceHash);
+      setItems(selection(payload));
+      setGen(persisted);
+      const settled = isImageSetBatchSettled(persisted);
+      setPhase(settled ? "done" : "generating");
+      if (shouldNotifySettledBatch(persisted, finishedNotified.current)) {
+        finishedNotified.current = true;
+        onFinishedRef.current();
+      }
+    } catch {
+      if (!isActive()) return;
+      setResumeRecovery({ payload, saved });
+      setRecoveryKind("resume");
+      setError("暫時無法讀取這批套圖的最新進度，請重新讀取。");
+      setPhase("analyzing");
+    }
+  };
+
+  const loadInitial = async (isActive: () => boolean = () => true) => {
+    setError(null);
+    setRecoveryKind(null);
+    setPhase("analyzing");
+    try {
+      const response = await fetch(`/api/products/${productId}/image-set`);
+      const payload = await response.json() as ImageSetPayload & { error?: string };
+      if (!response.ok) throw new Error(payload.error || "無法載入套圖建議");
+      if (!isActive()) return;
+      const analysisRequired = shouldAnalyzeBeforeImageSetPicker(payload);
+      setNeedsAnalysis(analysisRequired);
+      setSourceImageCount(payload.sourceImageCount ?? payload.profile?.sourceImageCount ?? 0);
+      const saved = readSavedImageSetBatch(window.localStorage, productId);
+      if (saved) {
+        await applySavedBatch(payload, saved, isActive);
+        return;
+      }
+      if (analysisRequired) await analyzeProduct(false);
+      else showPicker(payload);
+    } catch (reason) {
+      if (!isActive()) return;
+      setError(reason instanceof Error ? reason.message : "無法載入套圖建議");
+      setNeedsAnalysis(true);
+      setRecoveryKind("initial");
+      setPhase("analyzing");
+    }
+  };
+
   useEffect(() => {
     let alive = true;
-    void (async () => {
-      try {
-        const response = await fetch(`/api/products/${productId}/image-set`);
-        const payload = await response.json() as ImageSetPayload & { error?: string };
-        if (!response.ok) throw new Error(payload.error || "無法載入套圖建議");
-        if (!alive) return;
-        const analysisRequired = shouldAnalyzeBeforeImageSetPicker(payload);
-        setNeedsAnalysis(analysisRequired);
-        setSourceImageCount(payload.sourceImageCount ?? payload.profile?.sourceImageCount ?? 0);
-        const saved = readSavedImageSetBatch(window.localStorage, productId);
-        if (saved) {
-          const persisted = await loadRows(saved.items);
-          if (!alive) return;
-          if (persisted.length === saved.items.length) {
-            setProfile(payload.profile);
-            setArtDirection(payload.artDirection);
-            setSourceHash(payload.sourceHash);
-            setItems(selection(payload));
-            setGen(persisted);
-            const settled = isImageSetBatchSettled(persisted);
-            setPhase(settled ? "done" : "generating");
-            if (shouldNotifySettledBatch(persisted, finishedNotified.current)) {
-              finishedNotified.current = true;
-              onFinishedRef.current();
-            }
-            return;
-          }
-          clearSavedImageSetBatch(window.localStorage, productId);
-        }
-        if (analysisRequired) await analyzeProduct(false);
-        else showPicker(payload);
-      } catch (reason) {
-        if (!alive) return;
-        setError(reason instanceof Error ? reason.message : "無法載入套圖建議");
-        setNeedsAnalysis(true);
-        setPhase("analyzing");
-      }
-    })();
-    return () => { alive = false; };
+    const frame = requestAnimationFrame(() => { void loadInitial(() => alive); });
+    return () => { alive = false; cancelAnimationFrame(frame); };
     // Opening the modal is the intended request lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
@@ -222,7 +261,22 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
   const progressLabel = phase === "analyzing"
     ? imageSetProgressLabel({ phase: "analyzing", sourceImageCount })
     : imageSetProgressLabel({ phase: "generating", ...progress });
+  const preparingRows = !shouldRenderDeterminateImageSetProgress({ creatingRows, itemCount: gen.length });
+  const preparingAnnouncement = imageSetGenerationAnnouncement({ creatingRows, itemCount: gen.length });
+  const recoveryAction = recoveryKind ? imageSetRecoveryAction(recoveryKind) : null;
   const requestClose = () => { if (!creatingRows) onClose(); };
+
+  const retryRecovery = () => {
+    setError(null);
+    if (recoveryKind === "resume" && resumeRecovery) {
+      setRecoveryKind(null);
+      void applySavedBatch(resumeRecovery.payload, resumeRecovery.saved);
+    } else if (recoveryKind === "initial") {
+      void loadInitial();
+    } else {
+      void analyzeProduct(true);
+    }
+  };
 
   const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
@@ -315,7 +369,7 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
             </h2>
             <p className="mt-1 text-xs leading-5 text-gray-400">先確認產品識別與套圖方向，再建立可重複使用的商品素材。</p>
           </div>
-          <button ref={closeButtonRef} type="button" onClick={requestClose} disabled={creatingRows} className="rounded-lg p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40" aria-label={creatingRows ? "正在建立素材，暫時無法關閉" : "關閉"}><X className="h-5 w-5" /></button>
+          <button ref={closeButtonRef} type="button" onClick={requestClose} disabled={creatingRows} className="rounded-lg p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40" aria-label={creatingRows ? "正在建立素材，暫時無法關閉" : "關閉"}><X className="h-5 w-5" /></button>
         </header>
 
         <div className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
@@ -324,7 +378,7 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
               <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f9f6ff]">{analyzing || !error ? <Loader2 className="h-6 w-6 animate-spin text-violet-600" /> : <AlertCircle className="h-6 w-6 text-red-500" />}</span>
               <p role="status" aria-live="polite" className="mt-5 max-w-md text-sm font-medium leading-6 text-gray-700">{progressLabel}</p>
               <p className="mt-2 text-xs text-gray-400">會依商品照片整理色彩、外觀細節與一致的視覺方向。</p>
-              {error && <div className="mt-4 flex flex-col items-center gap-3"><ErrorMessage>{error}</ErrorMessage><button type="button" onClick={() => void analyzeProduct(true)} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-violet-700"><RefreshCw className="h-3.5 w-3.5" />重新分析</button></div>}
+              {error && <div className="mt-4 flex flex-col items-center gap-3"><ErrorMessage>{recoveryAction?.title ? `${recoveryAction.title}：${error}` : error}</ErrorMessage><button type="button" onClick={retryRecovery} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><RefreshCw className="h-3.5 w-3.5" />{recoveryAction?.actionLabel ?? "重試"}</button></div>}
             </div>
           ) : phase === "pick" ? (
             <div className="space-y-5">
@@ -335,7 +389,7 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
                       <p className="text-xs font-bold text-violet-600">AI 產品視覺分析</p>
                       {profile.confidence > 0 ? <p className="mt-1 text-base font-bold text-gray-900">{profile.productType}<span className="ml-2 text-xs font-medium text-gray-400">信心度 {Math.round(profile.confidence * 100)}%</span></p> : <p className="mt-1 text-sm font-medium text-gray-600">使用基本產品資料規劃套圖</p>}
                     </div>
-                    <button type="button" onClick={() => void analyzeProduct(true, { profile, artDirection, suggestions: items, sourceHash })} disabled={analyzing} className="inline-flex items-center gap-1.5 rounded-lg border border-[#ebe4f9] bg-white px-3 py-2 text-xs font-bold text-violet-600 hover:bg-violet-50 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${analyzing ? "animate-spin" : ""}`} />重新分析產品</button>
+                    <button type="button" onClick={() => void analyzeProduct(true, { profile, artDirection, suggestions: items, sourceHash })} disabled={analyzing} className="inline-flex items-center gap-1.5 rounded-lg border border-[#ebe4f9] bg-white px-3 py-2 text-xs font-bold text-violet-600 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${analyzing ? "animate-spin" : ""}`} />重新分析產品</button>
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <InfoCard icon={<Palette className="h-3.5 w-3.5 text-violet-500" />} title="產品主色" text={artDirection?.palette.dominant.length ? artDirection.palette.dominant.join("、") : "依商品原貌保留"} />
@@ -351,26 +405,26 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
                 <div className="space-y-2.5">{items.map((item) => {
                   const disabled = item.path === "edit" && (profile?.sourceImageCount ?? 0) === 0;
                   return <label key={item.role} className={`flex items-start gap-3 rounded-xl border-[1.5px] p-3.5 transition-colors ${item.checked ? "border-violet-600 bg-violet-50" : "border-[#ebeff5] bg-white hover:border-violet-300"} ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer"}`}>
-                    <input type="checkbox" checked={item.checked} disabled={disabled} onChange={() => setItems((current) => current.map((candidate) => candidate.role === item.role ? { ...candidate, checked: !candidate.checked } : candidate))} className="mt-1 accent-violet-600" />
+                    <input type="checkbox" checked={item.checked} disabled={disabled} onChange={() => setItems((current) => current.map((candidate) => candidate.role === item.role ? { ...candidate, checked: !candidate.checked } : candidate))} className="mt-1 accent-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
                     <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-gray-900">{item.label}<span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-gray-400">{item.path === "edit" ? "商品參考生成" : "視覺概念生成"}</span></span><span className="mt-1 block whitespace-normal break-words text-xs leading-5 text-gray-500">{item.sceneCn}</span></span>
                   </label>;
                 })}</div>
               </div>
               {error && <ErrorMessage>{error}</ErrorMessage>}
-              <div className="flex flex-col items-center pt-1"><button type="button" onClick={() => void generate()} disabled={!chosen.length || creatingRows} className="inline-flex items-center justify-center gap-2 rounded-full bg-violet-600 px-10 py-3.5 text-sm font-bold text-white shadow-[0_8px_8px_rgba(124,58,237,0.15)] hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-[#F8F9FB] disabled:text-[#868D99] disabled:shadow-none sm:px-14">{creatingRows ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Sparkles className="h-[18px] w-[18px]" />}{creatingRows ? "正在建立素材清單…" : `生成 ${chosen.length} 張商品素材`}</button></div>
+              <div className="flex flex-col items-center pt-1"><button type="button" onClick={() => void generate()} disabled={!chosen.length || creatingRows} className="inline-flex items-center justify-center gap-2 rounded-full bg-violet-600 px-10 py-3.5 text-sm font-bold text-white shadow-[0_8px_8px_rgba(124,58,237,0.15)] hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#F8F9FB] disabled:text-[#868D99] disabled:shadow-none sm:px-14">{creatingRows ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Sparkles className="h-[18px] w-[18px]" />}{creatingRows ? "正在建立素材清單…" : `生成 ${chosen.length} 張商品素材`}</button></div>
             </div>
           ) : (
             <div className="space-y-5">
-              <div role="status" aria-live="polite" className="rounded-2xl border border-[#ebe4f9] bg-[#f9f6ff] p-4">
+              {preparingRows ? <div role="status" aria-live="polite" aria-busy="true" className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-[#ebe4f9] bg-[#f9f6ff] text-sm font-bold text-gray-700"><Loader2 className="mb-3 h-5 w-5 animate-spin text-violet-600" />{preparingAnnouncement ?? "正在準備生成…"}</div> : <div role="status" aria-live="polite" className="rounded-2xl border border-[#ebe4f9] bg-[#f9f6ff] p-4">
                 <div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white">{phase === "done" ? <Check className="h-5 w-5 text-emerald-500" /> : <Loader2 className="h-5 w-5 animate-spin text-violet-600" />}</span><div className="min-w-0"><p className="text-sm font-bold text-gray-900">{phase === "done" ? `套圖已完成 ${progress.completed}/${progress.total}` : progressLabel}</p><p className="mt-1 text-xs leading-5 text-gray-500">{phase === "done" ? "完成的素材已存回產品；失敗項目可以單獨重試。" : "建立完成後會自動更新；現在可以關閉視窗，生成仍會繼續。"}</p></div></div>
                 <div role="progressbar" aria-label="商品套圖建立進度" aria-valuemin={0} aria-valuemax={Math.max(progress.total, 1)} aria-valuenow={progress.completed} aria-valuetext={`完成 ${progress.completed}/${progress.total}`} className="mt-3 h-1.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-violet-600 transition-[width] duration-500" style={{ width: `${progress.total ? (progress.completed / progress.total) * 100 : 0}%` }} /></div>
-              </div>
-              {creatingRows && !gen.length ? <div className="flex min-h-40 flex-col items-center justify-center text-sm text-gray-500"><Loader2 className="mb-3 h-5 w-5 animate-spin text-violet-600" />正在建立素材清單，請稍候…</div> : <div className="space-y-2.5">{gen.map((item) => <RoleRow key={item.id} item={item} onRetry={() => void retry(item)} />)}</div>}
+              </div>}
+              {!preparingRows && <div className="space-y-2.5">{gen.map((item) => <RoleRow key={item.id} item={item} onRetry={() => void retry(item)} />)}</div>}
               {pollingTimedOut && phase !== "done" && <HelpPopover label="等待時間較長">已暫停更新畫面，但生成仍在背景進行。關閉後重新開啟即可繼續查看，不會改動後端狀態。</HelpPopover>}
               {error && <ErrorMessage>{error}</ErrorMessage>}
               <div className="flex flex-col-reverse items-stretch justify-center gap-2 pt-1 sm:flex-row">
-                {phase === "done" && <button type="button" onClick={startAnotherSet} className="rounded-full border border-[#ebe4f9] bg-white px-6 py-3 text-sm font-bold text-violet-600 hover:bg-violet-50">建立另一組</button>}
-                <button type="button" onClick={requestClose} disabled={creatingRows} className="rounded-full bg-violet-600 px-9 py-3 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">{phase === "done" ? "完成" : "關閉並在背景繼續"}</button>
+                {phase === "done" && <button type="button" onClick={startAnotherSet} className="rounded-full border border-[#ebe4f9] bg-white px-6 py-3 text-sm font-bold text-violet-600 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">建立另一組</button>}
+                <button type="button" onClick={requestClose} disabled={creatingRows} className="rounded-full bg-violet-600 px-9 py-3 text-sm font-bold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">{phase === "done" ? "完成" : "關閉並在背景繼續"}</button>
               </div>
             </div>
           )}
@@ -389,8 +443,8 @@ function HelpPopover({ label, children }: { label: string; children: ReactNode }
   const id = useId();
   return <div className="relative inline-flex items-center gap-1.5 text-xs text-gray-500" onKeyDown={(event) => { if (event.key === "Escape" && open) { event.stopPropagation(); setOpen(false); } }}>
     <span>{label}</span>
-    <button type="button" aria-label={`說明：${label}`} aria-expanded={open} aria-controls={id} aria-describedby={open ? id : undefined} onClick={() => setOpen((value) => !value)} className="rounded p-0.5 text-gray-400 hover:bg-violet-50 hover:text-violet-600"><HelpCircle className="h-3.5 w-3.5" /></button>
-    {open && <><button type="button" tabIndex={-1} aria-label="關閉說明" className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} /><div id={id} role="tooltip" className="absolute left-0 top-6 z-20 w-64 rounded-lg border border-[#ebeff5] bg-white p-3 text-xs leading-5 text-gray-500 shadow-md">{children}</div></>}
+    <button type="button" aria-label={`說明：${label}`} aria-expanded={open} aria-controls={id} aria-describedby={open ? id : undefined} onClick={() => setOpen((value) => !value)} className="rounded p-0.5 text-gray-400 hover:bg-violet-50 hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><HelpCircle className="h-3.5 w-3.5" /></button>
+    {open && <><button type="button" tabIndex={-1} aria-label="關閉說明" className="fixed inset-0 z-10 cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={() => setOpen(false)} /><div id={id} role="tooltip" className="absolute left-0 top-6 z-20 w-64 rounded-lg border border-[#ebeff5] bg-white p-3 text-xs leading-5 text-gray-500 shadow-md">{children}</div></>}
   </div>;
 }
 
@@ -407,6 +461,6 @@ function RoleRow({ item, onRetry }: { item: GenState; onRetry: () => void }) {
       ) : item.status === "GENERATING" ? <Loader2 className="h-4 w-4 animate-spin text-violet-500" /> : item.status === "FAILED" ? <AlertCircle className="h-4 w-4 text-red-400" /> : <Clock3 className="h-4 w-4 text-gray-400" />}
     </div>
     <div className="min-w-0 flex-1"><div className="text-sm font-bold text-gray-900">{item.label}</div><div role="status" aria-live="polite" className={`mt-0.5 text-xs leading-5 ${item.status === "FAILED" ? "text-red-500" : "text-gray-400"}`}>{item.status === "PENDING" ? "等待生成" : item.status === "GENERATING" ? "正在生成…" : item.status === "DONE" ? "已完成" : (item.errorMessage || `${item.label}生成失敗，可單獨重新產生。`)}</div></div>
-    {item.status === "FAILED" ? <button type="button" onClick={onRetry} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#ebe4f9] bg-[#f9f6ff] px-3 py-2 text-xs font-bold text-violet-600 hover:bg-violet-100"><RefreshCw className="h-3.5 w-3.5" />重新產生</button> : item.status === "DONE" ? <Check className="h-4 w-4 shrink-0 text-emerald-500" /> : null}
+    {item.status === "FAILED" ? <button type="button" onClick={onRetry} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#ebe4f9] bg-[#f9f6ff] px-3 py-2 text-xs font-bold text-violet-600 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><RefreshCw className="h-3.5 w-3.5" />重新產生</button> : item.status === "DONE" ? <Check className="h-4 w-4 shrink-0 text-emerald-500" /> : null}
   </div>;
 }

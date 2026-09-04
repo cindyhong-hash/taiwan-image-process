@@ -4,12 +4,15 @@ import {
   clearSavedImageSetBatch,
   dialogFocusTargetIndex,
   imageSetBatchProgress,
+  imageSetGenerationAnnouncement,
   imageSetProgressLabel,
+  imageSetRecoveryAction,
   isImageSetBatchSettled,
   mergeImageSetPollResult,
   readSavedImageSetBatch,
   shouldAnalyzeBeforeImageSetPicker,
   shouldNotifySettledBatch,
+  shouldRenderDeterminateImageSetProgress,
   writeSavedImageSetBatch,
 } from "./image-set-ui.ts";
 
@@ -86,4 +89,25 @@ test("dialog focus trap wraps Tab and Shift+Tab at the boundaries", () => {
   assert.equal(dialogFocusTargetIndex(0, 3, true), 2);
   assert.equal(dialogFocusTargetIndex(1, 3, false), null);
   assert.equal(dialogFocusTargetIndex(-1, 3, false), 0);
+});
+
+test("recovery actions distinguish initial load, saved batch resume, and analysis", () => {
+  assert.deepEqual(imageSetRecoveryAction("initial"), {
+    title: "無法載入商品套圖資料",
+    actionLabel: "重新載入",
+  });
+  assert.deepEqual(imageSetRecoveryAction("resume"), {
+    title: "無法讀取既有套圖進度",
+    actionLabel: "重新讀取生成進度",
+  });
+  assert.deepEqual(imageSetRecoveryAction("analysis"), {
+    title: "產品分析未完成",
+    actionLabel: "重新分析",
+  });
+});
+
+test("row creation is announced as indeterminate until IDs exist", () => {
+  assert.equal(shouldRenderDeterminateImageSetProgress({ creatingRows: true, itemCount: 0 }), false);
+  assert.equal(imageSetGenerationAnnouncement({ creatingRows: true, itemCount: 0 }), "正在建立素材清單…");
+  assert.equal(shouldRenderDeterminateImageSetProgress({ creatingRows: false, itemCount: 3 }), true);
 });
