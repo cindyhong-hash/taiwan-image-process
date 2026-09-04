@@ -83,6 +83,8 @@ export interface GeneratedImage {
   buffer: Buffer;
   contentType: string;
   seed: number;
+  /** Concrete model/provider that produced the pixels, when available. */
+  provider?: string;
 }
 
 export interface CompilePromptInput {
@@ -455,6 +457,196 @@ export interface GptCompositeInput {
   sceneDescription?: string;    // scene steer (used always; English works best)
   aspectRatio?: string;         // "1:1" | "3:2" — output aspect
   model?: string;               // override OpenRouter image model (e.g. mini fallback)
+}
+
+export interface GptReferenceGenerationInput {
+  prompt: string;
+  imageDataUris: string[];
+  batchHeroImageUrl?: string;
+  aspectRatio?: string;
+  model?: string;
+}
+
+type GptReferenceGenerationDependencies = {
+  apiKey?: string;
+  fetchFn?: typeof fetch;
+  timeoutSignal?: (milliseconds: number) => AbortSignal;
+};
+
+/**
+ * Generate one image from a grounded prompt and up to five product references.
+ * The dependency override exists so routing and payload behavior can be verified
+ * without making paid network requests.
+ */
+export async function gptImageGenerateWithReferences(
+  input: GptReferenceGenerationInput,
+  dependencies: GptReferenceGenerationDependencies = {},
+): Promise<GeneratedImage> {
+  const apiKey = dependencies.apiKey ?? OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY 未設定，無法用 GPT 多參考圖生成");
+
+  const fetchFn = dependencies.fetchFn ?? fetch;
+  const batchHero = input.batchHeroImageUrl?.trim() || undefined;
+  const productReferences = [...new Set(input.imageDataUris.filter(Boolean))]
+    .filter((url) => url !== batchHero)
+    .slice(0, batchHero ? 4 : 5);
+  const references = [...productReferences, ...(batchHero ? [batchHero] : [])];
+  if (!references.length) throw new Error("GPT 多參考圖生成缺少商品參考圖");
+
+  const instruction = [
+    input.prompt.trim(),
+    `Output aspect ratio: ${input.aspectRatio || "1:1"}.`,
+    `The first ${productReferences.length} image(s) show different views of the same single product and are the only product identity references.`,
+    batchHero
+      ? "The LAST image is a visual consistency and style anchor only. Do not use it as product identity, and do not copy or duplicate any product shown in it."
+      : "",
+    "Preserve the product's exact shape, proportions, colors, materials, controls, label text and logo.",
+    "Do not invent, merge, duplicate or redesign product details. No added watermark or unrelated text.",
+  ].filter(Boolean).join(" ");
+  const content: Record<string, unknown>[] = [
+    { type: "text", text: instruction },
+    ...references.map((url) => ({ type: "image_url", image_url: { url } })),
+  ];
+
+  const model = input.model ?? OPENROUTER_IMAGE_MODEL;
+  let response: Response;
+  try {
+    response = await fetchFn("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "X-Title": "Marketing Tool",
+      },
+      body: JSON.stringify({
+        model,
+        modalities: ["image", "text"],
+        image_config: { aspect_ratio: input.aspectRatio || "1:1", quality: "high" },
+        messages: [{ role: "user", content }],
+      }),
+      signal: (dependencies.timeoutSignal ?? AbortSignal.timeout)(90_000),
+    });
+  } catch (error) {
+    const reason = error instanceof DOMException && error.name === "TimeoutError" ? "逾時" : "連線失敗";
+    throw new Error(`GPT 多參考圖生成${reason}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`GPT 多參考圖生成錯誤 HTTP ${response.status}`);
+  }
+
+  let imageUrl: string | undefined;
+  try {
+    const data = await response.json();
+    const message = data.choices?.[0]?.message ?? {};
+    imageUrl = message.images?.[0]?.image_url?.url ?? message.images?.[0]?.url;
+  } catch {
+    throw new Error("GPT 多參考圖生成回應格式錯誤");
+  }
+  if (!imageUrl) throw new Error("GPT 多參考圖生成回應無圖片");
+
+  if (imageUrl.startsWith("data:")) {
+    const comma = imageUrl.indexOf(",");
+    const semicolon = imageUrl.indexOf(";");
+    if (comma < 0) throw new Error("GPT 多參考圖生成回應格式錯誤");
+    const contentType = semicolon > 5 ? imageUrl.slice(5, semicolon) : "image/png";
+    return { buffer: Buffer.from(imageUrl.slice(comma + 1), "base64"), contentType, seed: 0, provider: model };
+  }
+
+  let imageResponse: Response;
+  try {
+    imageResponse = await fetchFn(imageUrl, { signal: AbortSignal.timeout(60_000) });
+  } catch {
+    throw new Error("GPT 多參考圖圖片下載失敗");
+  }
+  if (!imageResponse.ok) throw new Error(`GPT 多參考圖圖片下載失敗 HTTP ${imageResponse.status}`);
+  return {
+    buffer: Buffer.from(await imageResponse.arrayBuffer()),
+    contentType: imageResponse.headers.get("content-type") ?? "image/png",
+    seed: 0,
+    provider: model,
+  };
+}
+
+export interface FalReferenceGenerationInput {
+  prompt: string;
+  imageDataUris: string[];
+  batchHeroImageUrl?: string;
+  aspectRatio?: string;
+  provider: "seedream" | "flux";
+}
+
+type FalReferenceGenerationDependencies = {
+  apiKey?: string;
+  fetchFn?: typeof fetch;
+};
+
+/**
+ * FAL edit adapter for multiple identity views of one product plus an optional
+ * already-generated batch hero used only as a visual consistency anchor.
+ */
+export async function falImageGenerateWithReferences(
+  input: FalReferenceGenerationInput,
+  dependencies: FalReferenceGenerationDependencies = {},
+): Promise<GeneratedImage> {
+  const apiKey = dependencies.apiKey ?? FAL_KEY;
+  if (!apiKey) throw new Error("FAL_KEY 未設定，無法用多參考圖生成");
+  const fetchFn = dependencies.fetchFn ?? fetch;
+  const uniqueProductViews = [...new Set(input.imageDataUris.filter(Boolean))];
+  if (!uniqueProductViews.length) throw new Error("FAL 多參考圖生成缺少商品參考圖");
+
+  const batchHero = input.batchHeroImageUrl && !uniqueProductViews.includes(input.batchHeroImageUrl)
+    ? input.batchHeroImageUrl
+    : undefined;
+  const productViews = uniqueProductViews.slice(0, batchHero ? 4 : 5);
+  const imageUrls = [...productViews, ...(batchHero ? [batchHero] : [])];
+  const model = input.provider === "seedream" ? FAL_SEEDREAM_EDIT_MODEL : FAL_FLUX2_EDIT_MODEL;
+  const prompt = [
+    `The first ${productViews.length} reference image(s) are different views of the same single product.`,
+    "Use them together only to preserve that one product's exact identity, shape, proportions, colors, materials, controls, label text and logo.",
+    "Generate exactly one instance of the product. Never merge, duplicate, arrange copies, or invent product details.",
+    batchHero
+      ? "The LAST image is a visual consistency anchor from this batch: match its lighting, palette, camera language and art direction, but do not copy or add the product depicted in that anchor."
+      : "",
+    input.prompt.trim(),
+  ].filter(Boolean).join(" ");
+
+  let response: Response;
+  try {
+    response = await fetchFn(`https://fal.run/${model}`, {
+      method: "POST",
+      headers: { Authorization: `Key ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        image_urls: imageUrls,
+        image_size: input.aspectRatio === "3:2" ? "landscape_4_3" : "square_hd",
+      }),
+      signal: AbortSignal.timeout(input.provider === "seedream" ? 180_000 : 120_000),
+    });
+  } catch {
+    throw new Error(`${input.provider === "seedream" ? "Seedream" : "FLUX.2"} 多參考圖連線失敗`);
+  }
+  if (!response.ok) {
+    throw new Error(`${input.provider === "seedream" ? "Seedream" : "FLUX.2"} 多參考圖錯誤 HTTP ${response.status}`);
+  }
+
+  let imageUrl: string | undefined;
+  try {
+    const data = await response.json();
+    imageUrl = data.images?.[0]?.url ?? data.image?.url;
+  } catch {
+    throw new Error("FAL 多參考圖回應格式錯誤");
+  }
+  if (!imageUrl) throw new Error("FAL 多參考圖回應無圖片 URL");
+
+  const imageResponse = await fetchFn(imageUrl, { signal: AbortSignal.timeout(60_000) });
+  if (!imageResponse.ok) throw new Error(`FAL 多參考圖圖片下載失敗 HTTP ${imageResponse.status}`);
+  return {
+    buffer: Buffer.from(await imageResponse.arrayBuffer()),
+    contentType: imageResponse.headers.get("content-type") ?? "image/png",
+    seed: 0,
+    provider: model,
+  };
 }
 
 export async function gptImageComposite(i: GptCompositeInput): Promise<GeneratedImage> {
@@ -846,7 +1038,7 @@ async function falAiImage(input: GenerateImageInput, seed: number): Promise<Gene
   const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(60_000) });
   if (!imgRes.ok) throw new Error(`fal.ai 圖片下載失敗：${imgRes.status}`);
   const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
-  return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed };
+  return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed, provider: "fal-ai/flux/schnell" };
 }
 
 /** Map a w×h target to fal's image_size enum (shared by FLUX.2 pro / Recraft). */
@@ -857,11 +1049,11 @@ function falImageSize(input: GenerateImageInput): string {
 }
 
 /** Download a fal result image URL into a GeneratedImage buffer. */
-async function falFetchImage(url: string, seed: number): Promise<GeneratedImage> {
+async function falFetchImage(url: string, seed: number, provider: string): Promise<GeneratedImage> {
   const imgRes = await fetch(url, { signal: AbortSignal.timeout(60_000) });
   if (!imgRes.ok) throw new Error(`fal 圖片下載失敗：${imgRes.status}`);
   const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
-  return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed };
+  return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed, provider };
 }
 
 /** 真人寫實 text→image：FLUX.2 [pro]（fal-ai/flux-2-pro）。 */
@@ -886,7 +1078,7 @@ async function falFlux2Pro(input: GenerateImageInput, seed: number): Promise<Gen
   const data = await res.json();
   const url = data.images?.[0]?.url;
   if (!url) throw new Error("FLUX.2 pro 回應無圖片 URL");
-  return falFetchImage(url, seed);
+  return falFetchImage(url, seed, FAL_FLUX2_MODEL);
 }
 
 /** 2D 插畫 text→image：Recraft V3（style 預設 digital_illustration）。 */
@@ -909,7 +1101,7 @@ async function falRecraft(input: GenerateImageInput, seed: number): Promise<Gene
   const data = await res.json();
   const url = data.images?.[0]?.url;
   if (!url) throw new Error("Recraft V3 回應無圖片 URL");
-  return falFetchImage(url, seed);
+  return falFetchImage(url, seed, FAL_RECRAFT_MODEL);
 }
 
 async function pollinationsImage(input: GenerateImageInput, seed: number): Promise<GeneratedImage> {
@@ -931,7 +1123,7 @@ async function pollinationsImage(input: GenerateImageInput, seed: number): Promi
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(60_000) });
     const contentType = res.headers.get("content-type") ?? "";
     if (res.ok && contentType.startsWith("image/")) {
-      return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed };
+      return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed, provider: `pollinations:${model}` };
     }
     lastErr = `${res.status} ${(await res.text().catch(() => "")).slice(0, 120)}`;
     if (res.status === 402 || res.status === 401) break; // hard gate — retry won't help
@@ -958,7 +1150,7 @@ async function huggingFaceImage(input: GenerateImageInput, seed: number): Promis
     });
     const contentType = res.headers.get("content-type") ?? "";
     if (res.ok && contentType.startsWith("image/")) {
-      return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed };
+      return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed, provider: `huggingface:${HF_IMAGE_MODEL}` };
     }
     lastErr = `${res.status} ${(await res.text().catch(() => "")).slice(0, 160)}`;
     if (res.status !== 503) break; // only cold-start (503) is worth retrying
@@ -979,11 +1171,11 @@ async function generateImageN8n(input: GenerateImageInput): Promise<GeneratedIma
   const contentType = res.headers.get("content-type") ?? "";
   // Webhook may return raw image bytes, or JSON with {imageUrl} / {imageBase64}.
   if (contentType.startsWith("image/")) {
-    return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed };
+    return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed, provider: "n8n" };
   }
   const data = await res.json();
   if (data.imageBase64) {
-    return { buffer: Buffer.from(data.imageBase64, "base64"), contentType: data.contentType ?? "image/png", seed };
+    return { buffer: Buffer.from(data.imageBase64, "base64"), contentType: data.contentType ?? "image/png", seed, provider: "n8n" };
   }
   if (data.imageUrl) {
     const imgRes = await fetch(data.imageUrl, { signal: AbortSignal.timeout(60_000) });
@@ -991,6 +1183,7 @@ async function generateImageN8n(input: GenerateImageInput): Promise<GeneratedIma
       buffer: Buffer.from(await imgRes.arrayBuffer()),
       contentType: imgRes.headers.get("content-type") ?? "image/png",
       seed,
+      provider: "n8n",
     };
   }
   throw new Error("n8n image webhook 回應缺少 imageUrl / imageBase64");
