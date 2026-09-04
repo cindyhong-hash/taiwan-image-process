@@ -10,22 +10,23 @@ const STATUS_LABEL: Record<string, string> = {
   DRAFT: "草稿", STRATEGY_READY: "策略完成", TOPICS_READY: "已規劃",
   CALENDAR_READY: "已排程", GENERATION_READY: "製作中", REVIEW: "審核中", COMPLETED: "已完成",
 };
+// 已規劃(有主題/排程)→ 日曆;否則(還在規劃)→ Brief。與月度企劃落地邏輯一致。
+const PLANNED = new Set(["TOPICS_READY", "CALENDAR_READY", "GENERATION_READY", "REVIEW", "COMPLETED"]);
+const destOf = (status: string) => (PLANNED.has(status) ? "/calendar" : "");
 
 /**
  * 月份切換 + 「其他月份」下拉(取代原本的企劃列表)。
  * ‹ › 切相鄰月;點年月開下拉列出所有月份可跳、可刪。target 決定跳去 Brief 或日曆。
  * beforeNavigate: Brief 傳入 saveBrief，切換前先存檔。
  */
-export function MonthPlanSwitcher({ clientId, planId, year, month, target, beforeNavigate }: {
+export function MonthPlanSwitcher({ clientId, planId, year, month, beforeNavigate }: {
   clientId: string; planId: string; year: number; month: number;
-  target: "plan" | "calendar";
   beforeNavigate?: () => Promise<void>;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
-  const suffix = target === "calendar" ? "/calendar" : "";
 
   const go = async (y: number, m: number) => {
     if (switching) return;
@@ -34,12 +35,12 @@ export function MonthPlanSwitcher({ clientId, planId, year, month, target, befor
       if (beforeNavigate) await beforeNavigate();
       const res = await fetch(`/api/marketing-plans`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId, year: y, month: m }) });
       const p = await res.json();
-      if (p?.id) router.push(`/clients/${clientId}/marketing-plans/${p.id}${suffix}`);
+      if (p?.id) router.push(`/clients/${clientId}/marketing-plans/${p.id}${destOf(p.status)}`);
       else setSwitching(false);
     } catch { setSwitching(false); }
   };
   const shift = (d: number) => { let y = year, m = month + d; if (m < 1) { m = 12; y -= 1; } if (m > 12) { m = 1; y += 1; } go(y, m); };
-  const goToPlan = (p: PlanRow) => { setOpen(false); router.push(`/clients/${clientId}/marketing-plans/${p.id}${suffix}`); };
+  const goToPlan = (p: PlanRow) => { setOpen(false); router.push(`/clients/${clientId}/marketing-plans/${p.id}${destOf(p.status)}`); };
 
   const toggleList = () => {
     setOpen((o) => !o);

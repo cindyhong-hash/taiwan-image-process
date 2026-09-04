@@ -13,7 +13,7 @@ type Signal = { id: string; source: string; label: string; score?: number };
 type Topic = { id: string; campaignId?: string | null; contentType: string; topic: string; contentDirection: string; format: string; platforms: string[]; recommendationReason?: string; sourceSignals?: Signal[]; status?: string };
 type Campaign = { id: string; name: string };
 
-const MISSING_PRODUCT_WARNING = "目前 Campaign 沒有關聯產品，AI 將只使用品牌資料，產品型主題可能較不精準。仍要繼續生成嗎？";
+const MISSING_PRODUCT_WARNING = "本月還沒加入產品，AI 將只使用品牌資料，產品型主題可能較不精準。仍要繼續生成嗎？";
 
 function moveOne<T extends { count: number }>(items: T[], index: number, delta: number) {
   const next = items.map((x) => ({ ...x }));
@@ -64,7 +64,7 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, hasPro
       </div>
 
       {error && <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
-      {!hasProducts && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">目前 Campaign 尚未關聯產品。AI 不會從品牌名稱猜測產品；若要產生精準的產品主題，請先回 Brief 加入產品。</div>}
+      {!hasProducts && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">本月還沒加入產品。AI 不會從品牌名稱猜測產品；若要產生精準的產品主題，請先回 Brief 加入產品。</div>}
 
       {/* 本次參考的近期題材（趨勢訊號快照） */}
       {signals.length > 0 && (

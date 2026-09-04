@@ -44,7 +44,8 @@ const toggle = (items: string[], value: string) => (items.includes(value) ? item
 export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Plan; hasTopics?: boolean }) {
   const router = useRouter();
   const [plan, setPlan] = useState(initialPlan);
-  const [openId, setOpenId] = useState("");            // 展開中的 Campaign（"" = 全收合，對齊 mockup）
+  const [openId, setOpenId] = useState("");            // 展開中的檔期（"" = 全收合，對齊 mockup）
+  const [advOpen, setAdvOpen] = useState(false);       // 檔期進階設定(名稱/日期/目標/重要日期)預設收合，產品優先
   const [menuId, setMenuId] = useState("");            // 開啟 ⋯ 選單的 Campaign
   const [notesOpen, setNotesOpen] = useState(!!initialPlan.notes);
   const [customGoal, setCustomGoal] = useState(initialPlan.goals.find((g) => !MARKETING_GOALS.includes(g as typeof MARKETING_GOALS[number])) ?? "");
@@ -137,7 +138,7 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-400">{saveState === "saving" ? "儲存中…" : saveState === "dirty" ? "等待儲存" : "已自動儲存"}</span>
-          <MonthPlanSwitcher clientId={plan.clientId} planId={plan.id} year={plan.year} month={plan.month} target="plan" beforeNavigate={saveBrief} />
+          <MonthPlanSwitcher clientId={plan.clientId} planId={plan.id} year={plan.year} month={plan.month} beforeNavigate={saveBrief} />
         </div>
       </div>
 
@@ -242,25 +243,10 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
                 {/* 展開：詳細設定 */}
                 {open && selected && (
                   <div className="space-y-5 border-t border-[#ebeff5] p-4 sm:p-5">
-                    <div>
-                      <label className="text-xs font-bold text-gray-900">Campaign 名稱</label>
-                      <input value={selected.name} onChange={(e) => updateCampaign({ name: e.target.value })} className="mt-1 h-11 w-full rounded-lg border-[1.5px] border-[#ebeff5] px-3 text-sm focus:ring-2 focus:ring-ring" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div><label className="text-xs font-bold text-gray-900">開始日期</label><input type="date" value={dateValue(selected.startDate)} onChange={(e) => updateCampaign({ startDate: e.target.value })} className="mt-1 h-11 w-full rounded-lg border-[1.5px] border-[#ebeff5] px-3 text-sm focus:ring-2 focus:ring-ring" /></div>
-                      <div><label className="text-xs font-bold text-gray-900">結束日期</label><input type="date" value={dateValue(selected.endDate)} onChange={(e) => updateCampaign({ endDate: e.target.value })} className="mt-1 h-11 w-full rounded-lg border-[1.5px] border-[#ebeff5] px-3 text-sm focus:ring-2 focus:ring-ring" /></div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-900">Campaign 目標</label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {MARKETING_GOALS.map((goal) => (
-                          <button key={goal} onClick={() => updateCampaign({ goals: toggle(selected.goals, goal) })} className={`rounded-lg border-[1.5px] px-2.5 py-1.5 text-xs transition-colors ${selected.goals.includes(goal) ? "border-violet-600 bg-violet-50 text-violet-700" : "border-[#ebeff5] bg-white text-gray-500 hover:border-violet-300"}`}>{goal}</button>
-                        ))}
-                      </div>
-                    </div>
+                    {/* 產品優先:選產品是主角 */}
                     <div>
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-gray-900">關聯產品</label>
+                        <label className="text-xs font-bold text-gray-900">選擇產品</label>
                         <button onClick={() => setShowLibrary(true)} className="text-xs font-medium text-violet-600"><ImagePlus className="mr-1 inline h-3.5 w-3.5" />從素材庫選擇</button>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -270,28 +256,56 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
                             <img src={product.imageUrl} alt={product.label} className="h-full w-full object-cover" />
                             <button onClick={() => updateCampaign({ products: selected.products.filter((_, index) => index !== i) })} className="absolute right-1 top-1 rounded bg-white/90 p-0.5 opacity-0 group-hover:opacity-100"><Trash2 className="h-3 w-3 text-red-500" /></button>
                           </div>
-                        )) : <div className="w-full rounded-lg border border-dashed border-[#ebeff5] px-3 py-4 text-xs text-gray-400">尚未關聯產品；品牌與教育型內容可保持空白。</div>}
+                        )) : <button onClick={() => setShowLibrary(true)} className="w-full rounded-lg border border-dashed border-[#ebeff5] px-3 py-4 text-left text-xs text-gray-400 hover:border-violet-300 hover:text-violet-600"><ImagePlus className="mr-1 inline h-3.5 w-3.5" />從素材庫選要推的產品（品牌／教育型內容可留空）</button>}
                       </div>
                     </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-900">活動說明／補充</label>
-                      <textarea value={selected.description} onChange={(e) => updateCampaign({ description: e.target.value })} rows={3} maxLength={500} className="mt-1 w-full resize-y rounded-lg border-[1.5px] border-[#ebeff5] px-3 py-2 text-sm focus:ring-2 focus:ring-ring" placeholder="例如優惠機制、溝通重點、不可出現的內容…" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-gray-900">重要日期</label>
-                        <button onClick={addImportantDate} className="text-xs font-medium text-violet-600"><Plus className="mr-1 inline h-3.5 w-3.5" />新增日期</button>
-                      </div>
-                      <div className="mt-2 space-y-2">
-                        {selected.importantDates.map((item, index) => (
-                          <div key={item.id ?? index} className="grid grid-cols-[125px_1fr_28px] gap-2">
-                            <input type="date" value={dateValue(item.date)} onChange={(e) => updateCampaign({ importantDates: selected.importantDates.map((d, i) => (i === index ? { ...d, date: e.target.value } : d)) })} className="rounded-lg border-[1.5px] border-[#ebeff5] px-2 py-2 text-xs focus:ring-2 focus:ring-ring" />
-                            <input value={item.label} onChange={(e) => updateCampaign({ importantDates: selected.importantDates.map((d, i) => (i === index ? { ...d, label: e.target.value } : d)) })} className="rounded-lg border-[1.5px] border-[#ebeff5] px-2 py-2 text-xs focus:ring-2 focus:ring-ring" placeholder="例如新品上市" />
-                            <button onClick={() => updateCampaign({ importantDates: selected.importantDates.filter((_, i) => i !== index) })} className="text-gray-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+
+                    {/* 進階:檔期設定(名稱/日期/目標/說明/重要日期) — 預設收合，只有活動檔期才需要 */}
+                    <div className="border-t border-[#ebeff5] pt-3">
+                      <button onClick={() => setAdvOpen((o) => !o)} className="flex w-full items-center justify-between text-xs font-medium text-gray-500 hover:text-gray-800">
+                        <span>檔期設定 <span className="font-normal text-gray-400">（選填：名稱、起訖日、目標、重要日期）</span></span>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${advOpen ? "" : "-rotate-90"}`} />
+                      </button>
+                      {advOpen && (
+                        <div className="mt-3 space-y-4">
+                          <div>
+                            <label className="text-xs font-bold text-gray-900">檔期名稱</label>
+                            <input value={selected.name} onChange={(e) => updateCampaign({ name: e.target.value })} className="mt-1 h-11 w-full rounded-lg border-[1.5px] border-[#ebeff5] px-3 text-sm focus:ring-2 focus:ring-ring" />
                           </div>
-                        ))}
-                        {!selected.importantDates.length && <div className="flex items-center gap-2 rounded-lg border border-dashed border-[#ebeff5] px-3 py-4 text-xs text-gray-400"><CalendarDays className="h-4 w-4" />尚未設定重要日期</div>}
-                      </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div><label className="text-xs font-bold text-gray-900">開始日期</label><input type="date" value={dateValue(selected.startDate)} onChange={(e) => updateCampaign({ startDate: e.target.value })} className="mt-1 h-11 w-full rounded-lg border-[1.5px] border-[#ebeff5] px-3 text-sm focus:ring-2 focus:ring-ring" /></div>
+                            <div><label className="text-xs font-bold text-gray-900">結束日期</label><input type="date" value={dateValue(selected.endDate)} onChange={(e) => updateCampaign({ endDate: e.target.value })} className="mt-1 h-11 w-full rounded-lg border-[1.5px] border-[#ebeff5] px-3 text-sm focus:ring-2 focus:ring-ring" /></div>
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-gray-900">檔期目標</label>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {MARKETING_GOALS.map((goal) => (
+                                <button key={goal} onClick={() => updateCampaign({ goals: toggle(selected.goals, goal) })} className={`rounded-lg border-[1.5px] px-2.5 py-1.5 text-xs transition-colors ${selected.goals.includes(goal) ? "border-violet-600 bg-violet-50 text-violet-700" : "border-[#ebeff5] bg-white text-gray-500 hover:border-violet-300"}`}>{goal}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-gray-900">活動說明／補充</label>
+                            <textarea value={selected.description} onChange={(e) => updateCampaign({ description: e.target.value })} rows={3} maxLength={500} className="mt-1 w-full resize-y rounded-lg border-[1.5px] border-[#ebeff5] px-3 py-2 text-sm focus:ring-2 focus:ring-ring" placeholder="例如優惠機制、溝通重點、不可出現的內容…" />
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-bold text-gray-900">重要日期</label>
+                              <button onClick={addImportantDate} className="text-xs font-medium text-violet-600"><Plus className="mr-1 inline h-3.5 w-3.5" />新增日期</button>
+                            </div>
+                            <div className="mt-2 space-y-2">
+                              {selected.importantDates.map((item, index) => (
+                                <div key={item.id ?? index} className="grid grid-cols-[125px_1fr_28px] gap-2">
+                                  <input type="date" value={dateValue(item.date)} onChange={(e) => updateCampaign({ importantDates: selected.importantDates.map((d, i) => (i === index ? { ...d, date: e.target.value } : d)) })} className="rounded-lg border-[1.5px] border-[#ebeff5] px-2 py-2 text-xs focus:ring-2 focus:ring-ring" />
+                                  <input value={item.label} onChange={(e) => updateCampaign({ importantDates: selected.importantDates.map((d, i) => (i === index ? { ...d, label: e.target.value } : d)) })} className="rounded-lg border-[1.5px] border-[#ebeff5] px-2 py-2 text-xs focus:ring-2 focus:ring-ring" placeholder="例如新品上市" />
+                                  <button onClick={() => updateCampaign({ importantDates: selected.importantDates.filter((_, i) => i !== index) })} className="text-gray-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                                </div>
+                              ))}
+                              {!selected.importantDates.length && <div className="flex items-center gap-2 rounded-lg border border-dashed border-[#ebeff5] px-3 py-4 text-xs text-gray-400"><CalendarDays className="h-4 w-4" />尚未設定重要日期</div>}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

@@ -225,7 +225,7 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700"><CalendarRange className="h-5 w-5" /></span>
             <div><h1 className="text-2xl font-bold text-gray-900">{year} 年 {month} 月內容日曆</h1><p className="mt-1 text-sm text-gray-400">拖曳內容卡片即可調整發文日期。</p></div>
-            <MonthPlanSwitcher clientId={clientId} planId={planId} year={year} month={month} target="calendar" />
+            <MonthPlanSwitcher clientId={clientId} planId={planId} year={year} month={month} />
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-gray-500">
@@ -310,7 +310,9 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
         <aside onDragOver={(event) => event.preventDefault()} onDrop={(event) => moveTopic(event.dataTransfer.getData("text/plain"), null)} className="h-fit rounded-2xl border border-gray-200 bg-white p-4 2xl:sticky 2xl:top-4">
           <div className="mb-3"><h2 className="text-sm font-semibold text-gray-900">未排期內容</h2><p className="mt-1 text-[11px] text-gray-400">拖到日期安排，或拖回這裡取消排期。</p></div>
           <div className="space-y-2">{unscheduled.map(card)}</div>
-          {!unscheduled.length && <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 px-3 py-6 text-center text-xs text-emerald-700">本月 {topics.length} 篇內容皆已排期</div>}
+          {!unscheduled.length && (topics.length === 0
+            ? <div className="rounded-xl border border-dashed border-[#ebeff5] px-3 py-6 text-center text-xs text-gray-400">本月還沒有內容。<button onClick={() => router.push(`/clients/${clientId}/marketing-plans/${planId}`)} className="mt-1 block w-full font-medium text-violet-600 hover:text-violet-700">到內容企劃規劃 →</button></div>
+            : <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 px-3 py-6 text-center text-xs text-emerald-700">本月 {topics.length} 篇內容皆已排期</div>)}
         </aside>
       </div>
       )}
