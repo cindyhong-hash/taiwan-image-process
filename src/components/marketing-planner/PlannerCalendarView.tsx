@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CalendarRange, CheckSquare, ChevronLeft, ChevronRight, Download, GripVertical, LayoutList, Loader2, Sparkles, Square, X } from "lucide-react";
+import { CalendarDays, CalendarRange, Check, CheckSquare, ChevronLeft, ChevronRight, Download, GripVertical, LayoutList, Loader2, Plus, Sparkles, Square, X } from "lucide-react";
 import { CONTENT_TYPE_META, type ContentType } from "@/lib/marketing-planner";
 import { assignInitialSchedule, calendarDays, dateKey } from "@/lib/planner/calendar";
 import { statusMeta, STATUS_BUCKETS } from "@/lib/planner/status";
@@ -36,9 +36,10 @@ const TYPE_STYLES: Record<ContentType, string> = {
   ENGAGEMENT: "border-l-violet-400",
   PROMOTION: "border-l-emerald-400",
 };
-export function PlannerCalendarView({ planId, clientId, year, month, initialTopics, campaigns }: { planId: string; clientId: string; year: number; month: number; initialTopics: Topic[]; campaigns: BriefCampaign[] }) {
+export function PlannerCalendarView({ planId, clientId, year, month, initialTopics, campaigns, justPlannedCount = 0 }: { planId: string; clientId: string; year: number; month: number; initialTopics: Topic[]; campaigns: BriefCampaign[]; justPlannedCount?: number }) {
   const router = useRouter();
   const [topics, setTopics] = useState(initialTopics);
+  const [showPlanned, setShowPlanned] = useState(justPlannedCount > 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -167,6 +168,20 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
   const startBatchFromSelection = () => { setBatchMode(true); setBatchDrawerOpen(true); };
   const batchSelected = topics.filter((t) => batchIds.has(t.id));
 
+  // 日曆 cell hover 的 secondary「＋」：在該日新增一篇，開啟 Brief 抽屜編輯（非主 CTA）
+  const addTopicOnDay = async (dateStr: string) => {
+    setError("");
+    try {
+      const res = await fetch(`/api/marketing-plans/${planId}/topics`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add" }) });
+      if (!res.ok) throw new Error();
+      const item = await res.json();
+      await fetch(`/api/content-plan-items/${item.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scheduledDate: dateStr }) });
+      const campaign = campaigns.find((c) => c.id === item.campaignId) ?? null;
+      setTopics((t) => [...t, { ...item, scheduledDate: dateStr, previewImageUrl: null, campaign: campaign ? { name: campaign.name } : null }]);
+      setSelectedId(item.id);
+    } catch { setError("新增內容失敗，請稍後再試。"); }
+  };
+
   const card = (item: Topic) => {
     const type = (item.contentType in CONTENT_TYPE_META ? item.contentType : "BRAND") as ContentType;
     const status = statusMeta(item.status);
@@ -237,6 +252,22 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
         </div>
       </header>
 
+      {showPlanned && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            <div>
+              <p className="text-sm font-medium text-emerald-900">{justPlannedCount} 個 Topics 已安排完成</p>
+              <p className="mt-0.5 text-xs text-emerald-700">AI 已根據企劃安排發布日期，可直接開始製作。</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowPlanned(false)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-white/60">查看日曆</button>
+            <button onClick={() => { setView("list"); setShowPlanned(false); }} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"><Sparkles className="h-3.5 w-3.5" />開始製作</button>
+          </div>
+        </div>
+      )}
+
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
         <button onClick={() => setView("calendar")} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${view === "calendar" ? "bg-violet-600 text-white" : "text-gray-500 hover:text-gray-800"}`}><CalendarDays className="h-4 w-4" />日曆</button>
         <button onClick={() => setView("list")} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${view === "list" ? "bg-violet-600 text-white" : "text-gray-500 hover:text-gray-800"}`}><LayoutList className="h-4 w-4" />製作清單</button>
@@ -281,8 +312,11 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
           <div className="grid sm:grid-cols-7">
             {days.map((day, index) => day === null ? <div key={`blank-${index}`} className="hidden min-h-32 border-b border-r bg-gray-50/40 sm:block" /> : (
               <div key={day} onDragOver={(event) => event.preventDefault()} onDrop={(event) => moveTopic(event.dataTransfer.getData("text/plain"), `${monthPrefix}-${String(day).padStart(2, "0")}`)}
-                className="min-h-32 border-b border-r border-gray-100 p-2.5 transition-colors hover:bg-violet-50/30">
-                <div className="mb-2 flex items-center justify-between"><span className="text-xs font-semibold text-gray-500">{day}</span><span className="text-[10px] text-gray-300">{topicsForDay(day).length || ""}</span></div>
+                className="group min-h-32 border-b border-r border-gray-100 p-2.5 transition-colors hover:bg-violet-50/30">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-500">{day}</span>
+                  <button aria-label="在這天新增內容" onClick={() => addTopicOnDay(`${monthPrefix}-${String(day).padStart(2, "0")}`)} className="flex h-5 w-5 items-center justify-center rounded text-gray-300 opacity-0 transition hover:bg-violet-100 hover:text-violet-600 group-hover:opacity-100"><Plus className="h-3.5 w-3.5" /></button>
+                </div>
                 <div className="space-y-2">{topicsForDay(day).map(card)}</div>
               </div>
             ))}

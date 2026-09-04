@@ -195,7 +195,7 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, hasPro
           {topics.length > 0 && (
             <div className="mt-6 flex items-center justify-between border-t pt-5">
               <p className="text-xs text-gray-400">確認後，AI 會把這些主題排進內容日曆。</p>
-              <button onClick={() => router.push(`/clients/${clientId}/marketing-plans/${planId}/calendar`)}
+              <button onClick={() => router.push(`/clients/${clientId}/marketing-plans/${planId}/calendar?planned=${topics.length}`)}
                 className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-700">
                 <CalendarRange className="h-4 w-4" />確認企劃 → 安排到內容日曆
               </button>

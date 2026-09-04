@@ -5,8 +5,9 @@ import { parseJsonArray, parseJsonArrayAny } from "@/lib/marketing-planner";
 
 export const dynamic = "force-dynamic";
 
-export default async function MarketingPlanCalendarPage({ params }: { params: Promise<{ clientId: string; planId: string }> }) {
+export default async function MarketingPlanCalendarPage({ params, searchParams }: { params: Promise<{ clientId: string; planId: string }>; searchParams: Promise<{ planned?: string }> }) {
   const { clientId, planId } = await params;
+  const justPlannedCount = Number((await searchParams).planned) || 0;
   const plan = await db.monthlyMarketingPlan.findFirst({
     where: { id: planId, clientId },
     include: {
@@ -22,7 +23,7 @@ export default async function MarketingPlanCalendarPage({ params }: { params: Pr
     },
   });
   if (!plan) notFound();
-  return <PlannerCalendarView planId={planId} clientId={clientId} year={plan.year} month={plan.month}
+  return <PlannerCalendarView planId={planId} clientId={clientId} year={plan.year} month={plan.month} justPlannedCount={justPlannedCount}
     campaigns={plan.campaigns.map((campaign) => ({ id: campaign.id, name: campaign.name, description: campaign.description, products: campaign.products.map((product) => ({ id: product.id, label: product.label, imageUrl: product.imageUrl })) }))}
     initialTopics={plan.contentItems.map((item) => {
       const layouts = item.generatedActivity?.generatedLayouts ?? [];
