@@ -9,7 +9,7 @@ import { statusMeta, STATUS_BUCKETS } from "@/lib/planner/status";
 import { ContentBriefDrawer } from "@/components/marketing-planner/ContentBriefDrawer";
 import { ProductionListView } from "@/components/marketing-planner/ProductionListView";
 import { BatchDrawer } from "@/components/marketing-planner/BatchDrawer";
-import { plannerActivityDestination, type BriefCampaign, type BriefSignal } from "@/lib/planner/content-brief";
+import type { BriefCampaign, BriefSignal } from "@/lib/planner/content-brief";
 
 type Topic = {
   id: string;
@@ -147,8 +147,9 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
     try {
       const res = await fetch(`/api/content-plan-items/${id}/activity`, { method: "POST" });
       if (!res.ok) throw new Error();
-      const { activityId, format } = await res.json() as { activityId: string; format: string };
-      router.push(plannerActivityDestination(clientId, activityId, format));
+      const { activityId } = await res.json() as { activityId: string };
+      // 導到結果頁：它會對「交接後尚未生成(DRAFT/0 版型)」自動觸發生成並顯示 loading
+      router.push(`/clients/${clientId}/activities/${activityId}`);
     } catch { setError("目前無法開始製作，請稍後再試。"); setStartingId(null); }
   };
   const viewResult = (id: string) => {

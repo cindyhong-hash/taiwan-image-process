@@ -104,29 +104,18 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
           setSelectedId((prev) => prev ?? (data.generatedLayouts?.find((l) => l.isSelected)?.id
             ?? (data.generatedLayouts?.length === 1 ? data.generatedLayouts[0].id : undefined)));
 
-          // If PENDING and not yet triggered, kick off generation
-          if (data.status === "PENDING" && !generationTriggered.current) {
+          // 需要生成：沒有版型且非失敗 → 自動觸發（涵蓋 planner 交接的 DRAFT、一般 PENDING、被重置的 DONE）
+          const layoutsEmpty = (data.generatedLayouts?.length ?? 0) === 0;
+          const needsGen = layoutsEmpty && data.status !== "FAILED";
+          if (needsGen && data.status !== "GENERATING" && !generationTriggered.current) {
             generationTriggered.current = true;
             fetch("/api/generate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ activityId }),
-            });
-          }
-
-          if (data.status === "GENERATING" || data.status === "PENDING") {
+            }).then(() => { pollingRef.current = setTimeout(fetchActivity, 3000); });
+          } else if (data.status === "GENERATING" || data.status === "PENDING" || needsGen) {
             pollingRef.current = setTimeout(fetchActivity, 3000);
-          }
-          // DONE but no layouts → was just reset, re-trigger generation
-          if (data.status === "DONE" && data.generatedLayouts?.length === 0 && !generationTriggered.current) {
-            generationTriggered.current = true;
-            fetch("/api/generate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ activityId }),
-            }).then(() => {
-              pollingRef.current = setTimeout(fetchActivity, 3000);
-            });
           }
           // FAILED — stop polling (UI will show error state)
         });
@@ -169,7 +158,7 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
   if (
     activity.status === "GENERATING" ||
     activity.status === "PENDING" ||
-    (activity.status === "DONE" && activity.generatedLayouts?.length === 0)
+    ((activity.generatedLayouts?.length ?? 0) === 0 && activity.status !== "FAILED")
   ) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4 text-gray-500">

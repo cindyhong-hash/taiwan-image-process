@@ -21,7 +21,7 @@ export function BatchDrawer({ items, running, progress, onRun, onClose }: {
     <div className="fixed inset-0 z-50">
       <button aria-label="關閉" onClick={onClose} className="absolute inset-0 cursor-default bg-gray-950/25 backdrop-blur-[1px]" />
       <aside role="dialog" aria-modal="true" className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-white shadow-2xl">
-        <header className="flex items-start justify-between border-b border-gray-100 px-6 py-5">
+        <header className="flex items-start justify-between border-b border-[#ebeff5] px-6 py-5">
           <div>
             <h2 className="text-xl font-bold text-gray-900">批次製作</h2>
             <p className="mt-1 text-xs text-gray-400">已選擇 {items.length} 篇內容{(single > 0 || carousel > 0) && `（${single > 0 ? `${single} 單圖` : ""}${single > 0 && carousel > 0 ? "、" : ""}${carousel > 0 ? `${carousel} 多圖` : ""}）`}</p>
@@ -34,7 +34,7 @@ export function BatchDrawer({ items, running, progress, onRun, onClose }: {
             {items.map((it) => {
               const meta = statusMeta(it.status);
               return (
-                <li key={it.id} className="flex items-center gap-3 rounded-xl border border-gray-100 px-3 py-2.5">
+                <li key={it.id} className="flex items-center gap-3 rounded-xl border border-[#ebeff5] px-3 py-2.5">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-gray-900">{it.topic}</p>
                     <p className="mt-0.5 text-[11px] text-gray-400">{it.campaign?.name ?? "未指定 Campaign"} · {it.format === "CAROUSEL" ? "多圖" : "單圖"}</p>
@@ -48,7 +48,7 @@ export function BatchDrawer({ items, running, progress, onRun, onClose }: {
             })}
           </ul>
 
-          <div className="mt-5 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+          <div className="mt-5 rounded-xl border border-[#ebeff5] bg-gray-50/70 p-4">
             <p className="text-xs font-semibold text-gray-700">AI 將自動帶入</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {AUTOFILL.map((f) => <span key={f} className="rounded-md bg-white px-2 py-1 text-[11px] text-gray-500 shadow-sm">{f}</span>)}
@@ -57,7 +57,7 @@ export function BatchDrawer({ items, running, progress, onRun, onClose }: {
           </div>
         </div>
 
-        <footer className="border-t border-gray-100 px-6 py-4">
+        <footer className="border-t border-[#ebeff5] px-6 py-4">
           <button onClick={onRun} disabled={running || items.length === 0} className="flex w-full items-center justify-center gap-1.5 rounded-full bg-violet-600 py-3 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">
             {running ? <><Loader2 className="h-4 w-4 animate-spin" />生成中 {progress.done}/{progress.total}{progress.failed > 0 && <span className="text-red-200">（{progress.failed} 失敗）</span>}</> : <><Sparkles className="h-4 w-4" />開始製作 {items.length} 篇</>}
           </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Calendar, Check, CheckSquare, Loader2, MoreHorizontal, Send, Sparkles, Square } from "lucide-react";
+import { Calendar, Check, CheckSquare, ImageOff, Loader2, MoreHorizontal, Send, Sparkles, Square } from "lucide-react";
 import { CONTENT_TYPE_META, type ContentType } from "@/lib/marketing-planner";
 import { STATUS_BUCKETS, statusMeta } from "@/lib/planner/status";
 
@@ -38,9 +38,9 @@ export function ProductionListView({ items, batchIds, onToggleBatch, onStartBatc
   const selectedCount = items.filter((it) => batchIds.has(it.id) && isBatchable(it.status)).length;
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white">
+    <div className="rounded-2xl border border-[#ebeff5] bg-white">
       {/* Header + 狀態摘要 */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ebeff5] px-5 py-4">
         <div>
           <h2 className="text-sm font-semibold text-gray-900">製作清單</h2>
           <p className="mt-0.5 text-xs text-gray-400">本月共 {items.length} 篇內容</p>
@@ -52,12 +52,12 @@ export function ProductionListView({ items, batchIds, onToggleBatch, onStartBatc
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-gray-100 px-5 py-3">
-        <button onClick={() => setFilter(null)} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === null ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>全部 {items.length}</button>
+      <div className="flex flex-wrap gap-2 border-b border-[#ebeff5] px-5 py-3">
+        <button onClick={() => setFilter(null)} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === null ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>全部 {items.length}</button>
         {STATUS_BUCKETS.map((b) => {
           const n = items.filter((it) => b.match(it.status)).length;
           return (
-            <button key={b.key} onClick={() => setFilter(filter === b.key ? null : b.key)} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${filter === b.key ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+            <button key={b.key} onClick={() => setFilter(filter === b.key ? null : b.key)} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${filter === b.key ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${b.dot}`} />{b.label} {n}
             </button>
           );
@@ -68,14 +68,14 @@ export function ProductionListView({ items, batchIds, onToggleBatch, onStartBatc
       {shown.length === 0 ? (
         <div className="px-5 py-12 text-center text-sm text-gray-400">這個篩選沒有內容。</div>
       ) : (
-        <ul className="divide-y divide-gray-50">
+        <ul className="divide-y divide-[#ebeff5]">
           {shown.map((it) => {
             const type = (it.contentType in CONTENT_TYPE_META ? it.contentType : "BRAND") as ContentType;
             const meta = statusMeta(it.status);
             const batchable = isBatchable(it.status);
             const selected = batchIds.has(it.id);
             return (
-              <li key={it.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/60">
+              <li key={it.id} className="flex items-center gap-3 px-5 py-3 hover:bg-violet-50/40">
                 <button aria-label="選取" onClick={() => batchable && onToggleBatch(it.id)} disabled={!batchable} className={batchable ? "text-violet-600" : "cursor-default text-gray-200"}>
                   {batchable && selected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
                 </button>
@@ -83,7 +83,7 @@ export function ProductionListView({ items, batchIds, onToggleBatch, onStartBatc
                 {it.previewImageUrl
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={it.previewImageUrl} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
-                  : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[10px] text-gray-300">無圖</span>}
+                  : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gray-50 text-gray-300"><ImageOff className="h-4 w-4" /></span>}
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-gray-900">{it.topic}</p>
@@ -109,7 +109,7 @@ export function ProductionListView({ items, batchIds, onToggleBatch, onStartBatc
                       {menuId === it.id && (
                         <>
                           <button aria-label="關閉" className="fixed inset-0 z-10 cursor-default" onClick={() => setMenuId("")} />
-                          <div className="absolute right-0 top-9 z-20 w-36 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                          <div className="absolute right-0 top-9 z-20 w-36 overflow-hidden rounded-lg border border-[#ebeff5] bg-white py-1 shadow-lg">
                             {it.status === "NEEDS_REVIEW" && <button onClick={() => { setMenuId(""); onApprove(it.id); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"><Check className="h-3.5 w-3.5 text-emerald-600" />核准完成</button>}
                             {it.status === "APPROVED" && <button onClick={() => { setMenuId(""); onSchedulePublish(it.id); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"><Send className="h-3.5 w-3.5 text-violet-600" />排程發布</button>}
                           </div>
@@ -128,12 +128,12 @@ export function ProductionListView({ items, batchIds, onToggleBatch, onStartBatc
 }
 
 function rowAction(it: ListItem, h: { onStartMaking: (id: string) => void; onView: (id: string) => void; startingId: string | null }) {
-  const base = "rounded-lg px-3 py-1.5 text-xs font-medium";
+  const base = "rounded-md px-3 py-1.5 text-xs font-medium";
   if (it.status === "PLANNING" || it.status === "DRAFT")
     return <button onClick={() => h.onStartMaking(it.id)} disabled={h.startingId === it.id} className={`${base} bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50`}>{h.startingId === it.id ? "製作中…" : "開始製作"}</button>;
   if (it.status === "GENERATING")
-    return <button onClick={() => it.generatedActivityId && h.onView(it.id)} disabled={!it.generatedActivityId} className={`${base} border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50`}>查看進度</button>;
+    return <button onClick={() => it.generatedActivityId && h.onView(it.id)} disabled={!it.generatedActivityId} className={`${base} border border-[#ebeff5] text-gray-600 hover:bg-gray-50 disabled:opacity-50`}>查看進度</button>;
   if (it.status === "NEEDS_REVIEW")
     return <button onClick={() => h.onView(it.id)} className={`${base} bg-violet-600 text-white hover:bg-violet-700`}>查看結果</button>;
-  return <button onClick={() => h.onView(it.id)} className={`${base} border border-gray-200 text-gray-600 hover:bg-gray-50`}>查看</button>;
+  return <button onClick={() => h.onView(it.id)} className={`${base} border border-[#ebeff5] text-gray-600 hover:bg-gray-50`}>查看</button>;
 }
