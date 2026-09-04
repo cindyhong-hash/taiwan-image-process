@@ -13,6 +13,7 @@ export type CreativeBriefInput = {
   industry?: string | null;
   platforms: string[];
   productDesc?: string | null;   // 由產品實圖分析出的客觀描述（Claude Vision），防止畫面誤解產品類型
+  toneLabels?: string[];         // 品牌語氣：讓圖上主標/副標貼品牌口吻、平台原生
 };
 
 function parse(text: string | null): unknown {
@@ -35,6 +36,7 @@ export async function generateCreativeBrief(input: CreativeBriefInput): Promise<
     input.campaignName && `Campaign：${input.campaignName}${input.campaignDescription.trim() ? `（${input.campaignDescription.trim()}）` : ""}`,
     input.productLabels.length && `關聯產品：${input.productLabels.join("、")}`,
     input.productDesc?.trim() && `產品實圖分析（客觀事實，畫面務必符合）：${input.productDesc.trim()}`,
+    input.toneLabels?.length && `品牌語氣：${input.toneLabels.join("、")}`,
     input.platforms.length && `平台：${input.platforms.join("、")}`,
   ].filter(Boolean).join("\n");
 
@@ -42,7 +44,7 @@ export async function generateCreativeBrief(input: CreativeBriefInput): Promise<
     ? `{"headline":"封面主標(≤14字)","subtitle":"封面副標(≤24字,可空)","slides":[{"text":"這頁圖上文字(短)","visual":"這頁畫面描述:主體/構圖/氛圍"}]} 。slides 給 3-5 頁,第一頁為封面。`
     : `{"headline":"圖上主標(≤14字)","subtitle":"圖上副標(≤24字,可空)","visual":"畫面描述:場景/主體/構圖/氛圍,一段話"}`;
 
-  const prompt = `你是台灣社群視覺企劃。根據以下資訊，為「一則${input.format === "CAROUSEL" ? "多圖(Carousel)" : "單圖"}貼文」規劃內容，讓設計師可直接製圖。\n${facts}\n\n規則：畫面描述要具體、扣住實際產品與主題；若有「產品實圖分析」，畫面中的產品外觀與用途一律以它為準，不可自行改成別種類別的物品或情境（例如產品是刀具就別畫成料理食材、是保養品就別畫成食物）；不得虛構未提供的產品功能，資訊不足就寫品牌通用畫面；文字精簡、繁體中文。\n只回傳 JSON：${shape}`;
+  const prompt = `你是台灣社群視覺企劃。根據以下資訊，為「一則${input.format === "CAROUSEL" ? "多圖(Carousel)" : "單圖"}貼文」規劃內容，讓設計師可直接製圖。\n${facts}\n\n規則：畫面描述要具體、扣住實際產品與主題；若有「產品實圖分析」，畫面中的產品外觀與用途一律以它為準，不可自行改成別種類別的物品或情境（例如產品是刀具就別畫成料理食材、是保養品就別畫成食物）；不得虛構未提供的產品功能，資訊不足就寫品牌通用畫面；圖上主標/副標要像社群小編寫的、口語勾人、貼品牌語氣，避免生硬行銷腔；文字精簡、繁體中文。\n只回傳 JSON：${shape}`;
 
   const parsed = parse(await chatTextOpenRouter(prompt, 900));
   if (!parsed || typeof parsed !== "object") return {};

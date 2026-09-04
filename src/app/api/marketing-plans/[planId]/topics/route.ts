@@ -25,7 +25,7 @@ function fallbackTopics(plan: { totalPostCount: number; platforms: string; goals
     const campaignId = campaignQueue[i] ?? campaigns[i % Math.max(1, campaigns.length)]?.id;
     const campaign = campaigns.find((c) => c.id === campaignId);
     const topicTemplates = hasProducts ? templates[type] : NO_PRODUCT_TOPIC_TEMPLATES[type];
-    return { campaignId, contentType: type, topic: `${campaign?.name ?? "本月企劃"}｜${topicTemplates[i % topicTemplates.length]}`, contentDirection: `以清楚、符合品牌調性的方式切入，聚焦「${parseJsonArray(plan.goals).join("、") || "品牌溝通"}」。`, format: i % 3 === 1 ? "CAROUSEL" : "SINGLE", platforms: parseJsonArray(plan.platforms), recommendationReason: `符合本月「${CONTENT_TYPE_META[type].label}」內容節奏`, sourceSignals: [] };
+    return { campaignId, contentType: type, topic: `${campaign?.name ?? "本月企劃"}｜${topicTemplates[i % topicTemplates.length]}`, contentDirection: `讓受眾記住品牌在「${parseJsonArray(plan.goals).join("、") || "品牌溝通"}」上的價值。`, format: i % 3 === 1 ? "CAROUSEL" : "SINGLE", platforms: parseJsonArray(plan.platforms), recommendationReason: `符合本月「${CONTENT_TYPE_META[type].label}」內容節奏`, sourceSignals: [] };
   });
 }
 
@@ -77,7 +77,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pla
 
   // 只產生「需要補的」targetNew 篇；kept（已製作）保留不動
   const generateNew = async () => {
-    const prompt = `你是台灣社群內容企劃。產生 ${targetNew} 個不重複貼文 Topics。\n本次可依據的品牌與產品事實：${JSON.stringify(plannerContext)}\n月目標：${parseJsonArray(plan.goals).join("、")}\n內容分配：${JSON.stringify(strategy)}${signalsBlock}${keptBlock}\n請嚴格遵守 groundingRules。只回傳 JSON array，每項：{"campaignId":"必須使用原 ID","contentType":"BRAND|EDUCATION|PRODUCT|ENGAGEMENT|PROMOTION","topic":"吸引人的繁中標題","contentDirection":"一句具體內容方向","format":"SINGLE|CAROUSEL","platforms":${JSON.stringify(parseJsonArray(plan.platforms))},"recommendationReason":"一句推薦理由","sourceSignals":[]}。`;
+    const toneList = parseJsonArray(plan.client.toneLabels);
+    const toneLine = toneList.length ? `\n品牌語氣：${toneList.join("、")}（標題與溝通點都要貼這個語氣）` : "";
+    const prompt = `你是台灣社群內容企劃。產生 ${targetNew} 個不重複貼文 Topics。\n本次可依據的品牌與產品事實：${JSON.stringify(plannerContext)}\n月目標：${parseJsonArray(plan.goals).join("、")}\n內容分配：${JSON.stringify(strategy)}${toneLine}${signalsBlock}${keptBlock}\n請嚴格遵守 groundingRules。\n標題(topic)要像社群小編寫的：口語、平台原生、一看就想點，可用最多 1 個 emoji 或在地流行語，避免官腔與生硬行銷腔。\ncontentDirection 是「溝通點」：用一句話說這篇最想讓受眾記住或相信的一件事，要具體、扣住實際產品賣點，不是空泛的內容方向。\n只回傳 JSON array，每項：{"campaignId":"必須使用原 ID","contentType":"BRAND|EDUCATION|PRODUCT|ENGAGEMENT|PROMOTION","topic":"口語勾人的繁中標題","contentDirection":"一句溝通點","format":"SINGLE|CAROUSEL","platforms":${JSON.stringify(parseJsonArray(plan.platforms))},"recommendationReason":"一句推薦理由","sourceSignals":[]}。`;
     let drafts = extractArray(await chatTextOpenRouter(prompt, 4000));
     const fallback = fallbackAll.slice(0, targetNew);
     if (drafts.length !== targetNew) drafts = fallback;

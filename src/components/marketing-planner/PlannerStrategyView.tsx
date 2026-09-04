@@ -158,8 +158,11 @@ export function PlannerStrategyView({ planId, clientId, total, campaigns, hasPro
                       <div className="min-w-0 flex-1">
                         <input value={item.topic} onChange={(e) => updateTopic(item.id, { topic: e.target.value })} onBlur={() => saveText(item)}
                           className="w-full border-0 p-0 text-sm font-semibold text-gray-900 focus:ring-0" />
-                        <input value={item.contentDirection} onChange={(e) => updateTopic(item.id, { contentDirection: e.target.value })} onBlur={() => saveText(item)}
-                          className="mt-1 w-full border-0 p-0 text-xs text-gray-400 focus:ring-0" placeholder="內容方向" />
+                        <div className="mt-1 flex items-baseline gap-1.5">
+                          <span className="shrink-0 text-[11px] font-medium text-violet-600">溝通點</span>
+                          <input value={item.contentDirection} onChange={(e) => updateTopic(item.id, { contentDirection: e.target.value })} onBlur={() => saveText(item)}
+                            className="w-full border-0 p-0 text-xs text-gray-500 focus:ring-0" placeholder="這篇最想讓受眾記住的一件事" />
+                        </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <select value={item.contentType} onChange={(e) => updateTopic(item.id, { contentType: e.target.value }, true)} className="rounded-md border border-gray-200 px-2 py-1 text-[11px]">
                             {CONTENT_TYPES.map((t) => <option key={t} value={t}>{CONTENT_TYPE_META[t].label}</option>)}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarRange, CheckSquare, ChevronLeft, ChevronRight, GripVertical, Loader2, Sparkles, Square, X } from "lucide-react";
+import { CalendarRange, CheckSquare, ChevronLeft, ChevronRight, Download, GripVertical, Loader2, Sparkles, Square, X } from "lucide-react";
 import { CONTENT_TYPE_META, type ContentType } from "@/lib/marketing-planner";
 import { assignInitialSchedule, calendarDays, dateKey } from "@/lib/planner/calendar";
 import { ContentBriefDrawer } from "@/components/marketing-planner/ContentBriefDrawer";
@@ -207,6 +207,7 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
         <div className="flex items-center gap-4 text-xs text-gray-500">
           {Object.entries(STATUS_STYLES).filter(([key]) => ["PLANNING", "GENERATING", "NEEDS_REVIEW", "APPROVED"].includes(key)).map(([key, value]) => <span key={key} className="flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${value.dot}`} />{value.label}</span>)}
           {saving && <span className="flex items-center gap-1 text-violet-600"><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中</span>}
+          {!batchMode && topics.length > 0 && <button onClick={() => router.push(`/clients/${clientId}/marketing-plans/${planId}/export`)} className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"><Download className="h-3.5 w-3.5" />匯出排程</button>}
           {!batchMode && topics.length > 0 && <button onClick={() => setBatchMode(true)} className="flex items-center gap-1.5 rounded-lg border border-violet-200 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50"><Sparkles className="h-3.5 w-3.5" />批次製作</button>}
         </div>
       </header>

@@ -11,7 +11,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
     const item = await db.contentPlanItem.findUnique({
       where: { id: itemId },
       include: {
-        monthlyPlan: { select: { clientId: true, client: { select: { name: true, description: true, industry: true } } } },
+        monthlyPlan: { select: { clientId: true, client: { select: { name: true, description: true, industry: true, toneLabels: true } } } },
         campaign: { include: { products: true } },
         generatedActivity: { select: { id: true } },
       },
@@ -55,6 +55,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
       industry: item.monthlyPlan.client.industry,
       platforms: brief.platforms,
       productDesc,
+      toneLabels: parseJsonArray(item.monthlyPlan.client.toneLabels),
     }).catch(() => ({}));
 
     const activity = await db.activity.create({
