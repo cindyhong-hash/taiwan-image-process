@@ -6,7 +6,8 @@ import {
   requestImageSetRegeneration,
 } from "@/lib/products/image-set-orchestrator";
 
-export const maxDuration = 800;
+// Vercel Hobby 硬上限 300s；設 290（單張重生，遠低於上限，足夠）。
+export const maxDuration = 290;
 
 /** Re-runs only one saved product image-set role; sibling assets are never touched. */
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {

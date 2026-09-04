@@ -262,7 +262,7 @@ test("treats an unavailable optional batch hero anchor as non-fatal", async () =
 });
 
 test("deadline marks unfinished rows failed and late completion cannot overwrite them", async () => {
-  assert.equal(IMAGE_SET_BATCH_DEADLINE_MS, 780_000);
+  assert.equal(IMAGE_SET_BATCH_DEADLINE_MS, 270_000);
   const batch = input();
   batch.rows = [batch.rows[0], batch.rows[1]];
   let release!: () => void;
@@ -291,7 +291,7 @@ test("deadline marks unfinished rows failed and late completion cannot overwrite
       transitions.push(`deadline:${rows.map((row) => row.errorMessage).join("|")}`);
     },
     setDeadlineTimer: (callback, delayMs) => {
-      assert.equal(delayMs, 780_000);
+      assert.equal(delayMs, 270_000);
       fireDeadline = () => {
         currentTime += delayMs;
         callback();
@@ -313,11 +313,11 @@ test("deadline marks unfinished rows failed and late completion cannot overwrite
   assert.ok(!transitions.includes("row-hero:DONE"));
 });
 
-test("batch and retry routes reserve 800 seconds for the 780-second internal cleanup deadline", async () => {
+test("batch and retry routes stay within the Vercel Hobby 300s cap (290s) for the 270s internal cleanup deadline", async () => {
   const batchRoute = await readFile(new URL("../../app/api/products/[productId]/image-set/route.ts", import.meta.url), "utf8");
   const retryRoute = await readFile(new URL("../../app/api/library/images/[id]/regenerate/route.ts", import.meta.url), "utf8");
-  assert.match(batchRoute, /export const maxDuration = 800/);
-  assert.match(retryRoute, /export const maxDuration = 800/);
+  assert.match(batchRoute, /export const maxDuration = 290/);
+  assert.match(retryRoute, /export const maxDuration = 290/);
 });
 
 function storedProduct() {

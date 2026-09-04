@@ -6,7 +6,10 @@ import {
   runImageSetBatch,
 } from "@/lib/products/image-set-orchestrator";
 
-export const maxDuration = 800;
+// Vercel Hobby 方案函式硬上限 300s；設 290 留 buffer。orchestrator 內部 deadline（270s）
+// 會在被平台砍之前先把未完成的列標成 FAILED，避免留下卡在「生成中」的孤兒列。
+// 若日後升級 Pro/Enterprise（Fluid Compute）可調回較高值，並同步放寬 IMAGE_SET_BATCH_DEADLINE_MS。
+export const maxDuration = 290;
 export const dynamic = "force-dynamic";
 
 // GET is intentionally read-only: the modal decides when it wants the paid analysis endpoint.

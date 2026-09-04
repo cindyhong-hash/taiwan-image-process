@@ -41,7 +41,10 @@ export type ImageSetClient = {
 
 export type ImageSetRow = { id: string; role: ImageSetRoleSpec };
 export type ImageSetRowStatus = "PENDING" | "GENERATING" | "DONE" | "FAILED";
-export const IMAGE_SET_BATCH_DEADLINE_MS = 780_000;
+// 對齊 Vercel Hobby 300s 硬上限：route maxDuration=290，內部 deadline 設 270s，
+// 讓 orchestrator 在函式被平台砍之前先把未完成的列標 FAILED（不留孤兒列）。
+// 升級 Pro/Enterprise 後可連同 route maxDuration 一起調高。
+export const IMAGE_SET_BATCH_DEADLINE_MS = 270_000;
 
 type ImageSetRowMutation = {
   status?: ImageSetRowStatus;
