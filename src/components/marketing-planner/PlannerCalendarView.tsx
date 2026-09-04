@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarRange, CheckSquare, ChevronLeft, ChevronRight, Download, GripVertical, Loader2, Sparkles, Square, X } from "lucide-react";
+import { CalendarDays, CalendarRange, CheckSquare, ChevronLeft, ChevronRight, Download, GripVertical, LayoutList, Loader2, Sparkles, Square, X } from "lucide-react";
 import { CONTENT_TYPE_META, type ContentType } from "@/lib/marketing-planner";
 import { assignInitialSchedule, calendarDays, dateKey } from "@/lib/planner/calendar";
+import { statusMeta, STATUS_BUCKETS } from "@/lib/planner/status";
 import { ContentBriefDrawer } from "@/components/marketing-planner/ContentBriefDrawer";
-import type { BriefCampaign, BriefSignal } from "@/lib/planner/content-brief";
+import { ProductionListView } from "@/components/marketing-planner/ProductionListView";
+import { plannerActivityDestination, type BriefCampaign, type BriefSignal } from "@/lib/planner/content-brief";
 
 type Topic = {
   id: string;
@@ -33,14 +35,6 @@ const TYPE_STYLES: Record<ContentType, string> = {
   ENGAGEMENT: "border-l-violet-400",
   PROMOTION: "border-l-emerald-400",
 };
-const STATUS_STYLES: Record<string, { label: string; dot: string }> = {
-  PLANNING: { label: "尚未製作", dot: "bg-gray-300" },
-  DRAFT: { label: "草稿", dot: "bg-amber-400" },
-  GENERATING: { label: "製作中", dot: "bg-amber-400" },
-  NEEDS_REVIEW: { label: "待審核", dot: "bg-orange-500" },
-  APPROVED: { label: "已完成", dot: "bg-emerald-500" },
-};
-
 export function PlannerCalendarView({ planId, clientId, year, month, initialTopics, campaigns }: { planId: string; clientId: string; year: number; month: number; initialTopics: Topic[]; campaigns: BriefCampaign[] }) {
   const router = useRouter();
   const [topics, setTopics] = useState(initialTopics);
@@ -54,6 +48,8 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0, failed: 0 });
   const [switching, setSwitching] = useState(false);
+  const [view, setView] = useState<"calendar" | "list">("calendar");
+  const [startingId, setStartingId] = useState<string | null>(null);
   const initialized = useRef(false);
   const days = useMemo(() => calendarDays(year, month), [year, month]);
   const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
@@ -142,9 +138,35 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
     setBatchRunning(false); setBatchMode(false); setBatchIds(new Set());
   };
 
+  // 製作清單 actions（沿用既有 API，不新建流程）
+  const startMaking = async (id: string) => {
+    setStartingId(id); setError("");
+    try {
+      const res = await fetch(`/api/content-plan-items/${id}/activity`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      const { activityId, format } = await res.json() as { activityId: string; format: string };
+      router.push(plannerActivityDestination(clientId, activityId, format));
+    } catch { setError("目前無法開始製作，請稍後再試。"); setStartingId(null); }
+  };
+  const viewResult = (id: string) => {
+    const item = topics.find((t) => t.id === id);
+    if (item?.generatedActivityId) router.push(`/clients/${clientId}/activities/${item.generatedActivityId}`);
+  };
+  const patchStatus = async (id: string, status: string) => {
+    const prev = topics;
+    setTopics((items) => items.map((t) => t.id === id ? { ...t, status } : t));
+    try {
+      const r = await fetch(`/api/content-plan-items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+      if (!r.ok) throw new Error();
+    } catch { setTopics(prev); setError("狀態更新失敗，請稍後再試。"); }
+  };
+  const approve = (id: string) => patchStatus(id, "APPROVED");
+  const schedulePublish = (id: string) => patchStatus(id, "PUBLISHED");
+  const startBatchFromSelection = () => { setBatchMode(true); setConfirmBatch(true); };
+
   const card = (item: Topic) => {
     const type = (item.contentType in CONTENT_TYPE_META ? item.contentType : "BRAND") as ContentType;
-    const status = STATUS_STYLES[item.status] ?? STATUS_STYLES.PLANNING;
+    const status = statusMeta(item.status);
     if (batchMode) {
       const selectable = isBatchable(item);
       const selected = batchIds.has(item.id);
@@ -205,14 +227,19 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-gray-500">
-          {Object.entries(STATUS_STYLES).filter(([key]) => ["PLANNING", "GENERATING", "NEEDS_REVIEW", "APPROVED"].includes(key)).map(([key, value]) => <span key={key} className="flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${value.dot}`} />{value.label}</span>)}
+          {view === "calendar" && STATUS_BUCKETS.map((b) => <span key={b.key} className="flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${b.dot}`} />{b.label}</span>)}
           {saving && <span className="flex items-center gap-1 text-violet-600"><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中</span>}
           {!batchMode && topics.length > 0 && <button onClick={() => router.push(`/clients/${clientId}/marketing-plans/${planId}/export`)} className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"><Download className="h-3.5 w-3.5" />匯出排程</button>}
           {!batchMode && topics.length > 0 && <button onClick={() => setBatchMode(true)} className="flex items-center gap-1.5 rounded-lg border border-violet-200 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50"><Sparkles className="h-3.5 w-3.5" />批次製作</button>}
         </div>
       </header>
 
-      {batchMode && (
+      <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+        <button onClick={() => setView("calendar")} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${view === "calendar" ? "bg-violet-600 text-white" : "text-gray-500 hover:text-gray-800"}`}><CalendarDays className="h-4 w-4" />日曆</button>
+        <button onClick={() => setView("list")} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${view === "list" ? "bg-violet-600 text-white" : "text-gray-500 hover:text-gray-800"}`}><LayoutList className="h-4 w-4" />製作清單</button>
+      </div>
+
+      {batchMode && view === "calendar" && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50/60 px-4 py-3">
           <p className="text-sm text-violet-900">
             {batchRunning
@@ -230,6 +257,21 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
 
       {error && <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
 
+      {view === "list" && (
+        <ProductionListView
+          items={topics}
+          batchIds={batchIds}
+          onToggleBatch={toggleBatch}
+          onStartBatch={startBatchFromSelection}
+          onStartMaking={startMaking}
+          onView={viewResult}
+          onApprove={approve}
+          onSchedulePublish={schedulePublish}
+          startingId={startingId}
+        />
+      )}
+
+      {view === "calendar" && (
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_240px]">
         <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
           <div className="hidden grid-cols-7 border-b bg-gray-50/70 sm:grid">{WEEKDAYS.map((day) => <div key={day} className="px-3 py-2 text-center text-[11px] font-medium text-gray-400">週{day}</div>)}</div>
@@ -250,6 +292,7 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
           {!unscheduled.length && <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 px-3 py-6 text-center text-xs text-emerald-700">本月 {topics.length} 篇內容皆已排期</div>}
         </aside>
       </div>
+      )}
       {selectedId && topics.find((item) => item.id === selectedId) && <ContentBriefDrawer
         item={topics.find((item) => item.id === selectedId)!}
         campaigns={campaigns}
