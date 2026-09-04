@@ -83,6 +83,8 @@ export interface GeneratedImage {
   buffer: Buffer;
   contentType: string;
   seed: number;
+  /** Concrete model/provider that produced the pixels, when available. */
+  provider?: string;
 }
 
 export interface CompilePromptInput {
@@ -460,6 +462,7 @@ export interface GptCompositeInput {
 export interface GptReferenceGenerationInput {
   prompt: string;
   imageDataUris: string[];
+  batchHeroImageUrl?: string;
   aspectRatio?: string;
   model?: string;
 }
@@ -467,6 +470,7 @@ export interface GptReferenceGenerationInput {
 type GptReferenceGenerationDependencies = {
   apiKey?: string;
   fetchFn?: typeof fetch;
+  timeoutSignal?: (milliseconds: number) => AbortSignal;
 };
 
 /**
@@ -482,7 +486,10 @@ export async function gptImageGenerateWithReferences(
   if (!apiKey) throw new Error("OPENROUTER_API_KEY 未設定，無法用 GPT 多參考圖生成");
 
   const fetchFn = dependencies.fetchFn ?? fetch;
-  const references = [...new Set(input.imageDataUris.filter(Boolean))].slice(0, 5);
+  const references = [...new Set([
+    ...input.imageDataUris,
+    input.batchHeroImageUrl,
+  ].filter((url): url is string => Boolean(url)))].slice(0, 5);
   if (!references.length) throw new Error("GPT 多參考圖生成缺少商品參考圖");
 
   const instruction = [
@@ -509,9 +516,10 @@ export async function gptImageGenerateWithReferences(
       body: JSON.stringify({
         model: input.model ?? OPENROUTER_IMAGE_MODEL,
         modalities: ["image", "text"],
+        image_config: { aspect_ratio: input.aspectRatio || "1:1", quality: "high" },
         messages: [{ role: "user", content }],
       }),
-      signal: AbortSignal.timeout(90_000),
+      signal: (dependencies.timeoutSignal ?? AbortSignal.timeout)(90_000),
     });
   } catch (error) {
     const reason = error instanceof DOMException && error.name === "TimeoutError" ? "逾時" : "連線失敗";
@@ -551,6 +559,87 @@ export async function gptImageGenerateWithReferences(
     buffer: Buffer.from(await imageResponse.arrayBuffer()),
     contentType: imageResponse.headers.get("content-type") ?? "image/png",
     seed: 0,
+  };
+}
+
+export interface FalReferenceGenerationInput {
+  prompt: string;
+  imageDataUris: string[];
+  batchHeroImageUrl?: string;
+  aspectRatio?: string;
+  provider: "seedream" | "flux";
+}
+
+type FalReferenceGenerationDependencies = {
+  apiKey?: string;
+  fetchFn?: typeof fetch;
+};
+
+/**
+ * FAL edit adapter for multiple identity views of one product plus an optional
+ * already-generated batch hero used only as a visual consistency anchor.
+ */
+export async function falImageGenerateWithReferences(
+  input: FalReferenceGenerationInput,
+  dependencies: FalReferenceGenerationDependencies = {},
+): Promise<GeneratedImage> {
+  const apiKey = dependencies.apiKey ?? FAL_KEY;
+  if (!apiKey) throw new Error("FAL_KEY 未設定，無法用多參考圖生成");
+  const fetchFn = dependencies.fetchFn ?? fetch;
+  const uniqueProductViews = [...new Set(input.imageDataUris.filter(Boolean))];
+  if (!uniqueProductViews.length) throw new Error("FAL 多參考圖生成缺少商品參考圖");
+
+  const batchHero = input.batchHeroImageUrl && !uniqueProductViews.includes(input.batchHeroImageUrl)
+    ? input.batchHeroImageUrl
+    : undefined;
+  const productViews = uniqueProductViews.slice(0, batchHero ? 4 : 5);
+  const imageUrls = [...productViews, ...(batchHero ? [batchHero] : [])];
+  const model = input.provider === "seedream" ? FAL_SEEDREAM_EDIT_MODEL : FAL_FLUX2_EDIT_MODEL;
+  const prompt = [
+    `The first ${productViews.length} reference image(s) are different views of the same single product.`,
+    "Use them together only to preserve that one product's exact identity, shape, proportions, colors, materials, controls, label text and logo.",
+    "Generate exactly one instance of the product. Never merge, duplicate, arrange copies, or invent product details.",
+    batchHero
+      ? "The LAST image is a visual consistency anchor from this batch: match its lighting, palette, camera language and art direction, but do not copy or add the product depicted in that anchor."
+      : "",
+    input.prompt.trim(),
+  ].filter(Boolean).join(" ");
+
+  let response: Response;
+  try {
+    response = await fetchFn(`https://fal.run/${model}`, {
+      method: "POST",
+      headers: { Authorization: `Key ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        image_urls: imageUrls,
+        image_size: input.aspectRatio === "3:2" ? "landscape_4_3" : "square_hd",
+      }),
+      signal: AbortSignal.timeout(input.provider === "seedream" ? 180_000 : 120_000),
+    });
+  } catch {
+    throw new Error(`${input.provider === "seedream" ? "Seedream" : "FLUX.2"} 多參考圖連線失敗`);
+  }
+  if (!response.ok) {
+    throw new Error(`${input.provider === "seedream" ? "Seedream" : "FLUX.2"} 多參考圖錯誤 HTTP ${response.status}`);
+  }
+
+  let imageUrl: string | undefined;
+  try {
+    const data = await response.json();
+    imageUrl = data.images?.[0]?.url ?? data.image?.url;
+  } catch {
+    throw new Error("FAL 多參考圖回應格式錯誤");
+  }
+  if (!imageUrl) throw new Error("FAL 多參考圖回應無圖片 URL");
+
+  const imageResponse = await fetchFn(imageUrl, { signal: AbortSignal.timeout(60_000) });
+  if (!imageResponse.ok) throw new Error(`FAL 多參考圖圖片下載失敗 HTTP ${imageResponse.status}`);
+  return {
+    buffer: Buffer.from(await imageResponse.arrayBuffer()),
+    contentType: imageResponse.headers.get("content-type") ?? "image/png",
+    seed: 0,
+    provider: model,
   };
 }
 
@@ -943,7 +1032,7 @@ async function falAiImage(input: GenerateImageInput, seed: number): Promise<Gene
   const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(60_000) });
   if (!imgRes.ok) throw new Error(`fal.ai 圖片下載失敗：${imgRes.status}`);
   const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
-  return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed };
+  return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed, provider: "fal-ai/flux/schnell" };
 }
 
 /** Map a w×h target to fal's image_size enum (shared by FLUX.2 pro / Recraft). */
@@ -954,11 +1043,11 @@ function falImageSize(input: GenerateImageInput): string {
 }
 
 /** Download a fal result image URL into a GeneratedImage buffer. */
-async function falFetchImage(url: string, seed: number): Promise<GeneratedImage> {
+async function falFetchImage(url: string, seed: number, provider: string): Promise<GeneratedImage> {
   const imgRes = await fetch(url, { signal: AbortSignal.timeout(60_000) });
   if (!imgRes.ok) throw new Error(`fal 圖片下載失敗：${imgRes.status}`);
   const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
-  return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed };
+  return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed, provider };
 }
 
 /** 真人寫實 text→image：FLUX.2 [pro]（fal-ai/flux-2-pro）。 */
@@ -983,7 +1072,7 @@ async function falFlux2Pro(input: GenerateImageInput, seed: number): Promise<Gen
   const data = await res.json();
   const url = data.images?.[0]?.url;
   if (!url) throw new Error("FLUX.2 pro 回應無圖片 URL");
-  return falFetchImage(url, seed);
+  return falFetchImage(url, seed, FAL_FLUX2_MODEL);
 }
 
 /** 2D 插畫 text→image：Recraft V3（style 預設 digital_illustration）。 */
@@ -1006,7 +1095,7 @@ async function falRecraft(input: GenerateImageInput, seed: number): Promise<Gene
   const data = await res.json();
   const url = data.images?.[0]?.url;
   if (!url) throw new Error("Recraft V3 回應無圖片 URL");
-  return falFetchImage(url, seed);
+  return falFetchImage(url, seed, FAL_RECRAFT_MODEL);
 }
 
 async function pollinationsImage(input: GenerateImageInput, seed: number): Promise<GeneratedImage> {
@@ -1028,7 +1117,7 @@ async function pollinationsImage(input: GenerateImageInput, seed: number): Promi
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(60_000) });
     const contentType = res.headers.get("content-type") ?? "";
     if (res.ok && contentType.startsWith("image/")) {
-      return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed };
+      return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed, provider: `pollinations:${model}` };
     }
     lastErr = `${res.status} ${(await res.text().catch(() => "")).slice(0, 120)}`;
     if (res.status === 402 || res.status === 401) break; // hard gate — retry won't help
@@ -1055,7 +1144,7 @@ async function huggingFaceImage(input: GenerateImageInput, seed: number): Promis
     });
     const contentType = res.headers.get("content-type") ?? "";
     if (res.ok && contentType.startsWith("image/")) {
-      return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed };
+      return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed, provider: `huggingface:${HF_IMAGE_MODEL}` };
     }
     lastErr = `${res.status} ${(await res.text().catch(() => "")).slice(0, 160)}`;
     if (res.status !== 503) break; // only cold-start (503) is worth retrying
@@ -1076,11 +1165,11 @@ async function generateImageN8n(input: GenerateImageInput): Promise<GeneratedIma
   const contentType = res.headers.get("content-type") ?? "";
   // Webhook may return raw image bytes, or JSON with {imageUrl} / {imageBase64}.
   if (contentType.startsWith("image/")) {
-    return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed };
+    return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed, provider: "n8n" };
   }
   const data = await res.json();
   if (data.imageBase64) {
-    return { buffer: Buffer.from(data.imageBase64, "base64"), contentType: data.contentType ?? "image/png", seed };
+    return { buffer: Buffer.from(data.imageBase64, "base64"), contentType: data.contentType ?? "image/png", seed, provider: "n8n" };
   }
   if (data.imageUrl) {
     const imgRes = await fetch(data.imageUrl, { signal: AbortSignal.timeout(60_000) });
@@ -1088,6 +1177,7 @@ async function generateImageN8n(input: GenerateImageInput): Promise<GeneratedIma
       buffer: Buffer.from(await imgRes.arrayBuffer()),
       contentType: imgRes.headers.get("content-type") ?? "image/png",
       seed,
+      provider: "n8n",
     };
   }
   throw new Error("n8n image webhook 回應缺少 imageUrl / imageBase64");

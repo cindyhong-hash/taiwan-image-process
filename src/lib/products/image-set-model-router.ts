@@ -1,7 +1,6 @@
 import {
-  falFlux2Edit,
+  falImageGenerateWithReferences,
   falRemoveBg,
-  falSeedreamEdit,
   generateImage,
   gptImageGenerateWithReferences,
 } from "../generate.ts";
@@ -10,11 +9,13 @@ import type { ImageSetRole } from "./image-set-roles.ts";
 export type ProviderImage = {
   buffer: Buffer;
   contentType: string;
+  provider?: string;
 };
 
 export type ReferenceGenerationInput = {
   prompt: string;
   imageDataUris: string[];
+  batchHeroImageUrl?: string;
   aspectRatio?: string;
 };
 
@@ -28,7 +29,7 @@ export type ImageSetRoleGenerationInput = {
 };
 
 export type ImageSetRoleGenerationOutput = ProviderImage & {
-  provider: "gpt" | "seedream" | "flux" | "text" | "text+rembg";
+  provider: string;
 };
 
 export type ImageSetRoleProviders = {
@@ -39,30 +40,36 @@ export type ImageSetRoleProviders = {
   removeBg: (imageDataUri: string) => Promise<Buffer>;
 };
 
-function collectReferences(input: ImageSetRoleGenerationInput): string[] {
-  const protectedReferences = [...new Set([
-    input.batchHeroImageUrl,
-    input.heroImageUrl,
-  ].filter((url): url is string => Boolean(url)))].slice(-2);
+function collectReferences(input: ImageSetRoleGenerationInput): Pick<ReferenceGenerationInput, "imageDataUris" | "batchHeroImageUrl"> {
+  const hero = input.heroImageUrl || undefined;
+  const batchHero = input.batchHeroImageUrl && input.batchHeroImageUrl !== hero
+    ? input.batchHeroImageUrl
+    : undefined;
   const rawReferences = [...new Set((input.rawImageUrls ?? []).filter(Boolean))]
-    .filter((url) => !protectedReferences.includes(url));
-  return [
-    ...rawReferences.slice(0, Math.max(0, 5 - protectedReferences.length)),
-    ...protectedReferences,
+    .filter((url) => url !== hero && url !== batchHero);
+  const productLimit = batchHero ? 4 : 5;
+  const productReferences = [
+    ...rawReferences.slice(0, Math.max(0, productLimit - (hero ? 1 : 0))),
+    ...(hero ? [hero] : []),
   ];
+  return { imageDataUris: productReferences, ...(batchHero ? { batchHeroImageUrl: batchHero } : {}) };
 }
 
 const defaultProviders: ImageSetRoleProviders = {
   gpt: gptImageGenerateWithReferences,
-  seedream: (input) => falSeedreamEdit({
-    productDataUris: input.imageDataUris,
-    sceneDescription: input.prompt,
+  seedream: (input) => falImageGenerateWithReferences({
+    prompt: input.prompt,
+    imageDataUris: input.imageDataUris,
+    batchHeroImageUrl: input.batchHeroImageUrl,
     aspectRatio: input.aspectRatio,
+    provider: "seedream",
   }),
-  fluxEdit: (input) => falFlux2Edit({
-    productDataUris: input.imageDataUris,
-    sceneDescription: input.prompt,
+  fluxEdit: (input) => falImageGenerateWithReferences({
+    prompt: input.prompt,
+    imageDataUris: input.imageDataUris,
+    batchHeroImageUrl: input.batchHeroImageUrl,
     aspectRatio: input.aspectRatio,
+    provider: "flux",
   }),
   textImage: (input) => generateImage({
     prompt: input.prompt,
@@ -89,20 +96,24 @@ export async function generateImageSetRole(
 
   if (input.role === "background") {
     const generated = await providers.textImage(base);
-    return { ...generated, provider: "text" };
+    return { ...generated, provider: generated.provider ?? "text:unreported" };
   }
 
   if (input.role === "decoration") {
     const generated = await providers.textImage(base);
     try {
       const buffer = await providers.removeBg(imageToDataUri(generated));
-      return { buffer, contentType: "image/png", provider: "text+rembg" };
+      return {
+        buffer,
+        contentType: "image/png",
+        provider: `${generated.provider ?? "text:unreported"}+rembg`,
+      };
     } catch {
       throw new Error("裝飾元素去背失敗，請單獨重試");
     }
   }
 
-  const referenceInput = { ...base, imageDataUris: collectReferences(input) };
+  const referenceInput = { ...base, ...collectReferences(input) };
   if (!referenceInput.imageDataUris.length) {
     throw new Error(`${input.role} 生成失敗：缺少商品參考圖`);
   }

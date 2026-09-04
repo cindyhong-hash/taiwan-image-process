@@ -6,9 +6,10 @@ import {
   type ImageSetRoleProviders,
 } from "./image-set-model-router.ts";
 
-const image = (provider: string) => ({
-  buffer: Buffer.from(provider),
+const image = (value: string, provider?: string) => ({
+  buffer: Buffer.from(value),
   contentType: "image/png",
+  ...(provider ? { provider } : {}),
 });
 
 const productInput: ImageSetRoleGenerationInput = {
@@ -65,6 +66,24 @@ test("product roles cap and deduplicate references while retaining the hero", as
   assert.equal(new Set(references).size, references.length);
 });
 
+test("product roles retain both the product hero and batch hero anchor", async () => {
+  let seen: Parameters<ImageSetRoleProviders["gpt"]>[0] | undefined;
+  await generateImageSetRole({
+    ...productInput,
+    batchHeroImageUrl: "batch-hero",
+    rawImageUrls: ["raw-1", "raw-2", "raw-3", "raw-4", "raw-5", "raw-6"],
+  }, fakeProviders({
+    gpt: async (input) => {
+      seen = input;
+      return image("gpt");
+    },
+  }));
+
+  assert.equal(seen?.imageDataUris.length, 4);
+  assert.equal(seen?.imageDataUris.at(-1), productInput.heroImageUrl);
+  assert.equal(seen?.batchHeroImageUrl, "batch-hero");
+});
+
 test("a product-free background never calls a product compositor", async () => {
   const attempts: string[] = [];
   const output = await generateImageSetRole({ ...productInput, role: "background" }, fakeProviders({
@@ -74,12 +93,19 @@ test("a product-free background never calls a product compositor", async () => {
     textImage: async (input) => {
       attempts.push("text");
       assert.equal(input.imageDataUris.length, 0);
-      return image("text");
+      return image("text", "fal-ai/flux-2-pro");
     },
   }));
 
   assert.deepEqual(attempts, ["text"]);
-  assert.equal(output.provider, "text");
+  assert.equal(output.provider, "fal-ai/flux-2-pro");
+});
+
+test("background exposes the concrete text fallback provider", async () => {
+  const output = await generateImageSetRole({ ...productInput, role: "background" }, fakeProviders({
+    textImage: async () => image("fallback", "huggingface:black-forest-labs/FLUX.1-schnell"),
+  }));
+  assert.equal(output.provider, "huggingface:black-forest-labs/FLUX.1-schnell");
 });
 
 test("decoration removal failure is surfaced instead of saving an opaque asset", async () => {
@@ -97,7 +123,7 @@ test("decoration returns a transparent PNG and provider trace", async () => {
     fakeProviders({
       textImage: async (input) => {
         assert.deepEqual(input.imageDataUris, []);
-        return { buffer: Buffer.from("opaque"), contentType: "image/jpeg" };
+        return { buffer: Buffer.from("opaque"), contentType: "image/jpeg", provider: "fal-ai/flux-2-pro" };
       },
       removeBg: async (dataUri) => {
         assert.match(dataUri, /^data:image\/jpeg;base64,/);
@@ -107,7 +133,7 @@ test("decoration returns a transparent PNG and provider trace", async () => {
   );
 
   assert.equal(output.contentType, "image/png");
-  assert.equal(output.provider, "text+rembg");
+  assert.equal(output.provider, "fal-ai/flux-2-pro+rembg");
   assert.equal(output.buffer.toString(), "transparent");
 });
 
@@ -136,7 +162,88 @@ test("GPT generation sends prompt followed by every deduplicated reference", asy
   assert.deepEqual(content.map((item) => item.type), ["text", "image_url", "image_url", "image_url"]);
   assert.match(String(content[0].text), /preserve this exact product/);
   assert.match(String(content[0].text), /3:2/);
+  assert.deepEqual(requestBody?.image_config, { aspect_ratio: "3:2", quality: "high" });
   assert.equal(output.buffer.toString(), "ok");
+});
+
+test("GPT generation installs an exact 90-second timeout signal", async () => {
+  const { gptImageGenerateWithReferences } = await import("../generate.ts");
+  const timeoutValues: number[] = [];
+  await gptImageGenerateWithReferences(
+    { prompt: "p", imageDataUris: ["hero"] },
+    {
+      apiKey: "test-key",
+      timeoutSignal: (ms) => {
+        timeoutValues.push(ms);
+        return new AbortController().signal;
+      },
+      fetchFn: async () => new Response(JSON.stringify({
+        choices: [{ message: { images: [{ image_url: { url: "data:image/png;base64,b2s=" } }] } }],
+      }), { status: 200 }),
+    },
+  );
+  assert.deepEqual(timeoutValues, [90_000]);
+});
+
+test("GPT generation downloads a remote URL response", async () => {
+  const { gptImageGenerateWithReferences } = await import("../generate.ts");
+  const calls: string[] = [];
+  const output = await gptImageGenerateWithReferences(
+    { prompt: "p", imageDataUris: ["hero"] },
+    {
+      apiKey: "test-key",
+      fetchFn: async (input) => {
+        calls.push(String(input));
+        if (calls.length === 1) {
+          return new Response(JSON.stringify({
+            choices: [{ message: { images: [{ image_url: { url: "https://cdn.example/result.webp" } }] } }],
+          }), { status: 200 });
+        }
+        return new Response(Buffer.from("remote-image"), {
+          status: 200,
+          headers: { "content-type": "image/webp" },
+        });
+      },
+    },
+  );
+  assert.deepEqual(calls, [
+    "https://openrouter.ai/api/v1/chat/completions",
+    "https://cdn.example/result.webp",
+  ]);
+  assert.equal(output.contentType, "image/webp");
+  assert.equal(output.buffer.toString(), "remote-image");
+});
+
+test("FAL reference adapter treats raw and hero views as one product and batch hero as style anchor", async () => {
+  const { falImageGenerateWithReferences } = await import("../generate.ts");
+  let requestBody: Record<string, unknown> | undefined;
+  const calls: string[] = [];
+  const output = await falImageGenerateWithReferences(
+    {
+      prompt: "shared direction",
+      imageDataUris: ["raw-view", "product-hero"],
+      batchHeroImageUrl: "batch-hero",
+      aspectRatio: "1:1",
+      provider: "seedream",
+    },
+    {
+      apiKey: "test-key",
+      fetchFn: async (input, init) => {
+        calls.push(String(input));
+        if (calls.length === 1) {
+          requestBody = JSON.parse(String(init?.body));
+          return new Response(JSON.stringify({ images: [{ url: "https://cdn.example/fal.png" }] }), { status: 200 });
+        }
+        return new Response(Buffer.from("fal-image"), { status: 200, headers: { "content-type": "image/png" } });
+      },
+    },
+  );
+
+  assert.deepEqual(requestBody?.image_urls, ["raw-view", "product-hero", "batch-hero"]);
+  assert.match(String(requestBody?.prompt), /same single product/i);
+  assert.match(String(requestBody?.prompt), /LAST image.*visual.*anchor/i);
+  assert.doesNotMatch(String(requestBody?.prompt), /side by side/i);
+  assert.equal(output.provider, "fal-ai/bytedance/seedream/v4.5/edit");
 });
 
 test("GPT generation caps references at five and does not leak provider bodies", async () => {
