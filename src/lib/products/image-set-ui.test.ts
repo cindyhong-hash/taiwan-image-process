@@ -7,6 +7,7 @@ import {
   imageSetGenerationAnnouncement,
   imageSetProgressLabel,
   imageSetRecoveryAction,
+  isCompleteImageSetResume,
   isImageSetBatchSettled,
   mergeImageSetPollResult,
   readSavedImageSetBatch,
@@ -110,4 +111,13 @@ test("row creation is announced as indeterminate until IDs exist", () => {
   assert.equal(shouldRenderDeterminateImageSetProgress({ creatingRows: true, itemCount: 0 }), false);
   assert.equal(imageSetGenerationAnnouncement({ creatingRows: true, itemCount: 0 }), "正在建立素材清單…");
   assert.equal(shouldRenderDeterminateImageSetProgress({ creatingRows: false, itemCount: 3 }), true);
+});
+
+test("resume completeness requires the exact saved IDs once each", () => {
+  const saved = ["row-a", "row-b", "row-c"];
+  assert.equal(isCompleteImageSetResume(saved, ["row-a", "row-b", "row-c"]), true);
+  assert.equal(isCompleteImageSetResume(saved, ["row-a", "row-b"]), false);
+  assert.equal(isCompleteImageSetResume(saved, ["row-a", "row-b", "row-b"]), false);
+  assert.equal(isCompleteImageSetResume(saved, ["row-a", "row-b", "unexpected"]), false);
+  assert.equal(isCompleteImageSetResume(["row-a", "row-a"], ["row-a", "row-a"]), false);
 });

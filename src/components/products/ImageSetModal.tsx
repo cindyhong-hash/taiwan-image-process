@@ -11,6 +11,7 @@ import {
   imageSetGenerationAnnouncement,
   imageSetProgressLabel,
   imageSetRecoveryAction,
+  isCompleteImageSetResume,
   isImageSetBatchSettled,
   mergeImageSetPollResult,
   readSavedImageSetBatch,
@@ -42,6 +43,7 @@ type ImageSetPayload = {
   sourceHash: string;
 };
 type ResumeRecovery = { payload: ImageSetPayload; saved: SavedImageSetBatch };
+type LoadedRows = { rows: GenState[]; complete: boolean };
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_WINDOW_MS = 150_000;
@@ -57,13 +59,15 @@ function selection(payload: ImageSetPayload): ItemState[] {
   }));
 }
 
-async function loadRows(items: SavedImageSetBatch["items"]): Promise<GenState[]> {
+async function loadRows(items: SavedImageSetBatch["items"]): Promise<LoadedRows> {
   const response = await fetch(`/api/library/images?ids=${items.map(({ id }) => id).join(",")}`);
   if (!response.ok) throw new Error("無法讀取套圖進度");
   const data = await response.json() as { items?: Array<Record<string, unknown>> };
-  const rows = new Map((data.items ?? []).map((row) => [String(row.id), row]));
-  return items.flatMap((item) => {
-    const row = rows.get(item.id);
+  const responseRows = Array.isArray(data.items) ? data.items : [];
+  const returnedIds = responseRows.map((row) => typeof row.id === "string" ? row.id : "");
+  const rowsById = new Map(responseRows.map((row) => [String(row.id), row]));
+  const rows = items.flatMap((item) => {
+    const row = rowsById.get(item.id);
     if (!row || !isRoleStatus(row.status)) return [];
     return [{
       ...item,
@@ -72,6 +76,11 @@ async function loadRows(items: SavedImageSetBatch["items"]): Promise<GenState[]>
       errorMessage: typeof row.errorMessage === "string" ? row.errorMessage : null,
     }];
   });
+  return {
+    rows,
+    complete: rows.length === items.length
+      && isCompleteImageSetResume(items.map(({ id }) => id), returnedIds),
+  };
 }
 
 export function ImageSetModal({ productId, onClose, onFinished }: {
@@ -152,14 +161,16 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
     isActive: () => boolean = () => true,
   ) => {
     try {
-      const persisted = await loadRows(saved.items);
+      const loaded = await loadRows(saved.items);
       if (!isActive()) return;
-      if (persisted.length !== saved.items.length) {
-        clearSavedImageSetBatch(window.localStorage, productId);
-        if (shouldAnalyzeBeforeImageSetPicker(payload)) await analyzeProduct(false);
-        else showPicker(payload);
+      if (!loaded.complete) {
+        setResumeRecovery({ payload, saved });
+        setRecoveryKind("resume");
+        setError("既有套圖進度資料尚未完整，請重新讀取。");
+        setPhase("analyzing");
         return;
       }
+      const persisted = loaded.rows;
       setError(null);
       setRecoveryKind(null);
       setResumeRecovery(null);
@@ -231,7 +242,7 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
         return;
       }
       try {
-        const rows = await loadRows(genRef.current.map(({ id, role, label }) => ({ id, role, label })));
+        const { rows } = await loadRows(genRef.current.map(({ id, role, label }) => ({ id, role, label })));
         if (!cancelled) {
           setGen((current) => current.map((item) => {
             const row = rows.find(({ id }) => id === item.id);

@@ -63,6 +63,14 @@ export function shouldNotifySettledBatch(
   return !alreadyNotified && isImageSetBatchSettled(items);
 }
 
+export function isCompleteImageSetResume(savedIds: string[], returnedIds: string[]): boolean {
+  if (savedIds.length !== returnedIds.length) return false;
+  if (new Set(savedIds).size !== savedIds.length) return false;
+  if (new Set(returnedIds).size !== returnedIds.length) return false;
+  const expectedIds = new Set(savedIds);
+  return returnedIds.every((id) => expectedIds.has(id));
+}
+
 export function imageSetRecoveryAction(kind: ImageSetRecoveryKind): { title: string; actionLabel: string } {
   if (kind === "resume") return { title: "無法讀取既有套圖進度", actionLabel: "重新讀取生成進度" };
   if (kind === "analysis") return { title: "產品分析未完成", actionLabel: "重新分析" };
