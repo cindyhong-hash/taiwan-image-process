@@ -457,6 +457,103 @@ export interface GptCompositeInput {
   model?: string;               // override OpenRouter image model (e.g. mini fallback)
 }
 
+export interface GptReferenceGenerationInput {
+  prompt: string;
+  imageDataUris: string[];
+  aspectRatio?: string;
+  model?: string;
+}
+
+type GptReferenceGenerationDependencies = {
+  apiKey?: string;
+  fetchFn?: typeof fetch;
+};
+
+/**
+ * Generate one image from a grounded prompt and up to five product references.
+ * The dependency override exists so routing and payload behavior can be verified
+ * without making paid network requests.
+ */
+export async function gptImageGenerateWithReferences(
+  input: GptReferenceGenerationInput,
+  dependencies: GptReferenceGenerationDependencies = {},
+): Promise<GeneratedImage> {
+  const apiKey = dependencies.apiKey ?? OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY 未設定，無法用 GPT 多參考圖生成");
+
+  const fetchFn = dependencies.fetchFn ?? fetch;
+  const references = [...new Set(input.imageDataUris.filter(Boolean))].slice(0, 5);
+  if (!references.length) throw new Error("GPT 多參考圖生成缺少商品參考圖");
+
+  const instruction = [
+    input.prompt.trim(),
+    `Output aspect ratio: ${input.aspectRatio || "1:1"}.`,
+    "Use every supplied image only as a product identity reference.",
+    "Preserve the product's exact shape, proportions, colors, materials, controls, label text and logo.",
+    "Do not invent, merge, duplicate or redesign product details. No added watermark or unrelated text.",
+  ].filter(Boolean).join(" ");
+  const content: Record<string, unknown>[] = [
+    { type: "text", text: instruction },
+    ...references.map((url) => ({ type: "image_url", image_url: { url } })),
+  ];
+
+  let response: Response;
+  try {
+    response = await fetchFn("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "X-Title": "Marketing Tool",
+      },
+      body: JSON.stringify({
+        model: input.model ?? OPENROUTER_IMAGE_MODEL,
+        modalities: ["image", "text"],
+        messages: [{ role: "user", content }],
+      }),
+      signal: AbortSignal.timeout(90_000),
+    });
+  } catch (error) {
+    const reason = error instanceof DOMException && error.name === "TimeoutError" ? "逾時" : "連線失敗";
+    throw new Error(`GPT 多參考圖生成${reason}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`GPT 多參考圖生成錯誤 HTTP ${response.status}`);
+  }
+
+  let imageUrl: string | undefined;
+  try {
+    const data = await response.json();
+    const message = data.choices?.[0]?.message ?? {};
+    imageUrl = message.images?.[0]?.image_url?.url ?? message.images?.[0]?.url;
+  } catch {
+    throw new Error("GPT 多參考圖生成回應格式錯誤");
+  }
+  if (!imageUrl) throw new Error("GPT 多參考圖生成回應無圖片");
+
+  if (imageUrl.startsWith("data:")) {
+    const comma = imageUrl.indexOf(",");
+    const semicolon = imageUrl.indexOf(";");
+    if (comma < 0) throw new Error("GPT 多參考圖生成回應格式錯誤");
+    const contentType = semicolon > 5 ? imageUrl.slice(5, semicolon) : "image/png";
+    return { buffer: Buffer.from(imageUrl.slice(comma + 1), "base64"), contentType, seed: 0 };
+  }
+
+  let imageResponse: Response;
+  try {
+    imageResponse = await fetchFn(imageUrl, { signal: AbortSignal.timeout(60_000) });
+  } catch {
+    throw new Error("GPT 多參考圖圖片下載失敗");
+  }
+  if (!imageResponse.ok) throw new Error(`GPT 多參考圖圖片下載失敗 HTTP ${imageResponse.status}`);
+  return {
+    buffer: Buffer.from(await imageResponse.arrayBuffer()),
+    contentType: imageResponse.headers.get("content-type") ?? "image/png",
+    seed: 0,
+  };
+}
+
 export async function gptImageComposite(i: GptCompositeInput): Promise<GeneratedImage> {
   if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY 未設定，無法用 GPT 影像合成");
   const sceneLine = i.refImageDataUri
