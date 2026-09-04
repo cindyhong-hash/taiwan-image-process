@@ -9,6 +9,7 @@ import { statusMeta, STATUS_BUCKETS } from "@/lib/planner/status";
 import { ContentBriefDrawer } from "@/components/marketing-planner/ContentBriefDrawer";
 import { ProductionListView } from "@/components/marketing-planner/ProductionListView";
 import { BatchDrawer } from "@/components/marketing-planner/BatchDrawer";
+import { MonthPlanSwitcher } from "@/components/marketing-planner/MonthPlanSwitcher";
 import { plannerActivityDestination, type BriefCampaign, type BriefSignal } from "@/lib/planner/content-brief";
 
 type Topic = {
@@ -49,25 +50,11 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
   const [batchDrawerOpen, setBatchDrawerOpen] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0, failed: 0 });
-  const [switching, setSwitching] = useState(false);
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const [startingId, setStartingId] = useState<string | null>(null);
   const initialized = useRef(false);
   const days = useMemo(() => calendarDays(year, month), [year, month]);
   const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
-
-  // 月份切換：導到該月份自己的企劃日曆(有就載入、沒有就建立)，不改當前企劃
-  const shiftMonth = async (delta: number) => {
-    if (switching) return;
-    let y = year, m = month + delta; if (m < 1) { m = 12; y -= 1; } if (m > 12) { m = 1; y += 1; }
-    setSwitching(true);
-    try {
-      const res = await fetch(`/api/marketing-plans`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId, year: y, month: m }) });
-      const target = await res.json();
-      if (target?.id) router.push(`/clients/${clientId}/marketing-plans/${target.id}/calendar`);
-      else setSwitching(false);
-    } catch { setSwitching(false); }
-  };
 
   const persistDate = async (id: string, scheduledDate: string | null) => {
     const response = await fetch(`/api/content-plan-items/${id}`, {
@@ -238,11 +225,7 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700"><CalendarRange className="h-5 w-5" /></span>
             <div><h1 className="text-2xl font-bold text-gray-900">{year} 年 {month} 月內容日曆</h1><p className="mt-1 text-sm text-gray-400">拖曳內容卡片即可調整發文日期。</p></div>
-            <div className="ml-1 flex items-center rounded-lg border border-gray-200 bg-white px-1 py-0.5">
-              <button aria-label="上個月" onClick={() => shiftMonth(-1)} disabled={switching} className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
-              <span className="flex min-w-[104px] items-center justify-center gap-1.5 px-1 text-sm font-medium text-gray-900">{switching ? <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" /> : <CalendarRange className="h-3.5 w-3.5 text-gray-400" />}{year} 年 {month} 月</span>
-              <button aria-label="下個月" onClick={() => shiftMonth(1)} disabled={switching} className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button>
-            </div>
+            <MonthPlanSwitcher clientId={clientId} planId={planId} year={year} month={month} target="calendar" />
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-gray-500">

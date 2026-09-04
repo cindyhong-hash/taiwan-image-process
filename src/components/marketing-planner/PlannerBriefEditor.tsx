@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ImagePlus, Lightbulb, Loader2, MoreHorizontal, Package, Plus, Sparkles, Trash2 } from "lucide-react";
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
+import { MonthPlanSwitcher } from "@/components/marketing-planner/MonthPlanSwitcher";
 import { MARKETING_GOALS, MARKETING_PLATFORMS } from "@/lib/marketing-planner";
 
 // lucide-react 這版已移除品牌 icon，改用內嵌 SVG，並用各自品牌色（IG 官方漸層 / FB 品牌藍）
@@ -55,15 +56,6 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
 
   const updatePlan = (patch: Partial<Plan>) => { setPlan((p) => ({ ...p, ...patch })); setSaveState("dirty"); };
   const updateCampaign = (patch: Partial<Campaign>) => { if (!selected) return; setPlan((p) => ({ ...p, campaigns: p.campaigns.map((c) => (c.id === selected.id ? { ...c, ...patch } : c)) })); setSaveState("dirty"); };
-  // 月份切換：不是改當前企劃的月份，而是導到「該月份自己的企劃」(有就載入、沒有就建立)。
-  // 先存好當前 brief 再切，避免 debounce 未寫入就離開。
-  const shiftMonth = async (delta: number) => {
-    let y = plan.year, m = plan.month + delta; if (m < 1) { m = 12; y -= 1; } if (m > 12) { m = 1; y += 1; }
-    if (saveState !== "saved") { setSaveState("saving"); await saveBrief(); setSaveState("saved"); }
-    const res = await fetch(`/api/marketing-plans`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: plan.clientId, year: y, month: m }) });
-    const target = await res.json();
-    if (target?.id) router.push(`/clients/${plan.clientId}/marketing-plans/${target.id}`);
-  };
   const isPreset = (g: string) => MARKETING_GOALS.includes(g as typeof MARKETING_GOALS[number]);
   const otherOn = plan.goals.includes("其他");
   // 目標切換：一般預設照舊；「其他」關閉時連帶清掉自訂目標
@@ -94,14 +86,14 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
   }, [plan, saveState]);
 
   const addCampaign = async () => {
-    const res = await fetch(`/api/marketing-plans/${plan.id}/campaigns`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: `Campaign ${plan.campaigns.length + 1}` }) });
+    const res = await fetch(`/api/marketing-plans/${plan.id}/campaigns`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: `檔期 ${plan.campaigns.length + 1}` }) });
     const campaign = await res.json();
     setPlan((p) => ({ ...p, campaigns: [...p.campaigns, campaign] }));
     setOpenId(campaign.id);
   };
   const deleteCampaign = async (id: string) => {
     setMenuId("");
-    if (plan.campaigns.length <= 1 || !confirm("確定刪除這個 Campaign？")) return;
+    if (plan.campaigns.length <= 1 || !confirm("確定刪除這個檔期？")) return;
     await fetch(`/api/marketing-campaigns/${id}`, { method: "DELETE" });
     const campaigns = plan.campaigns.filter((c) => c.id !== id);
     setPlan((p) => ({ ...p, campaigns }));
@@ -145,11 +137,7 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-400">{saveState === "saving" ? "儲存中…" : saveState === "dirty" ? "等待儲存" : "已自動儲存"}</span>
-          <div className="flex items-center gap-1 rounded-lg border border-[#ebeff5] bg-white p-1">
-            <button onClick={() => shiftMonth(-1)} className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-700"><ChevronLeft className="h-4 w-4" /></button>
-            <span className="flex items-center gap-1.5 px-2 text-sm font-medium text-gray-900"><Calendar className="h-3.5 w-3.5 text-gray-400" />{plan.year} 年 {plan.month} 月</span>
-            <button onClick={() => shiftMonth(1)} className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-700"><ChevronRight className="h-4 w-4" /></button>
-          </div>
+          <MonthPlanSwitcher clientId={plan.clientId} planId={plan.id} year={plan.year} month={plan.month} target="plan" beforeNavigate={saveBrief} />
         </div>
       </div>
 
@@ -205,10 +193,10 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
       <section className="mb-4 rounded-2xl border border-[#ebeff5] bg-white p-6 sm:p-8">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-gray-900">這個月有哪些 Campaign？</h2>
-            <p className="mt-1 text-xs text-gray-400">將為 Campaign 規劃合適的內容主題與時程。</p>
+            <h2 className="text-base font-bold text-gray-900">這個月想推哪些產品？</h2>
+            <p className="mt-1 text-xs text-gray-400">選幾個產品，AI 會依產品規劃貼文主題；有活動檔期(母親節、週年慶…)再另外分組。</p>
           </div>
-          <button onClick={addCampaign} className="rounded-lg border-[1.5px] border-violet-200 px-3 py-2 text-xs font-medium text-violet-700 hover:bg-violet-50"><Plus className="mr-1 inline h-3.5 w-3.5" />新增 Campaign</button>
+          <button onClick={addCampaign} className="rounded-lg border-[1.5px] border-violet-200 px-3 py-2 text-xs font-medium text-violet-700 hover:bg-violet-50"><Plus className="mr-1 inline h-3.5 w-3.5" />新增檔期</button>
         </div>
 
         <div className="space-y-3">
@@ -311,7 +299,7 @@ export function PlannerBriefEditor({ initialPlan, hasTopics }: { initialPlan: Pl
             );
           })}
 
-          <button onClick={addCampaign} className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-[#ebeff5] py-4 text-sm font-medium text-gray-500 hover:border-violet-300 hover:text-violet-600"><Plus className="h-4 w-4" />新增 Campaign</button>
+          <button onClick={addCampaign} className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-[#ebeff5] py-4 text-sm font-medium text-gray-500 hover:border-violet-300 hover:text-violet-600"><Plus className="h-4 w-4" />新增檔期(有活動檔期才需要)</button>
         </div>
       </section>
 

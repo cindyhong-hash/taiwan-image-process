@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     if (existing) return NextResponse.json(serializePlan(existing as unknown as Record<string, unknown>), { status: 200 });
     const plan = await db.monthlyMarketingPlan.create({ data: { clientId, year, month, goals: JSON.stringify(parseJsonArray(body.goals)), platforms: JSON.stringify(parseJsonArray(body.platforms)), totalPostCount: Math.max(1, Math.min(60, Number(body.totalPostCount ?? 12))) } });
     const { start, end } = monthBounds(year, month);
-    await db.marketingCampaign.create({ data: { monthlyPlanId: plan.id, name: `${month} 月主要 Campaign`, startDate: start, endDate: end, sortOrder: 0 } });
+    await db.marketingCampaign.create({ data: { monthlyPlanId: plan.id, name: "本月主打", startDate: start, endDate: end, sortOrder: 0 } });
     return NextResponse.json(serializePlan(plan as unknown as Record<string, unknown>), { status: 201 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "建立企劃失敗" }, { status: 500 }); }
 }
