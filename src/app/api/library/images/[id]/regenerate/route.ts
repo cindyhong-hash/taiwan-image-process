@@ -6,14 +6,20 @@ import {
   requestImageSetRegeneration,
 } from "@/lib/products/image-set-orchestrator";
 
-export const maxDuration = 120;
+export const maxDuration = 800;
 
 /** Re-runs only one saved product image-set role; sibling assets are never touched. */
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const result = await requestImageSetRegeneration(id, {
     prepare: prepareImageSetRegeneration,
-    updateRow: (rowId, data) => db.libraryImage.update({ where: { id: rowId }, data }),
+    claimFailedRow: async (rowId) => {
+      const claimed = await db.libraryImage.updateMany({
+        where: { id: rowId, status: "FAILED" },
+        data: { status: "GENERATING", errorMessage: null },
+      });
+      return claimed.count === 1;
+    },
     scheduleAfter: (callback) => after(callback),
     regenerate: regenerateImageSetItem,
   });

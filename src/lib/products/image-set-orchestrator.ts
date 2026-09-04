@@ -40,6 +40,15 @@ export type ImageSetClient = {
 
 export type ImageSetRow = { id: string; role: ImageSetRoleSpec };
 export type ImageSetRowStatus = "PENDING" | "GENERATING" | "DONE" | "FAILED";
+export const IMAGE_SET_BATCH_DEADLINE_MS = 780_000;
+
+type ImageSetRowMutation = {
+  status?: ImageSetRowStatus;
+  imageUrl?: string;
+  prompt?: string;
+  paramsJson?: string;
+  errorMessage?: string | null;
+};
 
 export type ImageSetRowParams = {
   imageSet: true;
@@ -60,16 +69,17 @@ export type ImageSetBatchInput = {
 };
 
 export type ImageSetBatchDependencies = {
-  updateRow: (id: string, data: {
-    status?: ImageSetRowStatus;
-    imageUrl?: string;
-    prompt?: string;
-    paramsJson?: string;
-    errorMessage?: string | null;
-  }) => Promise<unknown>;
+  updateRow?: (id: string, data: ImageSetRowMutation) => Promise<unknown>;
+  transitionRow?: (id: string, from: ImageSetRowStatus[], data: ImageSetRowMutation) => Promise<boolean>;
+  failUnfinishedRows?: (rows: Array<{ id: string; errorMessage: string }>) => Promise<unknown>;
   generateRole: (input: ImageSetRoleGenerationInput) => Promise<ImageSetRoleGenerationOutput>;
   saveBuffer: (buffer: Buffer, extension: string, prefix: string) => Promise<string>;
   loadAsDataUri?: (url: string) => Promise<string>;
+  setDeadlineTimer?: (callback: () => void, delayMs: number) => unknown;
+  clearDeadlineTimer?: (timer: unknown) => void;
+  deadlineMs?: number;
+  now?: () => number;
+  logError?: (...values: unknown[]) => void;
 };
 
 export type ImageSetBatchResult = {
@@ -91,8 +101,22 @@ function extension(contentType: string): string {
   return "jpg";
 }
 
-function truncateError(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).slice(0, 500);
+function roleFailureMessage(role: ImageSetRole, timedOut = false): string {
+  const labels: Record<ImageSetRole, string> = {
+    hero: "主視覺",
+    detail: "細節素材",
+    lifestyle: "使用情境",
+    background: "情境背景",
+    decoration: "品牌裝飾",
+  };
+  return timedOut
+    ? `${labels[role]}生成逾時，可單獨重新產生；其他素材不受影響。`
+    : `${labels[role]}生成失敗，可單獨重新產生；其他素材仍可繼續生成。`;
+}
+
+function isConcreteProvider(provider: string): boolean {
+  const value = provider.trim();
+  return !!value && !/(^|:)unreported(?:\+|$)/i.test(value);
 }
 
 function parseToneLabels(raw: string | null | undefined): string[] {
@@ -223,8 +247,16 @@ export function createImageSetRowParams(
 }
 
 async function defaultLoadAsDataUri(url: string): Promise<string> {
-  if (url.startsWith("data:")) return url;
-  const buffer = await loadBuffer(url);
+  let buffer: Buffer;
+  if (url.startsWith("data:")) {
+    const comma = url.indexOf(",");
+    if (comma < 0) throw new Error("Invalid data URI");
+    const metadata = url.slice(0, comma);
+    const payload = url.slice(comma + 1);
+    buffer = Buffer.from(metadata.includes(";base64") ? payload : decodeURIComponent(payload), metadata.includes(";base64") ? "base64" : "utf8");
+  } else {
+    buffer = Buffer.from(await loadBuffer(url));
+  }
   const png = await sharp(buffer)
     .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
     .png()
@@ -240,21 +272,45 @@ async function loadReferenceDataUris(
   const hero = product.heroImageUrl || undefined;
   const raw = [...new Set((product.rawImageUrls ?? []).filter(Boolean))].filter((url) => url !== hero);
   const urls = [...raw.slice(0, hero ? 4 : 5), ...(hero ? [hero] : [])];
-  const dataUris = await Promise.all(urls.map(loadAsDataUri));
-  const heroIndex = product.heroImageUrl ? urls.indexOf(product.heroImageUrl) : -1;
-  const batchHeroDataUri = batchHeroImageUrl ? await loadAsDataUri(batchHeroImageUrl) : undefined;
+  const settled = await Promise.allSettled(urls.map(loadAsDataUri));
+  const loaded = settled.flatMap((entry, index) => entry.status === "fulfilled" ? [{ url: urls[index], dataUri: entry.value }] : []);
+  if (!loaded.length) {
+    const failures = settled.flatMap((entry) => entry.status === "rejected" ? [entry.reason] : []);
+    throw new AggregateError(failures, "No usable product reference image remains");
+  }
+  const heroDataUri = hero ? loaded.find((entry) => entry.url === hero)?.dataUri : undefined;
+  let batchHeroDataUri: string | undefined;
+  if (batchHeroImageUrl) {
+    try {
+      batchHeroDataUri = await loadAsDataUri(batchHeroImageUrl);
+    } catch {
+      // The generated hero is only a style anchor. Product identity references remain authoritative.
+    }
+  }
   return {
-    rawImageUrls: dataUris,
-    ...(heroIndex >= 0 ? { heroImageUrl: dataUris[heroIndex] } : {}),
+    rawImageUrls: loaded.map((entry) => entry.dataUri),
+    ...(heroDataUri ? { heroImageUrl: heroDataUri } : {}),
     ...(batchHeroDataUri ? { batchHeroImageUrl: batchHeroDataUri } : {}),
   };
 }
 
 const defaultDependencies: ImageSetBatchDependencies = {
-  updateRow: (id, data) => db.libraryImage.update({ where: { id }, data }),
+  transitionRow: async (id, from, data) => {
+    const result = await db.libraryImage.updateMany({ where: { id, status: { in: from } }, data });
+    return result.count === 1;
+  },
+  failUnfinishedRows: (rows) => db.$transaction(rows.map(({ id, errorMessage }) => db.libraryImage.updateMany({
+    where: { id, status: { in: ["PENDING", "GENERATING"] } },
+    data: { status: "FAILED", errorMessage },
+  }))),
   generateRole: generateImageSetRole,
   saveBuffer,
   loadAsDataUri: defaultLoadAsDataUri,
+  setDeadlineTimer: (callback, delayMs) => setTimeout(callback, delayMs),
+  clearDeadlineTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  deadlineMs: IMAGE_SET_BATCH_DEADLINE_MS,
+  now: Date.now,
+  logError: (...values) => console.error(...values),
 };
 
 /**
@@ -267,15 +323,47 @@ export async function runImageSetBatch(
 ): Promise<ImageSetBatchResult> {
   const result: ImageSetBatchResult = { statuses: {}, params: {} };
   const loadAsDataUri = dependencies.loadAsDataUri ?? defaultLoadAsDataUri;
+  const logError = dependencies.logError ?? defaultDependencies.logError!;
+  const transitionRow = dependencies.transitionRow ?? (async (id, _from, data) => {
+    if (!dependencies.updateRow) throw new Error("Missing row transition dependency");
+    await dependencies.updateRow(id, data);
+    return true;
+  });
+  const failUnfinishedRows = dependencies.failUnfinishedRows ?? (async (rows) => {
+    if (!dependencies.updateRow) throw new Error("Missing unfinished-row dependency");
+    await Promise.all(rows.map(({ id, errorMessage }) => dependencies.updateRow!(id, { status: "FAILED", errorMessage })));
+  });
+  const setDeadlineTimer = dependencies.setDeadlineTimer ?? defaultDependencies.setDeadlineTimer!;
+  const clearDeadlineTimer = dependencies.clearDeadlineTimer ?? defaultDependencies.clearDeadlineTimer!;
+  const deadlineMs = dependencies.deadlineMs ?? IMAGE_SET_BATCH_DEADLINE_MS;
+  const now = dependencies.now ?? Date.now;
+  const deadlineAt = now() + deadlineMs;
+  let deadlineReached = false;
+  const reachedDeadline = () => deadlineReached || now() >= deadlineAt;
 
   const runRow = async (row: ImageSetRow, batchHeroImageUrl?: string): Promise<string | undefined> => {
     const initialParams = createImageSetRowParams(input, row.role);
     try {
-      await dependencies.updateRow(row.id, {
+      const claimed = await transitionRow(row.id, ["PENDING", "GENERATING"], {
         status: "GENERATING",
         errorMessage: null,
         paramsJson: JSON.stringify(initialParams),
       });
+      if (!claimed) {
+        result.statuses[row.role.role] = "FAILED";
+        result.params[row.role.role] = initialParams;
+        return undefined;
+      }
+      if (reachedDeadline()) {
+        await transitionRow(row.id, ["GENERATING"], {
+          status: "FAILED",
+          errorMessage: roleFailureMessage(row.role.role, true),
+          paramsJson: JSON.stringify(initialParams),
+        }).catch(() => {});
+        result.statuses[row.role.role] = "FAILED";
+        result.params[row.role.role] = initialParams;
+        return undefined;
+      }
       const references = row.role.path === "edit"
         ? await loadReferenceDataUris(input.product, batchHeroImageUrl, loadAsDataUri)
         : { rawImageUrls: [] as string[] };
@@ -293,41 +381,70 @@ export async function runImageSetBatch(
         batchHeroImageUrl: references.batchHeroImageUrl,
         aspectRatio: "1:1",
       });
-      if (!generated.provider.trim()) throw new Error("圖片生成服務未回傳可追查的 provider");
+      if (!isConcreteProvider(generated.provider)) throw new Error("Image provider trace is missing or synthetic");
+      if (reachedDeadline()) throw new Error("Image-set batch deadline reached");
       const imageUrl = await dependencies.saveBuffer(generated.buffer, extension(generated.contentType), `product-set-${row.role.role}-`);
       const finalParams = createImageSetRowParams(input, row.role, generated.provider);
-      result.statuses[row.role.role] = "DONE";
-      result.params[row.role.role] = finalParams;
-      await dependencies.updateRow(row.id, {
+      const completed = !reachedDeadline() && await transitionRow(row.id, ["GENERATING"], {
         status: "DONE",
         imageUrl,
         prompt,
         paramsJson: JSON.stringify(finalParams),
         errorMessage: null,
       });
+      if (!completed) {
+        result.statuses[row.role.role] = "FAILED";
+        result.params[row.role.role] = initialParams;
+        return undefined;
+      }
+      result.statuses[row.role.role] = "DONE";
+      result.params[row.role.role] = finalParams;
       return imageUrl;
     } catch (error) {
+      logError(`[image-set:${row.role.role}] generation failed`, error);
       result.statuses[row.role.role] = "FAILED";
       result.params[row.role.role] = initialParams;
-      await dependencies.updateRow(row.id, {
+      await transitionRow(row.id, ["PENDING", "GENERATING"], {
         status: "FAILED",
-        errorMessage: truncateError(error),
+        errorMessage: roleFailureMessage(row.role.role, reachedDeadline()),
         paramsJson: JSON.stringify(initialParams),
       }).catch(() => {});
       return undefined;
     }
   };
 
-  const hero = input.rows.find((row) => row.role.role === "hero");
-  const heroUrl = hero ? await runRow(hero) : undefined;
-  const remaining = input.rows.filter((row) => row !== hero);
+  const work = (async () => {
+    const hero = input.rows.find((row) => row.role.role === "hero");
+    const heroUrl = hero ? await runRow(hero) : undefined;
+    const remaining = input.rows.filter((row) => row !== hero);
 
-  // The hero is deliberately serialized. All other selected roles are independent
-  // and are allowed to proceed even when hero generation did not produce an anchor.
-  await Promise.all(remaining.map((row) => runRow(
-    row,
-    (row.role.role === "detail" || row.role.role === "lifestyle") ? heroUrl : undefined,
-  )));
+    // The hero is deliberately serialized. All other selected roles are independent
+    // and are allowed to proceed even when hero generation did not produce an anchor.
+    await Promise.all(remaining.map((row) => runRow(
+      row,
+      (row.role.role === "detail" || row.role.role === "lifestyle") ? heroUrl : undefined,
+    )));
+  })();
+
+  let resolveDeadline!: () => void;
+  const deadline = new Promise<void>((resolve) => { resolveDeadline = resolve; });
+  const timer = setDeadlineTimer(() => {
+    void (async () => {
+      deadlineReached = true;
+      const unfinished = input.rows.filter((row) => result.statuses[row.role.role] !== "DONE");
+      await failUnfinishedRows(unfinished.map((row) => ({ id: row.id, errorMessage: roleFailureMessage(row.role.role, true) })));
+      for (const row of unfinished) {
+        result.statuses[row.role.role] = "FAILED";
+        result.params[row.role.role] = createImageSetRowParams(input, row.role);
+      }
+      resolveDeadline();
+    })().catch((error) => {
+      logError("[image-set] deadline cleanup failed", error);
+      resolveDeadline();
+    });
+  }, deadlineMs);
+  const winner = await Promise.race([work.then(() => "work" as const), deadline.then(() => "deadline" as const)]);
+  if (winner === "work") clearDeadlineTimer(timer);
   return result;
 }
 
@@ -531,7 +648,7 @@ export async function regenerateImageSetItem(
 
 export type RequestImageSetRegenerationDependencies = {
   prepare: (rowId: string) => Promise<ImageSetRegenerationPreparation>;
-  updateRow: (rowId: string, data: { status: "GENERATING"; errorMessage: null }) => Promise<unknown>;
+  claimFailedRow: (rowId: string) => Promise<boolean>;
   scheduleAfter: (callback: () => Promise<unknown>) => void;
   regenerate: (rowId: string, prepared: PreparedImageSetRegeneration) => Promise<unknown>;
 };
@@ -547,7 +664,10 @@ export async function requestImageSetRegeneration(
 ): Promise<RequestImageSetRegenerationResult> {
   const prepared = await dependencies.prepare(rowId);
   if (!prepared.ok) return prepared;
-  await dependencies.updateRow(rowId, { status: "GENERATING", errorMessage: null });
+  const claimed = await dependencies.claimFailedRow(rowId);
+  if (!claimed) {
+    return { ok: false, status: 409, error: "這張素材目前無法重新產生，請確認狀態為失敗後再試一次。" };
+  }
   dependencies.scheduleAfter(() => dependencies.regenerate(rowId, prepared.value));
   return { ok: true, id: rowId, status: "GENERATING" };
 }

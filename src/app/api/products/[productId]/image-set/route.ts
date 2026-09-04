@@ -6,7 +6,7 @@ import {
   runImageSetBatch,
 } from "@/lib/products/image-set-orchestrator";
 
-export const maxDuration = 120;
+export const maxDuration = 800;
 export const dynamic = "force-dynamic";
 
 // GET is intentionally read-only: the modal decides when it wants the paid analysis endpoint.

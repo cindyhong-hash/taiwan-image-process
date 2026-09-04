@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
+import sharp from "sharp";
 import {
+  IMAGE_SET_BATCH_DEADLINE_MS,
   analyzeImageSetProduct,
   createAndScheduleImageSetBatch,
   prepareImageSetRegenerationFromRow,
@@ -80,6 +83,7 @@ function fakeDeps(options: { events?: string[]; failRole?: string } = {}): Image
       return `/uploads/${prefix}.png`;
     },
     loadAsDataUri: async (url) => `data:image/png;base64,${Buffer.from(url).toString("base64")}`,
+    logError: () => {},
   };
 }
 
@@ -129,6 +133,58 @@ test("does not mark a generated row DONE without a concrete provider trace", asy
   assert.equal(result.params.hero?.provider, undefined);
 });
 
+test("rejects synthetic unreported provider traces", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[0]];
+  const result = await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    generateRole: async () => ({ buffer: Buffer.from("hero"), contentType: "image/png", provider: "text:unreported" }),
+  });
+  assert.equal(result.statuses.hero, "FAILED");
+});
+
+test("logs complete provider errors but persists only a safe role-scoped Traditional Chinese message", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[1]];
+  const persisted: string[] = [];
+  const logged: unknown[] = [];
+  await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    generateRole: async () => { throw new Error("fal secret upstream fragment 401"); },
+    updateRow: async (_id, data) => { if (data.errorMessage) persisted.push(data.errorMessage); },
+    logError: (...values) => { logged.push(values); },
+  });
+  assert.equal(logged.length, 1);
+  assert.match(String(logged[0]), /fal secret upstream fragment 401/);
+  assert.equal(persisted.length, 1);
+  assert.match(persisted[0], /細節/);
+  assert.doesNotMatch(persisted[0], /fal|401|upstream|secret/i);
+});
+
+test("normalizes direct data URI references through the 1600px pipeline", async () => {
+  const oversized = await sharp({
+    create: { width: 2200, height: 1800, channels: 3, background: "#ffffff" },
+  }).jpeg().toBuffer();
+  const batch = input();
+  batch.rows = [batch.rows[0]];
+  batch.product.heroImageUrl = `data:image/jpeg;base64,${oversized.toString("base64")}`;
+  batch.product.rawImageUrls = [];
+  let normalized = "";
+  await runImageSetBatch(batch, {
+    updateRow: async () => {},
+    generateRole: async (request) => {
+      normalized = request.heroImageUrl ?? "";
+      return { buffer: Buffer.from("hero"), contentType: "image/png", provider: "provider:hero" };
+    },
+    saveBuffer: async () => "/saved.png",
+  });
+  const decoded = Buffer.from(normalized.split(",")[1], "base64");
+  const metadata = await sharp(decoded).metadata();
+  assert.ok((metadata.width ?? 0) <= 1600);
+  assert.ok((metadata.height ?? 0) <= 1600);
+  assert.match(normalized, /^data:image\/png;base64,/);
+});
+
 test("keeps the product hero within the five identity references", async () => {
   const batch = input();
   batch.product.rawImageUrls = ["/raw-1.png", "/raw-2.png", "/raw-3.png", "/raw-4.png", "/raw-5.png", "/raw-6.png"];
@@ -163,6 +219,105 @@ test("keeps sibling roles running when a non-hero role fails", async () => {
   assert.equal(result.statuses.lifestyle, "DONE");
   assert.equal(result.statuses.background, "DONE");
   assert.equal(result.statuses.decoration, "DONE");
+});
+
+test("retains successful product references when another reference fails to load", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[0]];
+  batch.product.rawImageUrls = ["/good.png", "/broken.png"];
+  batch.product.heroImageUrl = null;
+  let refs: string[] = [];
+  const result = await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    loadAsDataUri: async (url) => {
+      if (url === "/broken.png") throw new Error("unavailable");
+      return `data:image/png;base64,${Buffer.from(url).toString("base64")}`;
+    },
+    generateRole: async (request) => {
+      refs = request.rawImageUrls ?? [];
+      return { buffer: Buffer.from("hero"), contentType: "image/png", provider: "provider:hero" };
+    },
+  });
+  assert.equal(result.statuses.hero, "DONE");
+  assert.equal(refs.length, 1);
+});
+
+test("treats an unavailable optional batch hero anchor as non-fatal", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[0], batch.rows[1]];
+  let detailAnchor: string | null | undefined = "not-called";
+  const result = await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    loadAsDataUri: async (url) => {
+      if (url.startsWith("/uploads/product-set-hero")) throw new Error("anchor unavailable");
+      return `data:image/png;base64,${Buffer.from(url).toString("base64")}`;
+    },
+    generateRole: async (request) => {
+      if (request.role === "detail") detailAnchor = request.batchHeroImageUrl;
+      return { buffer: Buffer.from(request.role), contentType: "image/png", provider: `provider:${request.role}` };
+    },
+  });
+  assert.equal(result.statuses.detail, "DONE");
+  assert.equal(detailAnchor, undefined);
+});
+
+test("deadline marks unfinished rows failed and late completion cannot overwrite them", async () => {
+  assert.equal(IMAGE_SET_BATCH_DEADLINE_MS, 780_000);
+  const batch = input();
+  batch.rows = [batch.rows[0], batch.rows[1]];
+  let release!: () => void;
+  const generationGate = new Promise<void>((resolve) => { release = resolve; });
+  let fireDeadline!: () => void;
+  let currentTime = 10_000;
+  const statuses = new Map(batch.rows.map((row) => [row.id, "PENDING"]));
+  const transitions: string[] = [];
+  const running = runImageSetBatch(batch, {
+    ...fakeDeps(),
+    generateRole: async ({ role }) => {
+      if (role === "hero") await generationGate;
+      return { buffer: Buffer.from(role), contentType: "image/png", provider: `provider:${role}` };
+    },
+    transitionRow: async (id, from, data) => {
+      if (!from.includes(statuses.get(id) as "PENDING" | "GENERATING" | "DONE" | "FAILED")) return false;
+      statuses.set(id, data.status ?? statuses.get(id)!);
+      transitions.push(`${id}:${data.status}`);
+      return true;
+    },
+    failUnfinishedRows: async (rows) => {
+      for (const { id } of rows) {
+        const status = statuses.get(id);
+        if (status === "PENDING" || status === "GENERATING") statuses.set(id, "FAILED");
+      }
+      transitions.push(`deadline:${rows.map((row) => row.errorMessage).join("|")}`);
+    },
+    setDeadlineTimer: (callback, delayMs) => {
+      assert.equal(delayMs, 780_000);
+      fireDeadline = () => {
+        currentTime += delayMs;
+        callback();
+      };
+      return 1;
+    },
+    clearDeadlineTimer: () => {},
+    now: () => currentTime,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  fireDeadline();
+  const result = await running;
+  assert.equal(statuses.get("row-hero"), "FAILED");
+  assert.equal(statuses.get("row-detail"), "FAILED");
+  assert.equal(result.statuses.hero, "FAILED");
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(statuses.get("row-hero"), "FAILED");
+  assert.ok(!transitions.includes("row-hero:DONE"));
+});
+
+test("batch and retry routes reserve 800 seconds for the 780-second internal cleanup deadline", async () => {
+  const batchRoute = await readFile(new URL("../../app/api/products/[productId]/image-set/route.ts", import.meta.url), "utf8");
+  const retryRoute = await readFile(new URL("../../app/api/library/images/[id]/regenerate/route.ts", import.meta.url), "utf8");
+  assert.match(batchRoute, /export const maxDuration = 800/);
+  assert.match(retryRoute, /export const maxDuration = 800/);
 });
 
 function storedProduct() {
@@ -278,7 +433,7 @@ test("stale retry returns 409 Traditional Chinese guidance and mutates no row", 
   let schedules = 0;
   const response = await requestImageSetRegeneration("row-stale", {
     prepare: async () => ({ ok: false as const, status: 409 as const, error: "商品資料已更新，請先重新分析產品後再重新產生這張素材。" }),
-    updateRow: async () => { updates += 1; },
+    claimFailedRow: async () => { updates += 1; return true; },
     scheduleAfter: () => { schedules += 1; },
     regenerate: async () => ({ statuses: {}, params: {} }),
   });
@@ -331,7 +486,7 @@ test("retry marks and regenerates only the requested row", async () => {
   const prepared = { rowId: "row-target", input: { ...input(), rows: [{ id: "row-target", role: roles[1] }] } };
   const response = await requestImageSetRegeneration("row-target", {
     prepare: async () => ({ ok: true as const, value: prepared }),
-    updateRow: async (id) => { updates.push(id); },
+    claimFailedRow: async (id) => { updates.push(id); return true; },
     scheduleAfter: (callback) => { callbacks.push(callback); },
     regenerate: async (id, value) => {
       assert.equal(id, "row-target");
@@ -344,4 +499,17 @@ test("retry marks and regenerates only the requested row", async () => {
   assert.equal(callbacks.length, 1);
   await callbacks[0]();
   assert.deepEqual(updates, ["row-target"]);
+});
+
+test("retry returns 409 and schedules nothing when FAILED compare-and-set loses the race", async () => {
+  let schedules = 0;
+  const prepared = { rowId: "row-target", input: { ...input(), rows: [{ id: "row-target", role: roles[1] }] } };
+  const response = await requestImageSetRegeneration("row-target", {
+    prepare: async () => ({ ok: true as const, value: prepared }),
+    claimFailedRow: async () => false,
+    scheduleAfter: () => { schedules += 1; },
+    regenerate: async () => ({ statuses: {}, params: {} }),
+  });
+  assert.deepEqual(response, { ok: false, status: 409, error: "這張素材目前無法重新產生，請確認狀態為失敗後再試一次。" });
+  assert.equal(schedules, 0);
 });
