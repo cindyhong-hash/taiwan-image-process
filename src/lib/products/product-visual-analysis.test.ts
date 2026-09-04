@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   analyzeProductVisualProfile,
   buildImageSetArtDirection,
+  countProductVisualReferenceImages,
 } from "./product-visual-analysis.ts";
 
 const productWithThreeReferences = {
@@ -33,6 +34,14 @@ const beautyDeviceProfile = {
 };
 
 const validBeautyDeviceProfileJson = JSON.stringify(beautyDeviceProfile);
+
+test("reference count matches the deduplicated five-image analysis cap", () => {
+  assert.equal(countProductVisualReferenceImages({
+    rawImageUrls: ["a.png", "a.png", "b.png", "c.png", "d.png", "e.png", "f.png"],
+    heroImageUrl: "hero.png",
+  }), 5);
+  assert.equal(countProductVisualReferenceImages({ rawImageUrls: ["a.png"], heroImageUrl: "a.png" }), 1);
+});
 
 test("sends every raw image and the hero image to vision analysis", async () => {
   const seen: string[] = [];

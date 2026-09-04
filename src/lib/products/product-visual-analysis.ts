@@ -68,6 +68,10 @@ function uniqueReferenceUrls(input: ProductVisualProfileInput): string[] {
   return [...rawUrls.filter((url) => url !== heroUrl).slice(0, MAX_REFERENCE_IMAGES - 1), heroUrl];
 }
 
+export function countProductVisualReferenceImages(input: ProductVisualProfileInput): number {
+  return uniqueReferenceUrls(input).length;
+}
+
 async function defaultLoadAsDataUrl(url: string): Promise<string> {
   if (url.startsWith("data:")) {
     const [, encoded = ""] = url.split(",", 2);

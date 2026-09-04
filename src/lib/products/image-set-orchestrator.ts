@@ -6,6 +6,7 @@ import { generateImageSetRole, type ImageSetRoleGenerationInput, type ImageSetRo
 import {
   analyzeProductVisualProfile,
   buildImageSetArtDirection,
+  countProductVisualReferenceImages,
   type ImageSetArtDirection,
 } from "./product-visual-analysis.ts";
 import {
@@ -198,6 +199,7 @@ export async function readImageSetProduct(
     suggestions: suggestionsFor(suggestionProfile, suggestionDirection),
     needsAnalysis: !profile,
     hasHero: !!product.heroImageUrl,
+    sourceImageCount: countProductVisualReferenceImages(asImageSetProduct(product)),
     sourceHash,
   };
 }

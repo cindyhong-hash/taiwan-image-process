@@ -344,6 +344,7 @@ test("GET view is read-only and reports a valid cached profile without model cal
   });
   assert.equal(response.needsAnalysis, false);
   assert.equal(response.hasHero, true);
+  assert.equal(response.sourceImageCount, 2);
   assert.equal(response.profile?.productType, profile.productType);
   assert.equal(response.suggestions.length, 5);
   assert.equal(analyzed, 0);
@@ -359,6 +360,7 @@ test("GET stale view remains read-only and exposes safe fallback suggestions", a
   });
   assert.equal(response.profile, null);
   assert.equal(response.needsAnalysis, true);
+  assert.equal(response.sourceImageCount, 2);
   assert.equal(response.suggestions.length, 5);
 });
 
