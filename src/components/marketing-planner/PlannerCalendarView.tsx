@@ -8,6 +8,7 @@ import { assignInitialSchedule, calendarDays, dateKey } from "@/lib/planner/cale
 import { statusMeta, STATUS_BUCKETS } from "@/lib/planner/status";
 import { ContentBriefDrawer } from "@/components/marketing-planner/ContentBriefDrawer";
 import { ProductionListView } from "@/components/marketing-planner/ProductionListView";
+import { BatchDrawer } from "@/components/marketing-planner/BatchDrawer";
 import { plannerActivityDestination, type BriefCampaign, type BriefSignal } from "@/lib/planner/content-brief";
 
 type Topic = {
@@ -44,7 +45,7 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
   // ⑥ 批次製作：多選 → 走同一條 per-item 路徑（建 Activity → /api/generate），非獨立批次器
   const [batchMode, setBatchMode] = useState(false);
   const [batchIds, setBatchIds] = useState<Set<string>>(new Set());
-  const [confirmBatch, setConfirmBatch] = useState(false);
+  const [batchDrawerOpen, setBatchDrawerOpen] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0, failed: 0 });
   const [switching, setSwitching] = useState(false);
@@ -118,7 +119,7 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
   const runBatch = async () => {
     const ids = batchList.map((item) => item.id);
     if (!ids.length) return;
-    setConfirmBatch(false); setError(""); setBatchRunning(true);
+    setError(""); setBatchRunning(true);
     setBatchProgress({ done: 0, total: ids.length, failed: 0 });
     for (const id of ids) {
       setTopics((items) => items.map((item) => item.id === id ? { ...item, status: "GENERATING" } : item));
@@ -135,8 +136,9 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
         setBatchProgress((progress) => ({ ...progress, done: progress.done + 1, failed: progress.failed + 1 }));
       }
     }
-    setBatchRunning(false); setBatchMode(false); setBatchIds(new Set());
+    setBatchRunning(false);   // 完成後 Drawer 保持開啟顯示最終狀態，由關閉按鈕收尾
   };
+  const closeBatchDrawer = () => { setBatchDrawerOpen(false); setBatchMode(false); setBatchIds(new Set()); };
 
   // 製作清單 actions（沿用既有 API，不新建流程）
   const startMaking = async (id: string) => {
@@ -162,7 +164,8 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
   };
   const approve = (id: string) => patchStatus(id, "APPROVED");
   const schedulePublish = (id: string) => patchStatus(id, "PUBLISHED");
-  const startBatchFromSelection = () => { setBatchMode(true); setConfirmBatch(true); };
+  const startBatchFromSelection = () => { setBatchMode(true); setBatchDrawerOpen(true); };
+  const batchSelected = topics.filter((t) => batchIds.has(t.id));
 
   const card = (item: Topic) => {
     const type = (item.contentType in CONTENT_TYPE_META ? item.contentType : "BRAND") as ContentType;
@@ -248,7 +251,7 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
           </p>
           <div className="flex items-center gap-2">
             {!batchRunning && <button onClick={exitBatch} className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-white/70">取消</button>}
-            <button onClick={() => setConfirmBatch(true)} disabled={batchRunning || !batchList.length} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">
+            <button onClick={() => setBatchDrawerOpen(true)} disabled={batchRunning || !batchList.length} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">
               {batchRunning ? <><Loader2 className="h-4 w-4 animate-spin" />生成中 {batchProgress.done}/{batchProgress.total}</> : <><Sparkles className="h-4 w-4" />產生已選 {batchList.length} 篇</>}
             </button>
           </div>
@@ -301,25 +304,8 @@ export function PlannerCalendarView({ planId, clientId, year, month, initialTopi
         onSaved={(saved) => setTopics((items) => items.map((item) => item.id === saved.id ? { ...item, ...saved } : item))}
       />}
 
-      {confirmBatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <button aria-label="取消" onClick={() => setConfirmBatch(false)} className="absolute inset-0 cursor-default bg-gray-950/25 backdrop-blur-[1px]" />
-          <div role="dialog" aria-modal="true" className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-3 flex items-start justify-between">
-              <h2 className="text-lg font-bold text-gray-900">產生已選 {batchList.length} 篇內容</h2>
-              <button aria-label="關閉" onClick={() => setConfirmBatch(false)} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-4 w-4" /></button>
-            </div>
-            <p className="text-sm leading-6 text-gray-500">
-              AI 將根據企劃資料自動產生內容
-              {(batchCarousel > 0 || batchSingle > 0) && <>：{batchCarousel > 0 && `${batchCarousel} 篇多圖`}{batchCarousel > 0 && batchSingle > 0 && "、"}{batchSingle > 0 && `${batchSingle} 篇單圖`}</>}
-              。走現有單圖／多圖生成流程，完成後回到日曆等待審核。
-            </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button onClick={() => setConfirmBatch(false)} className="rounded-lg px-4 py-2.5 text-sm text-gray-500 hover:bg-gray-100">取消</button>
-              <button onClick={runBatch} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-violet-700"><Sparkles className="h-4 w-4" />開始生成</button>
-            </div>
-          </div>
-        </div>
+      {batchDrawerOpen && (
+        <BatchDrawer items={batchSelected} running={batchRunning} progress={batchProgress} onRun={runBatch} onClose={closeBatchDrawer} />
       )}
     </div>
   );
