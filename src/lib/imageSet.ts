@@ -5,6 +5,7 @@ import { loadBuffer, saveBuffer } from "@/lib/storage";
 import { buildImageSetArtDirection, type ImageSetArtDirection } from "@/lib/products/product-visual-analysis";
 import { fallbackProductVisualProfile, type ProductVisualProfile } from "@/lib/products/product-visual-profile";
 import { planImageSetRoles, type ImageSetRole } from "@/lib/products/image-set-roles";
+export { regenerateImageSetItem } from "@/lib/products/image-set-orchestrator";
 
 export type { ImageSetArtDirection } from "@/lib/products/product-visual-analysis";
 export type { ProductVisualProfile } from "@/lib/products/product-visual-profile";

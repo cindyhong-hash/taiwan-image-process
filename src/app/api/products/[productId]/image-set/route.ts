@@ -1,54 +1,49 @@
-import { NextResponse, after } from "next/server";
+import { after, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { buildImageSetSuggestions, generateImageSetItem, type SetItem } from "@/lib/imageSet";
+import {
+  createAndScheduleImageSetBatch,
+  readImageSetProduct,
+  runImageSetBatch,
+} from "@/lib/products/image-set-orchestrator";
 
 export const maxDuration = 120;
+export const dynamic = "force-dynamic";
 
-// GET /api/products/[productId]/image-set — AI 建議的套圖積木清單
-export async function GET(_req: Request, { params }: { params: Promise<{ productId: string }> }) {
+// GET is intentionally read-only: the modal decides when it wants the paid analysis endpoint.
+export async function GET(_request: Request, { params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
   const product = await db.product.findUnique({ where: { id: productId } });
   if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const client = await db.client.findUnique({ where: { id: product.clientId } });
-  const suggestions = buildImageSetSuggestions(product, client);
-  return NextResponse.json({ suggestions, hasHero: !!product.heroImageUrl });
+  return NextResponse.json(await readImageSetProduct(product, client));
 }
 
-// POST /api/products/[productId]/image-set — 批次生成勾選的套圖積木
-// body: { items: SetItem[] }
+// POST creates rows synchronously, then schedules one resilient batch callback.
 export async function POST(request: Request, { params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
   const body = await request.json().catch(() => ({}));
-  const items: SetItem[] = Array.isArray(body.items) ? body.items : [];
-  if (!items.length) return NextResponse.json({ error: "未選擇任何套圖" }, { status: 400 });
+  const requestedItems: unknown[] = Array.isArray(body.items) ? body.items : [];
+  const selectedRoles = [...new Set(requestedItems.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const role = (item as { role?: unknown }).role;
+    return typeof role === "string" ? [role] : [];
+  }))];
+  if (!selectedRoles.length) return NextResponse.json({ error: "未選擇任何套圖" }, { status: 400 });
 
   const product = await db.product.findUnique({ where: { id: productId } });
   if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  // 實拍類（edit）需要去背主圖當錨點
-  if (items.some((i) => i.path === "edit") && !product.heroImageUrl) {
-    return NextResponse.json({ error: "請先為產品產生去背主圖，才能生成實拍類套圖" }, { status: 400 });
-  }
-
   const client = await db.client.findUnique({ where: { id: product.clientId } });
-  const batchId = `pset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-  const created: { id: string; role: string; label: string }[] = [];
-  for (const item of items) {
-    const row = await db.libraryImage.create({
-      data: {
-        clientId: product.clientId,
-        productId: product.id,
-        assetRole: item.role,
-        subject: item.label,
-        status: "GENERATING",
-        batchId,
-        paramsJson: JSON.stringify({ imageSet: true, item }),
-      },
-    });
-    created.push({ id: row.id, role: item.role, label: item.label });
-    after(() => generateImageSetItem(row.id, product, client, item));
-  }
-
-  return NextResponse.json({ batchId, items: created });
+  const result = await createAndScheduleImageSetBatch({
+    product,
+    client,
+    selectedRoles,
+    requestSourceHash: typeof body.sourceHash === "string" ? body.sourceHash : undefined,
+  }, {
+    createRows: (rows) => db.$transaction((tx) => Promise.all(rows.map((data) => tx.libraryImage.create({ data })))),
+    scheduleAfter: (callback) => after(callback),
+    runBatch: (input) => runImageSetBatch(input),
+    createBatchId: () => `pset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  });
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+  return NextResponse.json(result);
 }
