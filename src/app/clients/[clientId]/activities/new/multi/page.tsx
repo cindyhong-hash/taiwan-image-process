@@ -33,6 +33,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   const [clientId, setClientId] = useState("");
   const [layoutId, setLayoutId] = useState("");
   const [editId, setEditId] = useState<string | null>(null);   // 編輯模式：既有活動 id
+  const [hasLayouts, setHasLayouts] = useState(false);         // 編輯的活動是否已有拼版 → 決定「重新生成」還是「首次生成」文案
   const [showPicker, setShowPicker] = useState(false);
 
   const [genMode, setGenMode] = useState<"unified" | "perCell">("unified");
@@ -78,6 +79,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
       // layout 覆寫：從單圖編輯頁切過來時，活動的 layoutId 還是 single，用 query 指定的多圖版型
       const override = sp.get("layout");
       fetch(`/api/activities/${edit}`).then((r) => r.json()).then((a) => {
+        setHasLayouts((a.generatedLayouts?.length ?? 0) > 0);
         const storedLid = a.layoutId && a.layoutId !== "single" ? a.layoutId : null;
         const lid = override || storedLid || "two-lr";
         setLayoutId(lid);
@@ -469,7 +471,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         </button>
         {editId && (
           <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
-            儲存後將刪除舊的拼版，重新用 AI 生成新版本。
+            {hasLayouts ? "儲存後將刪除舊的拼版，重新用 AI 生成新版本。" : "儲存後 AI 會依這份設定生成拼版供你挑選。"}
           </div>
         )}
       </div>
@@ -816,7 +818,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
           className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-16 py-4 text-base font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-50">
           {saving
             ? <><Loader2 className="h-5 w-5 animate-spin" />處理中…</>
-            : <><Sparkles className="h-[18px] w-[18px]" />{editId ? "儲存並重新生成" : "AI 開始生成"}</>}
+            : <><Sparkles className="h-[18px] w-[18px]" />{editId ? (hasLayouts ? "儲存並重新生成" : "儲存並生成") : "AI 開始生成"}</>}
         </Button>
       </div>
 

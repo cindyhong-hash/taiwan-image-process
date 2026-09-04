@@ -13,6 +13,7 @@ export default function EditActivityPage({
   const [clientId,   setClientId]   = useState("");
   const [activityId, setActivityId] = useState("");
   const [initial,    setInitial]    = useState<Partial<ActivityFormValues> | null>(null);
+  const [layoutCount, setLayoutCount] = useState(0);   // 已有版型數 → 決定是「首次生成」還是「重新生成」
   const router = useRouter();
 
   useEffect(() => {
@@ -21,7 +22,8 @@ export default function EditActivityPage({
       setActivityId(activityId);
       fetch(`/api/activities/${activityId}`)
         .then((r) => r.json())
-        .then((data) =>
+        .then((data) => {
+          setLayoutCount(data.generatedLayouts?.length ?? 0);
           setInitial({
             requiredText:         data.titleText ?? data.focusPoint ?? "",
             imagePrompt:          data.imagePrompt ?? "",
@@ -33,8 +35,8 @@ export default function EditActivityPage({
             referenceImageUrls:   data.referenceImageUrls ?? [],
             selectedComponentIds: data.selectedComponentIds ?? [],
             baseImageUrl:         data.baseImageUrl ?? undefined, // [2b] 底圖模式：編輯時要保留，唔可以 fallback 去普通生成
-          })
-        );
+          });
+        });
     });
   }, [params]);
 
@@ -76,13 +78,15 @@ export default function EditActivityPage({
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-8 text-sm text-amber-700">
-        儲存後將刪除舊的 3 款版型，重新用 AI 生成新版本。
+        {layoutCount > 0
+          ? `儲存後將刪除舊的 ${layoutCount} 款版型，重新用 AI 生成新版本。`
+          : "儲存後 AI 會依這份設定生成版型供你挑選。"}
       </div>
 
       <ActivityForm
         clientId={clientId}
         initialValues={initial}
-        submitLabel="儲存並重新生成"
+        submitLabel={layoutCount > 0 ? "儲存並重新生成" : "儲存並生成"}
         onSubmit={handleSubmit}
       />
     </div>
