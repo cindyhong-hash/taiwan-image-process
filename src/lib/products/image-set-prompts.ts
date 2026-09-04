@@ -18,6 +18,20 @@ function list(values: string[], fallback: string): string {
   return values.length ? values.join("、") : fallback;
 }
 
+// 顏色值整理成適合放進「生圖」prompt 的文字：濾掉裸 hex 色碼（如 #ffeb85），
+// 否則影像模型會把色碼當文字／浮水印畫進圖裡。只保留可讀顏色名；hex 條目改用中性描述。
+function paletteText(values: string[], fallback: string): string {
+  const cleaned = [
+    ...new Set(
+      values
+        .map((v) => (v ?? "").trim())
+        .filter(Boolean)
+        .map((v) => (/^#?[0-9a-fA-F]{3,8}$/.test(v.replace(/^#/, "")) ? "a subtle brand accent tone" : v)),
+    ),
+  ];
+  return cleaned.length ? cleaned.join("、") : fallback;
+}
+
 export function compileImageSetPrompt({ product, profile, artDirection, role }: CompileImageSetPromptInput): string {
   const appearance = profile.appearance;
   const productFacts = [
@@ -38,10 +52,15 @@ export function compileImageSetPrompt({ product, profile, artDirection, role }: 
     ...artDirection.consistencyRules,
   ].join("\n");
   const palette = [
-    `dominant palette: ${list(artDirection.palette.dominant, "product-visible colors only")}`,
-    `accent palette: ${list(artDirection.palette.accent, "none")}; accent only, never dominant.`,
+    `dominant palette: ${paletteText(artDirection.palette.dominant, "product-visible colors only")}`,
+    `accent palette: ${paletteText(artDirection.palette.accent, "none")}; accent only, never dominant.`,
   ].join("\n");
-  const exclusions = [...role.mustNotShow, ...profile.prohibitedChanges, "未提供的成分、功效、認證、安全或醫療宣稱"];
+  const exclusions = [
+    ...role.mustNotShow,
+    ...profile.prohibitedChanges,
+    "未提供的成分、功效、認證、安全或醫療宣稱",
+    "不得加入任何額外文字、色碼（hex）、數字、標籤或浮水印（產品本身既有的品牌字樣除外）",
+  ];
 
   return [
     "[ROLE OBJECTIVE]",

@@ -75,5 +75,8 @@ test("brand yellow remains an accent rather than the dominant palette", () => {
   const prompt = compileImageSetPrompt({ product, profile: beautyDeviceProfile, artDirection, role });
 
   assert.match(prompt, /dominant.*白.*冰藍.*銀/i);
-  assert.match(prompt, /accent.*#ffeb85/i);
+  // accent 仍要提到、且維持「僅作點綴」語意
+  assert.match(prompt, /accent.*never dominant/i);
+  // 但品牌色 hex 不得出現在生圖 prompt——否則影像模型會把色碼當文字/浮水印畫出來
+  assert.doesNotMatch(prompt, /#[0-9a-f]{3,8}\b/i);
 });
