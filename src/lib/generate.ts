@@ -486,16 +486,20 @@ export async function gptImageGenerateWithReferences(
   if (!apiKey) throw new Error("OPENROUTER_API_KEY 未設定，無法用 GPT 多參考圖生成");
 
   const fetchFn = dependencies.fetchFn ?? fetch;
-  const references = [...new Set([
-    ...input.imageDataUris,
-    input.batchHeroImageUrl,
-  ].filter((url): url is string => Boolean(url)))].slice(0, 5);
+  const batchHero = input.batchHeroImageUrl?.trim() || undefined;
+  const productReferences = [...new Set(input.imageDataUris.filter(Boolean))]
+    .filter((url) => url !== batchHero)
+    .slice(0, batchHero ? 4 : 5);
+  const references = [...productReferences, ...(batchHero ? [batchHero] : [])];
   if (!references.length) throw new Error("GPT 多參考圖生成缺少商品參考圖");
 
   const instruction = [
     input.prompt.trim(),
     `Output aspect ratio: ${input.aspectRatio || "1:1"}.`,
-    "Use every supplied image only as a product identity reference.",
+    `The first ${productReferences.length} image(s) show different views of the same single product and are the only product identity references.`,
+    batchHero
+      ? "The LAST image is a visual consistency and style anchor only. Do not use it as product identity, and do not copy or duplicate any product shown in it."
+      : "",
     "Preserve the product's exact shape, proportions, colors, materials, controls, label text and logo.",
     "Do not invent, merge, duplicate or redesign product details. No added watermark or unrelated text.",
   ].filter(Boolean).join(" ");
@@ -504,6 +508,7 @@ export async function gptImageGenerateWithReferences(
     ...references.map((url) => ({ type: "image_url", image_url: { url } })),
   ];
 
+  const model = input.model ?? OPENROUTER_IMAGE_MODEL;
   let response: Response;
   try {
     response = await fetchFn("https://openrouter.ai/api/v1/chat/completions", {
@@ -514,7 +519,7 @@ export async function gptImageGenerateWithReferences(
         "X-Title": "Marketing Tool",
       },
       body: JSON.stringify({
-        model: input.model ?? OPENROUTER_IMAGE_MODEL,
+        model,
         modalities: ["image", "text"],
         image_config: { aspect_ratio: input.aspectRatio || "1:1", quality: "high" },
         messages: [{ role: "user", content }],
@@ -545,7 +550,7 @@ export async function gptImageGenerateWithReferences(
     const semicolon = imageUrl.indexOf(";");
     if (comma < 0) throw new Error("GPT 多參考圖生成回應格式錯誤");
     const contentType = semicolon > 5 ? imageUrl.slice(5, semicolon) : "image/png";
-    return { buffer: Buffer.from(imageUrl.slice(comma + 1), "base64"), contentType, seed: 0 };
+    return { buffer: Buffer.from(imageUrl.slice(comma + 1), "base64"), contentType, seed: 0, provider: model };
   }
 
   let imageResponse: Response;
@@ -559,6 +564,7 @@ export async function gptImageGenerateWithReferences(
     buffer: Buffer.from(await imageResponse.arrayBuffer()),
     contentType: imageResponse.headers.get("content-type") ?? "image/png",
     seed: 0,
+    provider: model,
   };
 }
 

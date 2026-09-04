@@ -127,7 +127,8 @@ export async function generateImageSetRole(
   ];
   for (const [provider, generate] of attempts) {
     try {
-      return { ...await generate(referenceInput), provider };
+      const generated = await generate(referenceInput);
+      return { ...generated, provider: generated.provider ?? provider };
     } catch (error) {
       console.warn(
         `[image-set:${input.role}] ${provider} attempt failed`,
