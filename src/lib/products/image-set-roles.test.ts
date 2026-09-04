@@ -30,6 +30,9 @@ test("beauty devices receive detail and usage roles instead of texture and ingre
   assert.match(roles[1].sceneCn, /刀頭|按鍵/);
   assert.match(roles[2].sceneCn, /護理|使用情境/);
   assert.match(roles[2].sceneCn, /腿部日常修整/);
+  assert.match(roles[3].sceneCn, /明亮浴室/);
+  assert.match(roles[3].sceneCn, /不出現任何產品/);
+  assert.match(roles[4].sceneCn, /銀藍曲線/);
 });
 
 test("sparse archetype profiles keep detail and lifestyle copy generic", () => {

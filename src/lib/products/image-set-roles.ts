@@ -96,6 +96,16 @@ function lifestyleScene(profile: ProductVisualProfile, base: string): string {
   return `${base}，${[useCase && `依據使用方式：${useCase}`, suitableScene && `場景參考：${suitableScene}`].filter(Boolean).join("；")}`;
 }
 
+function backgroundScene(profile: ProductVisualProfile, base: string): string {
+  const suitableScene = first(profile.suitableScenes);
+  return suitableScene ? `${base}，場景參考：${suitableScene}` : base;
+}
+
+function decorationScene(profile: ProductVisualProfile, base: string): string {
+  const motif = first(profile.visualMotifs);
+  return motif ? `${base}，視覺元素參考：${motif}` : base;
+}
+
 export function planImageSetRoles(profile: ProductVisualProfile): ImageSetRoleSpec[] {
   const map = ROLE_MAPS[profile.productArchetype];
   return (["hero", "detail", "lifestyle", "background", "decoration"] as const).map((role) => ({
@@ -105,7 +115,11 @@ export function planImageSetRoles(profile: ProductVisualProfile): ImageSetRoleSp
       ? detailScene(profile, map.detail.sceneCn)
       : role === "lifestyle"
         ? lifestyleScene(profile, map.lifestyle.sceneCn)
-        : map[role].sceneCn,
+        : role === "background"
+          ? backgroundScene(profile, map.background.sceneCn)
+          : role === "decoration"
+            ? decorationScene(profile, map.decoration.sceneCn)
+            : map[role].sceneCn,
     role,
   }));
 }
