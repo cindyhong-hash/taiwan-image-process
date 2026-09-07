@@ -21,6 +21,12 @@ export default function BrandComponentsPage({ params }: { params: Promise<{ clie
     if (clientId) setLastClientTab(clientId, "components");
   }, [clientId]);
 
+  // 從 URL ?tab=products 進來（首頁「商品情境」卡）時，直接開「產品」分頁
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 依 URL 參數決定初始分頁（client-only，避免 useSearchParams 需 Suspense）
+    if (new URLSearchParams(window.location.search).get("tab") === "products") setTab("products");
+  }, []);
+
   if (!clientId) return <div className="text-gray-400">載入中...</div>;
 
   return (

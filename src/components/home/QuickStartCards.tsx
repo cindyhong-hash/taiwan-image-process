@@ -5,7 +5,7 @@ import { FreeLayoutIcon } from "@/components/icons/FreeLayoutIcon";
 export function QuickStartCards({ clientId }: { clientId: string }) {
   const cards = [
     { title: "社群圖+文", sub: "單圖 / 多圖，一次完成圖文", icon: ShoppingBag, href: `/clients/${clientId}/activities/new`, tint: "bg-[#fff0f6] text-pink-500", preview: "/quickstart/ad.png" },
-    { title: "商品情境", sub: "一個產品，快速生成整套商品素材", icon: ImageIcon, href: `/clients/${clientId}/components/new`, tint: "bg-[#e6f7ff] text-blue-500", preview: "/quickstart/scene.png" },
+    { title: "商品情境", sub: "一個產品，快速生成整套商品素材", icon: ImageIcon, href: `/clients/${clientId}/components?tab=products`, tint: "bg-[#e6f7ff] text-blue-500", preview: "/quickstart/scene.png" },
     { title: "空白畫布設計", sub: "自由移動素材，打造專屬設計", icon: FreeLayoutIcon, href: `/magic-layers/compose?blank=1&clientId=${clientId}`, tint: "bg-[#ecdfff] text-violet-600", preview: "/quickstart/freelayout.png" },
   ];
   return (
