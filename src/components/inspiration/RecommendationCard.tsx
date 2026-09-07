@@ -3,6 +3,7 @@
  * 「為你推薦的靈感」卡（第七節）。Image Preview + Tag + Title + Description + Recommended Product +
  * Format Suggestion + Actions（♡ 收藏 / ✨ 用這個做貼文）。
  */
+import { useState } from "react";
 import { Heart, Sparkles, LayoutGrid, Square } from "lucide-react";
 import { TAG_META, type Recommendation } from "@/lib/inspiration/types";
 
@@ -18,13 +19,14 @@ export function RecommendationCard({
   onUsePost: (rec: Recommendation) => void;
 }) {
   const tag = TAG_META[rec.tag];
+  const [imgError, setImgError] = useState(false);
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md">
       {/* Image preview（重用既有素材圖；沒有就 pastel 佔位） */}
       <div className="relative aspect-[4/3] w-full bg-gradient-to-br from-violet-50 to-fuchsia-50">
-        {rec.imageUrl ? (
+        {rec.imageUrl && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={rec.imageUrl} alt={rec.title} className="h-full w-full object-cover" />
+          <img src={rec.imageUrl} alt={rec.title} className="h-full w-full object-cover" onError={() => setImgError(true)} />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <Sparkles className="h-7 w-7 text-violet-200" />
