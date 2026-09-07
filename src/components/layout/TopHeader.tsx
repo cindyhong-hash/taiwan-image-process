@@ -4,13 +4,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { HelpCircle, Bell, CheckCircle2, Sparkles, X } from "lucide-react";
 import { GuidedTour, type TourStep } from "./GuidedTour";
 
-// 快速教學步驟：錨在每頁都有的側欄 + 說明鈕（找不到錨點會置中顯示）。
-// 依「設定 → 規劃 → 排程 → 產出 → 資源」的操作流程排序，讓使用者一眼看懂能做什麼。
+// 快速教學步驟：依實際操作動線排序（設定 → 首頁快速生成 → 首頁開始創作 → 靈感 → 素材庫 → 說明）。
+// 首頁專屬錨點（home-create / home-quickstart）只在首頁存在；在其他頁開啟導覽時，
+// GuidedTour 找不到錨點會自動置中顯示、不高亮，不會壞版。
 const TOUR_STEPS: TourStep[] = [
   { anchor: '[data-tour="nav-settings"]', title: "① 先設定品牌規範", desc: "填品牌名稱、簡介、色彩與產業，AI 生成才會貼近你的品牌調性。" },
-  { anchor: '[data-tour="nav-inspiration"]', title: "② 靈感中心", desc: "不知道發什麼？AI 依你的品牌與近期趨勢，找出值得做的內容，一鍵帶進「建立圖文」。" },
-  { anchor: '[data-tour="nav-activities"]', title: "③ 建立圖文", desc: "單圖或多圖：填主題、或用靈感帶入，AI 幫你生成社群圖文。" },
-  { anchor: '[data-tour="nav-library"]', title: "④ 素材庫", desc: "產品圖、背景、素材集中管理；還能為每支產品建立可重複使用的商品套圖。" },
+  { anchor: '[data-tour="home-create"]', title: "② 快速生成", desc: "直接說出想做的畫面或文字，還能附上產品圖／風格參考，AI 依品牌記憶判斷最快的做法幫你生成。" },
+  { anchor: '[data-tour="home-quickstart"]', title: "③ 開始創作", desc: "想更有方向？選「社群圖+文」做單圖／多圖、「商品情境」快速生成整套商品素材，或用「空白畫布設計」自由排版。" },
+  { anchor: '[data-tour="nav-inspiration"]', title: "④ 靈感中心", desc: "不知道發什麼？AI 依你的品牌與近期趨勢，找出值得做的內容，一鍵帶進「建立圖文」。" },
+  { anchor: '[data-tour="nav-library"]', title: "⑤ 素材庫", desc: "產品圖、背景、素材集中管理；還能為每支產品建立可重複使用的商品套圖。" },
   { anchor: '[data-tour="help"]', title: "隨時回來看說明", desc: "點這顆問號，可看目前頁面說明，或再看一次這個教學。" },
 ];
 

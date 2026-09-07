@@ -92,7 +92,7 @@ export function HomeHero({ submitting, onQuickCreate, onOpenFullSettings }: Prop
         <p className="mt-2 text-sm text-gray-400">說出你的想法，AI 會依品牌記憶判斷最快的製作方式。</p>
       </div>
 
-      <div className="overflow-visible rounded-2xl border border-[#ebeff5] bg-white shadow-sm transition-shadow focus-within:shadow-[0_8px_24px_rgba(124,58,237,0.08)]">
+      <div data-tour="home-create" className="overflow-visible rounded-2xl border border-[#ebeff5] bg-white shadow-sm transition-shadow focus-within:shadow-[0_8px_24px_rgba(124,58,237,0.08)]">
         <label htmlFor="home-quick-prompt" className="sr-only">描述想生成的圖片</label>
         <textarea
           id="home-quick-prompt"
