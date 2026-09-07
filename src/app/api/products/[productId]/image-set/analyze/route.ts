@@ -39,7 +39,7 @@ export const POST = protectPaidRoute(async (
       now: Date.now,
       claimProductLease: claimProductPaidOperationLease,
       releaseProductLease: releaseProductPaidOperationLease,
-      analyze: (signal) => analyzeImageSetProduct(product, product.client, force, undefined, signal),
+      analyze: (signal) => analyzeImageSetProduct(product, product.client, force, undefined, signal, execution),
     });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
     return NextResponse.json(result.value);

@@ -39,16 +39,36 @@ Date: 2026-09-07
 - GREEN: all three POST handlers are constructed through `protectPaidRoute`. Invalid/missing cookies return 401 before the handler; missing production configuration returns 503 before the handler; the correct derived cookie authorizes the single administrator. The guard captures the invocation timestamp before authorization and supplies it as the only deadline origin.
 - GREEN: analysis uses a product lease and a durable `visualProfileUpdatedAt` force cooldown; batch uses a product lease and active-row exclusion; retry uses an atomic row claim. Rejected races do not schedule provider work.
 
+## Round 2 lease and orphan-recovery fixes
+
+Round 2 base commit: `dbdf0a8`
+
+### 1. Analysis persistence lease CAS
+
+- RED: the analysis worker checked cancellation immediately before persistence, but the persistence write itself was unconditional. A newer worker could acquire the Product lease during that write and then be overwritten by the old result.
+- GREEN: analysis persistence now receives the exact `ImageSetExecution` and performs one Product `updateMany` CAS over product id, operation kind, lease id, exact lease expiry, and an unexpired checked-at time. A deterministic injected race transfers the lease during persistence and proves that the old profile cannot win.
+
+### 2. Retry callback registration rollback
+
+- RED: after a successful `FAILED -> GENERATING` row claim, a synchronous `after()` registration error left the row stuck until its 270-second lease expired.
+- GREEN: registration is guarded and immediately rolls back only the exact row, product, `GENERATING` status, lease id, and lease expiry to `FAILED`. If that rollback loses ownership or the database is unavailable, the original generation lease/expiry remains intact for stale reconciliation and a scoped recovery error is logged. Tests cover both immediate rollback and retained durable recovery metadata.
+
+### 3. Durable orphan-blob cleanup
+
+- RED: a blob saved after deadline or by a final-CAS loser was deleted only once on a best-effort basis. A transient Blob failure permanently leaked the asset and no later process could discover it.
+- GREEN: migration `20260907140000_add_image_asset_cleanup_jobs` adds a durable cleanup tombstone keyed by asset URL with source product, row, lease, attempt count, and last error. Cleanup records before deletion, retries deterministically at 0/250/1000ms, and removes only the exact cleanup job after success. Persistent failures remain queryable and product-scoped stale reconciliation retries them on a later request.
+- GREEN: every cleanup attempt first checks whether the exact row is currently `DONE` with the exact URL. That job is resolved without deleting the successful current asset. Tests cover transient failure then success, persistent failure surviving into a later reconciliation, and current-asset preservation.
+
 ## Verification evidence
 
-- Focused product/security suite: `91/91` passed with Node's test runner.
+- Focused product/security suite after Round 2: `97/97` passed with Node's test runner.
 - TypeScript: `npx tsc --noEmit` passed.
 - Changed-file ESLint: passed with no findings.
 - Prisma: `npx prisma validate` passed.
-- Fresh disposable migration deploy: all 12 migrations applied successfully; foreign keys and `_prisma_migrations` were inspected with SQLite.
+- Fresh disposable migration deploy: all 13 migrations applied successfully; the cleanup table, Product/LibraryImage foreign keys, and `_prisma_migrations` entries were inspected with SQLite.
 - `git diff --check`: passed.
 - Stale timeout scan: no `800s`, `800_000`, or `800000` claims found outside ignored dependencies/build output.
-- Full repository suite: `119/120` after adding the final deadline-cleanup test. The one failure is the pre-existing planner expectation in `src/lib/planner/content-brief.test.ts` (expected object omits the already-returned `subtitleText: null`). Both the implementation and test are byte-for-byte untouched by this branch; commit `6307cf8` already contains that mismatch.
+- Full repository suite after Round 2: `125/126`. The one failure is the pre-existing planner expectation in `src/lib/planner/content-brief.test.ts` (expected object omits the already-returned `subtitleText: null`). Both the implementation and test are byte-for-byte untouched by this branch; commit `6307cf8` already contains that mismatch.
 - Production build reached Next.js compilation and then stopped because the sandbox forbids fetching Google Fonts (`Geist` from `fonts.googleapis.com`). This is an environment/network gate, not a TypeScript or application-code error. No network exception was requested because this fix round prohibits live network access.
 
 ## Security self-review
@@ -56,5 +76,5 @@ Date: 2026-09-07
 - No password, cookie token, provider body, or secret is logged or returned. Cookie/password checks use SHA-256-normalized timing-safe comparison.
 - Authorization occurs before params, request body parsing, Prisma lookup, row mutation, or scheduling in every paid POST.
 - The retry route resolves ownership through the stored relation; no caller-supplied client identity is trusted.
-- Every completion and stale cleanup is scoped by durable ownership data. A late callback cannot overwrite a newer worker, and a late saved asset is deleted instead of becoming unreferenced storage.
+- Every completion and stale cleanup is scoped by durable ownership data. Analysis persistence is itself a Product-lease CAS, retry registration failure cannot strand an owned row without recovery metadata, and a late saved asset is durably recorded until bounded or later cleanup succeeds.
 - Remaining deployment gates are operational: configure `SITE_PASSWORD`, apply the authoritative Prisma migrations to production Turso through the secured deployment procedure, and run the production build in an environment with the existing Google Fonts access/caching available.

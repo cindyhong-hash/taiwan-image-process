@@ -111,6 +111,23 @@ model LibraryImage {
   @@index([productId, status, generationLeaseExpiresAt])
 }
 
+// Durable tombstones for blobs saved by a worker that lost its row lease after upload.
+// These intentionally keep scalar ownership identifiers instead of foreign keys so cleanup
+// remains possible even if the originating product or library row is deleted first.
+model ImageAssetCleanupJob {
+  id                String   @id @default(cuid())
+  productId         String
+  libraryImageId    String
+  generationLeaseId String
+  assetUrl          String   @unique
+  attempts          Int      @default(0)
+  lastError         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([productId, createdAt])
+}
+
 // ── AI 商品套圖（Product Image Set）──────────────────────────────────────────
 // 產品是平台的資料骨幹：品牌 > 產品 > 資產。產品擁有一組可複用素材（去背主圖＋套圖積木），
 // 之後內容製作可「選產品、資產自動帶入」。詳見 docs/product-image-set-guide.md。

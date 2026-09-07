@@ -42,8 +42,27 @@ export const POST = protectPaidRoute(async (
       });
       return claimed.count === 1;
     },
+    rollbackClaimedRow: async (rowId, value) => {
+      const rolledBack = await db.libraryImage.updateMany({
+        where: {
+          id: rowId,
+          productId: target.product!.id,
+          status: "GENERATING",
+          generationLeaseId: value.leaseId,
+          generationLeaseExpiresAt: new Date(value.deadlineAt),
+        },
+        data: {
+          status: "FAILED",
+          errorMessage: "背景工作未能啟動，請重新產生。",
+          generationLeaseId: null,
+          generationLeaseExpiresAt: null,
+        },
+      });
+      return rolledBack.count === 1;
+    },
     scheduleAfter: (callback) => after(callback),
     regenerate: regenerateImageSetItem,
+    logError: (...values) => console.error(...values),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ id: result.id, status: result.status });

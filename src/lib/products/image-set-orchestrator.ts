@@ -127,7 +127,7 @@ export type ImageSetBatchDependencies = {
   failUnfinishedRows?: (rows: Array<{ id: string; errorMessage: string }>, execution: ImageSetExecution) => Promise<unknown>;
   generateRole: (input: ImageSetRoleGenerationInput) => Promise<ImageSetRoleGenerationOutput>;
   saveBuffer: (buffer: Buffer, extension: string, prefix: string, signal?: AbortSignal) => Promise<string>;
-  deleteSavedAsset?: (url: string) => Promise<void>;
+  cleanupOrphanAsset?: (input: ImageSetOrphanAsset) => Promise<ImageSetOrphanCleanupResult>;
   loadAsDataUri?: (url: string, signal?: AbortSignal) => Promise<string>;
   setDeadlineTimer?: (callback: () => void, delayMs: number) => unknown;
   clearDeadlineTimer?: (timer: unknown) => void;
@@ -149,6 +149,106 @@ export type ImageSetSuggestion = {
   cutout: boolean;
   sceneCn: string;
 };
+
+export type ImageSetOrphanAsset = {
+  productId: string;
+  libraryImageId: string;
+  generationLeaseId: string;
+  assetUrl: string;
+};
+
+export type ImageSetOrphanCleanupJob = ImageSetOrphanAsset & {
+  id: string;
+  attempts: number;
+  lastError?: string | null;
+};
+
+export type ImageSetOrphanCleanupResult = { resolved: boolean; deleted: boolean };
+
+export type ImageSetOrphanCleanupDependencies = {
+  upsertCleanupJob: (input: ImageSetOrphanAsset) => Promise<ImageSetOrphanCleanupJob>;
+  isCurrentAsset: (job: ImageSetOrphanCleanupJob) => Promise<boolean>;
+  deleteAsset: (url: string) => Promise<void>;
+  completeCleanupJob: (job: ImageSetOrphanCleanupJob) => Promise<boolean>;
+  recordCleanupFailure: (job: ImageSetOrphanCleanupJob, errorMessage: string) => Promise<unknown>;
+  waitForRetry: (delayMs: number) => Promise<void>;
+  logError: (...values: unknown[]) => void;
+};
+
+const orphanCleanupError = (error: unknown) => (
+  error instanceof Error ? `Asset cleanup failed (${error.name})` : "Unknown asset cleanup failure"
+);
+
+const defaultOrphanCleanupDependencies: ImageSetOrphanCleanupDependencies = {
+  upsertCleanupJob: async (input) => db.imageAssetCleanupJob.upsert({
+    where: { assetUrl: input.assetUrl },
+    create: input,
+    update: {},
+  }),
+  isCurrentAsset: async (job) => (await db.libraryImage.count({
+    where: { status: "DONE", imageUrl: job.assetUrl },
+  })) > 0,
+  deleteAsset: deleteStoredAsset,
+  completeCleanupJob: async (job) => (await db.imageAssetCleanupJob.deleteMany({
+    where: {
+      id: job.id,
+      assetUrl: job.assetUrl,
+      libraryImageId: job.libraryImageId,
+      generationLeaseId: job.generationLeaseId,
+    },
+  })).count === 1,
+  recordCleanupFailure: (job, errorMessage) => db.imageAssetCleanupJob.updateMany({
+    where: {
+      id: job.id,
+      assetUrl: job.assetUrl,
+      libraryImageId: job.libraryImageId,
+      generationLeaseId: job.generationLeaseId,
+    },
+    data: { attempts: { increment: 1 }, lastError: errorMessage },
+  }),
+  waitForRetry: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  logError: (...values) => console.error(...values),
+};
+
+/** Records an orphan before deletion and retains the record when bounded cleanup cannot finish. */
+export async function cleanupImageSetOrphanAsset(
+  input: ImageSetOrphanAsset,
+  dependencies: ImageSetOrphanCleanupDependencies = defaultOrphanCleanupDependencies,
+): Promise<ImageSetOrphanCleanupResult> {
+  const retryDelays = [0, 250, 1_000];
+  let job: ImageSetOrphanCleanupJob | null = null;
+  for (let attempt = 0; attempt < retryDelays.length && !job; attempt += 1) {
+    if (attempt > 0) await dependencies.waitForRetry(retryDelays[attempt]);
+    try {
+      job = await dependencies.upsertCleanupJob(input);
+    } catch (error) {
+      dependencies.logError(`[image-set] orphan cleanup record attempt ${attempt + 1} failed`, orphanCleanupError(error));
+    }
+  }
+  if (!job) return { resolved: false, deleted: false };
+
+  for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+    if (attempt > 0) await dependencies.waitForRetry(retryDelays[attempt]);
+    try {
+      if (await dependencies.isCurrentAsset(job)) {
+        const resolved = await dependencies.completeCleanupJob(job);
+        return { resolved, deleted: false };
+      }
+      await dependencies.deleteAsset(job.assetUrl);
+      const resolved = await dependencies.completeCleanupJob(job);
+      return { resolved, deleted: true };
+    } catch (error) {
+      const errorMessage = orphanCleanupError(error);
+      try {
+        await dependencies.recordCleanupFailure(job, errorMessage);
+      } catch (recordError) {
+        dependencies.logError("[image-set] orphan cleanup failure bookkeeping failed", recordError);
+      }
+      dependencies.logError(`[image-set] orphan asset delete attempt ${attempt + 1} failed`, errorMessage);
+    }
+  }
+  return { resolved: false, deleted: false };
+}
 
 function extension(contentType: string): string {
   if (contentType.includes("png")) return "png";
@@ -227,12 +327,28 @@ export type ImageSetAnalysisDependencies = {
     visualProfileJson: string;
     visualProfileSourceHash: string;
     visualProfileUpdatedAt: Date;
-  }) => Promise<unknown>;
+  }, execution: ImageSetExecution, checkedAt: Date) => Promise<boolean>;
+  now?: () => Date;
 };
 
 const defaultAnalysisDependencies: ImageSetAnalysisDependencies = {
   analyze: (product, signal) => analyzeProductVisualProfile(product, {}, signal),
-  persistProfile: (productId, data) => db.product.update({ where: { id: productId }, data }),
+  persistProfile: async (productId, data, execution, checkedAt) => {
+    const leaseExpiresAt = new Date(execution.deadlineAt);
+    const persisted = await db.product.updateMany({
+      where: {
+        id: productId,
+        paidOperationLeaseId: execution.leaseId,
+        paidOperationKind: "analysis",
+        AND: [
+          { paidOperationLeaseExpiresAt: { equals: leaseExpiresAt } },
+          { paidOperationLeaseExpiresAt: { gt: checkedAt } },
+        ],
+      },
+      data,
+    });
+    return persisted.count === 1;
+  },
 };
 
 /** Builds the GET payload strictly from stored data. Dependency arguments are accepted
@@ -264,6 +380,7 @@ export async function analyzeImageSetProduct(
   force: boolean,
   dependencies: ImageSetAnalysisDependencies = defaultAnalysisDependencies,
   signal?: AbortSignal,
+  execution?: ImageSetExecution,
 ) {
   const imageProduct = asImageSetProduct(product);
   const { profile: cachedProfile, sourceHash } = cachedProfileFor(product);
@@ -273,11 +390,15 @@ export async function analyzeImageSetProduct(
     : await dependencies.analyze(imageProduct, signal);
   signal?.throwIfAborted();
   if (!cached) {
-    await dependencies.persistProfile(product.id, {
+    if (!execution) throw new Error("Analysis persistence requires an active product lease");
+    const checkedAt = (dependencies.now ?? (() => new Date()))();
+    if (checkedAt.getTime() >= execution.deadlineAt) throw new Error("Analysis lease ownership was lost before persistence");
+    const persisted = await dependencies.persistProfile(product.id, {
       visualProfileJson: JSON.stringify(profile),
       visualProfileSourceHash: sourceHash,
-      visualProfileUpdatedAt: new Date(),
-    });
+      visualProfileUpdatedAt: checkedAt,
+    }, execution, checkedAt);
+    if (!persisted) throw new Error("Analysis lease ownership was lost before persistence");
   }
   const artDirection = buildImageSetArtDirection(profile, imageSetBrand(client, product.primaryColorOverride));
   return {
@@ -413,7 +534,7 @@ const defaultDependencies: ImageSetBatchDependencies = {
   }))),
   generateRole: generateImageSetRole,
   saveBuffer,
-  deleteSavedAsset: deleteStoredAsset,
+  cleanupOrphanAsset: cleanupImageSetOrphanAsset,
   loadAsDataUri: defaultLoadAsDataUri,
   setDeadlineTimer: (callback, delayMs) => setTimeout(callback, delayMs),
   clearDeadlineTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
@@ -446,15 +567,20 @@ export async function runImageSetBatch(
   });
   const setDeadlineTimer = dependencies.setDeadlineTimer ?? defaultDependencies.setDeadlineTimer!;
   const clearDeadlineTimer = dependencies.clearDeadlineTimer ?? defaultDependencies.clearDeadlineTimer!;
-  const deleteSavedAsset = dependencies.deleteSavedAsset ?? defaultDependencies.deleteSavedAsset!;
+  const cleanupOrphanAsset = dependencies.cleanupOrphanAsset ?? defaultDependencies.cleanupOrphanAsset!;
   const waitForCleanupRetry = dependencies.waitForCleanupRetry ?? defaultDependencies.waitForCleanupRetry!;
   const now = dependencies.now ?? Date.now;
   const abortController = (dependencies.createAbortController ?? defaultDependencies.createAbortController!)();
   const reachedDeadline = () => abortController.signal.aborted || now() >= execution.deadlineAt;
 
-  const deleteOrphan = async (url: string) => {
+  const deleteOrphan = async (row: ImageSetRow, url: string) => {
     try {
-      await deleteSavedAsset(url);
+      await cleanupOrphanAsset({
+        productId: input.product.id,
+        libraryImageId: row.id,
+        generationLeaseId: execution.leaseId,
+        assetUrl: url,
+      });
     } catch (error) {
       logError("[image-set] orphan asset cleanup failed", error);
     }
@@ -516,7 +642,7 @@ export async function runImageSetBatch(
       );
       const finalParams = createImageSetRowParams(input, row.role, generated.provider);
       if (reachedDeadline()) {
-        await deleteOrphan(imageUrl);
+        await deleteOrphan(row, imageUrl);
         throw abortController.signal.reason ?? new Error("Image-set batch deadline reached");
       }
       const completed = !reachedDeadline() && await transitionRow(row.id, ["GENERATING"], {
@@ -529,7 +655,7 @@ export async function runImageSetBatch(
         generationLeaseExpiresAt: null,
       }, execution);
       if (!completed) {
-        await deleteOrphan(imageUrl);
+        await deleteOrphan(row, imageUrl);
         result.statuses[row.role.role] = "FAILED";
         result.params[row.role.role] = initialParams;
         return undefined;
@@ -613,6 +739,8 @@ export type ReconcileStaleImageSetDependencies = {
   listExpiredRows: (productId: string, cutoff: Date) => Promise<ExpiredImageSetRow[]>;
   failExpiredRow: (row: ExpiredImageSetRow, cutoff: Date) => Promise<boolean>;
   releaseExpiredProductLease: (productId: string, cutoff: Date) => Promise<boolean>;
+  listOrphanCleanupJobs: (productId: string) => Promise<ImageSetOrphanCleanupJob[]>;
+  cleanupOrphanAsset: (job: ImageSetOrphanCleanupJob) => Promise<ImageSetOrphanCleanupResult>;
 };
 
 const imageSetRoles = new Set<ImageSetRole>(["hero", "detail", "lifestyle", "background", "decoration"]);
@@ -658,6 +786,11 @@ const defaultReconcileDependencies: ReconcileStaleImageSetDependencies = {
     });
     return result.count === 1;
   },
+  listOrphanCleanupJobs: (productId) => db.imageAssetCleanupJob.findMany({
+    where: { productId },
+    orderBy: { createdAt: "asc" },
+  }),
+  cleanupOrphanAsset: (job) => cleanupImageSetOrphanAsset(job),
 };
 
 /** Recovers work abandoned by a killed function. Every write is a status + lease + expiry CAS. */
@@ -665,11 +798,17 @@ export async function reconcileStaleImageSetWork(
   productId: string,
   cutoff: Date = new Date(),
   dependencies: ReconcileStaleImageSetDependencies = defaultReconcileDependencies,
-): Promise<{ failedRows: number; releasedProductLease: boolean }> {
+): Promise<{ failedRows: number; releasedProductLease: boolean; cleanedAssets: number }> {
   const rows = await dependencies.listExpiredRows(productId, cutoff);
   const settled = await Promise.all(rows.map((row) => dependencies.failExpiredRow(row, cutoff)));
   const releasedProductLease = await dependencies.releaseExpiredProductLease(productId, cutoff);
-  return { failedRows: settled.filter(Boolean).length, releasedProductLease };
+  const cleanupJobs = await dependencies.listOrphanCleanupJobs(productId);
+  const cleanupResults = await Promise.all(cleanupJobs.map((job) => dependencies.cleanupOrphanAsset(job)));
+  return {
+    failedRows: settled.filter(Boolean).length,
+    releasedProductLease,
+    cleanedAssets: cleanupResults.filter((result) => result.resolved).length,
+  };
 }
 
 export type ImageSetPendingRowData = {
@@ -902,8 +1041,10 @@ export async function regenerateImageSetItem(
 export type RequestImageSetRegenerationDependencies = {
   prepare: (rowId: string) => Promise<ImageSetRegenerationPreparation>;
   claimFailedRow: (rowId: string, execution: ImageSetExecution) => Promise<boolean>;
+  rollbackClaimedRow: (rowId: string, execution: ImageSetExecution) => Promise<boolean>;
   scheduleAfter: (callback: () => Promise<unknown>) => void;
   regenerate: (rowId: string, prepared: PreparedImageSetRegeneration, execution: ImageSetExecution) => Promise<unknown>;
+  logError?: (...values: unknown[]) => void;
 };
 
 export type RequestImageSetRegenerationResult =
@@ -922,6 +1063,25 @@ export async function requestImageSetRegeneration(
   if (!claimed) {
     return { ok: false, status: 409, error: "這張素材目前無法重新產生，請確認狀態為失敗後再試一次。" };
   }
-  dependencies.scheduleAfter(() => dependencies.regenerate(rowId, prepared.value, execution));
+  try {
+    dependencies.scheduleAfter(() => dependencies.regenerate(rowId, prepared.value, execution));
+  } catch (error) {
+    try {
+      const rolledBack = await dependencies.rollbackClaimedRow(rowId, execution);
+      if (!rolledBack) {
+        dependencies.logError?.("[image-set:retry] immediate rollback lost lease ownership; stale reconciliation will recover", {
+          rowId,
+          leaseId: execution.leaseId,
+        });
+      }
+    } catch (rollbackError) {
+      dependencies.logError?.("[image-set:retry] immediate rollback failed; stale lease retained for reconciliation", {
+        rowId,
+        leaseId: execution.leaseId,
+        error: rollbackError,
+      });
+    }
+    throw error;
+  }
   return { ok: true, id: rowId, status: "GENERATING" };
 }

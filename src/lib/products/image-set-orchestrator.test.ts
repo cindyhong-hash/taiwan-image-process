@@ -5,6 +5,7 @@ import sharp from "sharp";
 import {
   IMAGE_SET_BATCH_DEADLINE_MS,
   analyzeImageSetProduct,
+  cleanupImageSetOrphanAsset,
   createAndScheduleImageSetBatch,
   createImageSetExecution,
   prepareImageSetRegenerationFromRow,
@@ -15,6 +16,7 @@ import {
   runImageSetBatch,
   type ImageSetBatchInput,
   type ImageSetBatchDependencies,
+  type ImageSetOrphanCleanupJob,
   type StoredImageSetProduct,
 } from "./image-set-orchestrator.ts";
 import type { ProductVisualProfile } from "./product-visual-profile.ts";
@@ -414,11 +416,126 @@ test("deletes a saved orphan when the DONE compare-and-set loses ownership", asy
       return data.status !== "DONE";
     },
     saveBuffer: async () => "https://blob.example/orphan.png",
-    deleteSavedAsset: async (url) => { deleted.push(url); },
+    cleanupOrphanAsset: async ({ assetUrl }) => {
+      deleted.push(assetUrl);
+      return { resolved: true, deleted: true };
+    },
   }, createImageSetExecution(Date.now(), "lease-orphan"));
   assert.equal(transitions >= 2, true);
   assert.equal(result.statuses.hero, "FAILED");
   assert.deepEqual(deleted, ["https://blob.example/orphan.png"]);
+});
+
+test("orphan cleanup durably records first, retries transient deletes, then resolves its exact job", async () => {
+  const input = {
+    productId: "product-1",
+    libraryImageId: "row-old",
+    generationLeaseId: "lease-old",
+    assetUrl: "https://blob.example/transient-orphan.png",
+  };
+  let job: ImageSetOrphanCleanupJob | null = null;
+  let deleteAttempts = 0;
+  const waits: number[] = [];
+  const result = await cleanupImageSetOrphanAsset(input, {
+    upsertCleanupJob: async (value) => {
+      job ??= { id: "cleanup-1", ...value, attempts: 0 };
+      return job;
+    },
+    isCurrentAsset: async () => false,
+    deleteAsset: async () => {
+      deleteAttempts += 1;
+      if (deleteAttempts < 3) throw new Error("temporary blob outage");
+    },
+    completeCleanupJob: async (value) => {
+      if (!job || job.id !== value.id || job.generationLeaseId !== value.generationLeaseId || job.assetUrl !== value.assetUrl) return false;
+      job = null;
+      return true;
+    },
+    recordCleanupFailure: async (value, errorMessage) => {
+      assert.equal(job?.id, value.id);
+      if (job) job = { ...job, attempts: job.attempts + 1, lastError: errorMessage };
+    },
+    waitForRetry: async (delayMs) => { waits.push(delayMs); },
+    logError: () => {},
+  });
+
+  assert.deepEqual(result, { resolved: true, deleted: true });
+  assert.equal(deleteAttempts, 3);
+  assert.deepEqual(waits, [250, 1_000]);
+  assert.equal(job, null);
+});
+
+test("persistent orphan delete failure survives and a later stale reconciliation completes it", async () => {
+  const orphan = {
+    productId: "product-1",
+    libraryImageId: "row-old",
+    generationLeaseId: "lease-old",
+    assetUrl: "https://blob.example/persistent-orphan.png",
+  };
+  let job: ImageSetOrphanCleanupJob | null = null;
+  let failDeletes = true;
+  let deleteAttempts = 0;
+  let recordedAttempts = 0;
+  const cleanupDependencies = {
+    upsertCleanupJob: async (value: typeof orphan) => {
+      job ??= { id: "cleanup-persistent", ...value, attempts: 0 };
+      return job;
+    },
+    isCurrentAsset: async () => false,
+    deleteAsset: async () => {
+      deleteAttempts += 1;
+      if (failDeletes) throw new Error("blob unavailable");
+    },
+    completeCleanupJob: async (value: ImageSetOrphanCleanupJob) => {
+      if (!job || job.id !== value.id || job.generationLeaseId !== value.generationLeaseId || job.assetUrl !== value.assetUrl) return false;
+      job = null;
+      return true;
+    },
+    recordCleanupFailure: async (_value: ImageSetOrphanCleanupJob, errorMessage: string) => {
+      recordedAttempts += 1;
+      if (job) job = { ...job, attempts: recordedAttempts, lastError: errorMessage };
+    },
+    waitForRetry: async () => {},
+    logError: () => {},
+  };
+
+  const first = await cleanupImageSetOrphanAsset(orphan, cleanupDependencies);
+  assert.deepEqual(first, { resolved: false, deleted: false });
+  assert.equal(recordedAttempts, 3);
+
+  failDeletes = false;
+  const reconciled = await reconcileStaleImageSetWork("product-1", new Date("2026-09-07T10:00:00.000Z"), {
+    listExpiredRows: async () => [],
+    failExpiredRow: async () => false,
+    releaseExpiredProductLease: async () => false,
+    listOrphanCleanupJobs: async () => job ? [job] : [],
+    cleanupOrphanAsset: (value) => cleanupImageSetOrphanAsset(value, cleanupDependencies),
+  });
+  assert.deepEqual(reconciled, { failedRows: 0, releasedProductLease: false, cleanedAssets: 1 });
+  assert.equal(deleteAttempts, 4);
+  assert.equal(job, null);
+});
+
+test("orphan reconciliation never deletes an asset that is now the successful current row", async () => {
+  let deleted = false;
+  let completed = false;
+  const result = await cleanupImageSetOrphanAsset({
+    productId: "product-1",
+    libraryImageId: "row-current",
+    generationLeaseId: "lease-old",
+    assetUrl: "https://blob.example/current.png",
+  }, {
+    upsertCleanupJob: async (value) => ({ id: "cleanup-current", ...value, attempts: 0 }),
+    isCurrentAsset: async () => true,
+    deleteAsset: async () => { deleted = true; },
+    completeCleanupJob: async () => { completed = true; return true; },
+    recordCleanupFailure: async () => {},
+    waitForRetry: async () => {},
+    logError: () => {},
+  });
+  assert.deepEqual(result, { resolved: true, deleted: false });
+  assert.equal(deleted, false);
+  assert.equal(completed, true);
 });
 
 test("passes the request deadline signal into the asset save", async () => {
@@ -504,8 +621,10 @@ test("reconciles only rows whose status, lease ownership and expiry are still st
     listExpiredRows: async () => observed,
     failExpiredRow: async (row, cutoff) => { failed.push({ row, cutoff }); return true; },
     releaseExpiredProductLease: async (productId, cutoff) => { released.push({ productId, cutoff }); return true; },
+    listOrphanCleanupJobs: async () => [],
+    cleanupOrphanAsset: async () => ({ resolved: true, deleted: true }),
   });
-  assert.deepEqual(result, { failedRows: 1, releasedProductLease: true });
+  assert.deepEqual(result, { failedRows: 1, releasedProductLease: true, cleanedAssets: 0 });
   assert.deepEqual(failed, [{ row: observed[0], cutoff: now }]);
   assert.deepEqual(released, [{ productId: "product-1", cutoff: now }]);
 });
@@ -565,7 +684,7 @@ test("GET view is read-only and reports a valid cached profile without model cal
   let writes = 0;
   const response = await readImageSetProduct(product, null, {
     analyze: async () => { analyzed += 1; return profile; },
-    persistProfile: async () => { writes += 1; },
+    persistProfile: async () => { writes += 1; return true; },
   });
   assert.equal(response.needsAnalysis, false);
   assert.equal(response.hasHero, true);
@@ -600,7 +719,11 @@ test("analyze returns cache unless forced, and force persists the current source
   const writes: Array<{ visualProfileJson: string; visualProfileSourceHash: string }> = [];
   const deps = {
     analyze: async () => { analyzes += 1; return { ...profile, productType: "重新分析後" }; },
-    persistProfile: async (_id: string, data: { visualProfileJson: string; visualProfileSourceHash: string }) => { writes.push(data); },
+    now: () => new Date(10_000),
+    persistProfile: async (_id: string, data: { visualProfileJson: string; visualProfileSourceHash: string }) => {
+      writes.push(data);
+      return true;
+    },
   };
 
   const cached = await analyzeImageSetProduct(product, null, false, deps);
@@ -608,7 +731,14 @@ test("analyze returns cache unless forced, and force persists the current source
   assert.equal(analyzes, 0);
   assert.equal(writes.length, 0);
 
-  const forced = await analyzeImageSetProduct(product, null, true, deps);
+  const forced = await analyzeImageSetProduct(
+    product,
+    null,
+    true,
+    deps,
+    undefined,
+    { leaseId: "analysis-force", deadlineAt: 20_000 },
+  );
   assert.equal(forced.cached, false);
   assert.equal(forced.profile.productType, "重新分析後");
   assert.equal(analyzes, 1);
@@ -626,9 +756,35 @@ test("analysis result arriving after its deadline is never persisted", async () 
       controller.abort(new Error("analysis deadline"));
       return profile;
     },
-    persistProfile: async () => { writes += 1; },
+    persistProfile: async () => { writes += 1; return true; },
   }, controller.signal), /analysis deadline/);
   assert.equal(writes, 0);
+});
+
+test("analysis persistence cannot overwrite a newer worker after the product lease transfers", async () => {
+  const product = storedProduct();
+  const oldExecution = { leaseId: "analysis-old", deadlineAt: 20_000 };
+  let leaseOwner = oldExecution.leaseId;
+  let storedProductType = "new-worker-profile";
+  let persistenceCheckedAtMs = -1;
+
+  await assert.rejects(analyzeImageSetProduct(product, null, true, {
+    analyze: async () => ({ ...profile, productType: "stale-old-profile" }),
+    now: () => new Date(10_000),
+    persistProfile: async (productId, data, execution, checkedAt) => {
+      assert.equal(productId, product.id);
+      assert.deepEqual(execution, oldExecution);
+      persistenceCheckedAtMs = checkedAt.getTime();
+      leaseOwner = "analysis-new";
+      if (!execution || leaseOwner !== execution.leaseId) return false;
+      storedProductType = JSON.parse(data.visualProfileJson).productType;
+      return true;
+    },
+  }, undefined, oldExecution), /analysis lease ownership was lost/i);
+
+  assert.equal(leaseOwner, "analysis-new");
+  assert.equal(storedProductType, "new-worker-profile");
+  assert.equal(persistenceCheckedAtMs, 10_000);
 });
 
 test("force analysis cooldown rejects before lease acquisition or provider work", async () => {
@@ -754,6 +910,7 @@ test("stale retry returns 409 Traditional Chinese guidance and mutates no row", 
   const response = await requestImageSetRegeneration("row-stale", createImageSetExecution(10_000, "retry-stale"), {
     prepare: async () => ({ ok: false as const, status: 409 as const, error: "商品資料已更新，請先重新分析產品後再重新產生這張素材。" }),
     claimFailedRow: async () => { updates += 1; return true; },
+    rollbackClaimedRow: async () => true,
     scheduleAfter: () => { schedules += 1; },
     regenerate: async () => ({ statuses: {}, params: {} }),
   });
@@ -807,6 +964,7 @@ test("retry marks and regenerates only the requested row", async () => {
   const response = await requestImageSetRegeneration("row-target", createImageSetExecution(10_000, "retry-target"), {
     prepare: async () => ({ ok: true as const, value: prepared }),
     claimFailedRow: async (id) => { updates.push(id); return true; },
+    rollbackClaimedRow: async () => true,
     scheduleAfter: (callback) => { callbacks.push(callback); },
     regenerate: async (id, value) => {
       assert.equal(id, "row-target");
@@ -827,9 +985,59 @@ test("retry returns 409 and schedules nothing when FAILED compare-and-set loses 
   const response = await requestImageSetRegeneration("row-target", createImageSetExecution(10_000, "retry-race"), {
     prepare: async () => ({ ok: true as const, value: prepared }),
     claimFailedRow: async () => false,
+    rollbackClaimedRow: async () => true,
     scheduleAfter: () => { schedules += 1; },
     regenerate: async () => ({ statuses: {}, params: {} }),
   });
   assert.deepEqual(response, { ok: false, status: 409, error: "這張素材目前無法重新產生，請確認狀態為失敗後再試一次。" });
   assert.equal(schedules, 0);
+});
+
+test("retry scheduling failure rolls the exact claimed lease back to FAILED immediately", async () => {
+  const execution = createImageSetExecution(10_000, "retry-schedule-failed");
+  const prepared = { rowId: "row-target", input: { ...input(), rows: [{ id: "row-target", role: roles[1] }] } };
+  const row: { status: "FAILED" | "GENERATING"; leaseId: string | null } = { status: "FAILED", leaseId: null };
+
+  await assert.rejects(requestImageSetRegeneration("row-target", execution, {
+    prepare: async () => ({ ok: true as const, value: prepared }),
+    claimFailedRow: async () => {
+      row.status = "GENERATING";
+      row.leaseId = execution.leaseId;
+      return true;
+    },
+    rollbackClaimedRow: async (_rowId, claimedExecution) => {
+      if (row.status !== "GENERATING" || row.leaseId !== claimedExecution.leaseId) return false;
+      row.status = "FAILED";
+      row.leaseId = null;
+      return true;
+    },
+    scheduleAfter: () => { throw new Error("after registration failed"); },
+    regenerate: async () => ({ statuses: {}, params: {} }),
+  }), /after registration failed/);
+
+  assert.deepEqual(row, { status: "FAILED", leaseId: null });
+});
+
+test("retry rollback failure retains its lease for stale recovery and emits durable-recovery evidence", async () => {
+  const execution = createImageSetExecution(10_000, "retry-rollback-failed");
+  const prepared = { rowId: "row-target", input: { ...input(), rows: [{ id: "row-target", role: roles[1] }] } };
+  const row = { status: "GENERATING", leaseId: execution.leaseId, expiresAt: execution.deadlineAt };
+  const logs: unknown[][] = [];
+
+  await assert.rejects(requestImageSetRegeneration("row-target", execution, {
+    prepare: async () => ({ ok: true as const, value: prepared }),
+    claimFailedRow: async () => true,
+    rollbackClaimedRow: async () => { throw new Error("database unavailable"); },
+    scheduleAfter: () => { throw new Error("after registration failed"); },
+    regenerate: async () => ({ statuses: {}, params: {} }),
+    logError: (...values) => { logs.push(values); },
+  }), /after registration failed/);
+
+  assert.deepEqual(row, { status: "GENERATING", leaseId: "retry-rollback-failed", expiresAt: 280_000 });
+  assert.match(String(logs[0]?.[0]), /stale lease retained for reconciliation/);
+  assert.deepEqual(logs[0]?.[1], {
+    rowId: "row-target",
+    leaseId: "retry-rollback-failed",
+    error: new Error("database unavailable"),
+  });
 });
