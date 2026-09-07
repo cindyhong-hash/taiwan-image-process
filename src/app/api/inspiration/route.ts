@@ -287,7 +287,7 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
       suggestedAngle: o.suggestedAngle ? String(o.suggestedAngle) : undefined,
       tag: cleanTag(o.tag),
       suggestedFormat: cleanFormat(o.suggestedFormat),
-      cta: o.type === "trend" ? "看看 AI 怎麼切入" : o.type === "upcoming" ? "產生促銷靈感" : "查看建議題目",
+      cta: o.type === "trend" ? "AI 怎麼切入" : o.type === "upcoming" ? "產生促銷靈感" : "查看建議題目",
       gapNote: o.gapNote ? String(o.gapNote) : undefined,
     }));
 

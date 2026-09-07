@@ -75,7 +75,7 @@ export function OpportunityCard({
         </p>
       )}
 
-      <div className="mt-auto flex flex-wrap gap-2 pt-4">
+      <div className="mt-auto flex items-center gap-1.5 pt-4">
         {opp.type === "reuse" && opp.reuseActivityId ? (
           <button
             type="button"
@@ -89,14 +89,14 @@ export function OpportunityCard({
             <button
               type="button"
               onClick={() => onOpenAngles(opp)}
-              className="inline-flex items-center gap-1 rounded-lg border border-violet-200 px-3 py-1.5 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-50"
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-violet-200 px-2.5 py-1.5 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-50"
             >
-              {opp.cta ?? "看看 AI 怎麼切入"} <ArrowRight className="h-3.5 w-3.5" />
+              {opp.cta ?? "AI 怎麼切入"} <ArrowRight className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
               onClick={() => onUsePost(opp)}
-              className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
             >
               <Sparkles className="h-3.5 w-3.5" /> 用這個做貼文
             </button>
