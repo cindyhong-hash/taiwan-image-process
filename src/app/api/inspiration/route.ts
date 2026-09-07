@@ -24,6 +24,15 @@ import {
 
 export const maxDuration = 60;
 
+// 記憶體快取：同 clientId+月份+filter+query 短時間內重複請求直接回快取，
+// 讓「再次進頁 / 切 chip / 返回上一頁」不必再等 LLM。serverless 各實例各自快取，暖啟動內有效。
+// 有帶 avoid（要求換一批）時不吃快取。
+type CacheEntry = { at: number; data: InspirationResult };
+const INSPIRATION_CACHE = new Map<string, CacheEntry>();
+const INSPIRATION_TTL_MS = 10 * 60 * 1000;
+const inspirationCacheKey = (clientId: string, month: number, filter: string, query: string) =>
+  `${clientId}|${month}|${filter || "all"}|${query.trim().toLowerCase()}`;
+
 type Product = { label: string; imageUrl: string };
 
 function parseStrings(value: unknown): string[] {
@@ -107,6 +116,13 @@ export async function POST(request: Request) {
   const filter = typeof body.filter === "string" ? body.filter : "";
   const avoid: string[] = Array.isArray(body.avoid) ? body.avoid.map(String) : [];
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
+
+  const cacheMonth = new Date().getUTCMonth() + 1;
+  const cacheKey = inspirationCacheKey(clientId, cacheMonth, filter, query);
+  if (!avoid.length) {
+    const hit = INSPIRATION_CACHE.get(cacheKey);
+    if (hit && Date.now() - hit.at < INSPIRATION_TTL_MS) return NextResponse.json(hit.data);
+  }
 
   const client = await db.client.findUnique({
     where: { id: clientId },
@@ -255,7 +271,7 @@ ${avoid.length ? `避免重複這些（已看過）：${JSON.stringify(avoid)}` 
 }
 opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反映和本品牌的相關度。recommendations 給 6–8 則，全部都要和本品牌高度相關（brandRelevance 盡量 ≥ 70）。`;
 
-  const parsed = extractJsonObject(await chatTextOpenRouter(prompt, 4000));
+  const parsed = extractJsonObject(await chatTextOpenRouter(prompt, 3000));
   const rawOpps = Array.isArray(parsed?.opportunities) ? (parsed!.opportunities as Record<string, unknown>[]) : [];
   const rawRecs = Array.isArray(parsed?.recommendations) ? (parsed!.recommendations as Record<string, unknown>[]) : [];
 
@@ -323,5 +339,6 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
       needProduct: !hasProduct,
     },
   };
+  if (!avoid.length) INSPIRATION_CACHE.set(cacheKey, { at: Date.now(), data: result });
   return NextResponse.json(result);
 }

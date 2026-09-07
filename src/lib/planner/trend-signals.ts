@@ -130,18 +130,21 @@ const threadsProvider: TrendSignalProvider = {
     if (!key) return [];
     const keywords = await deriveTrendKeywords(ctx);
     if (!keywords.length) return [];
-    const texts: string[] = [];
-    for (const kw of keywords.slice(0, 3)) {
-      try {
-        const res = await fetch(`https://threads-scraper-api2.p.rapidapi.com/api/v1/search/top?query=${encodeURIComponent(kw)}`, {
-          headers: { "x-rapidapi-host": "threads-scraper-api2.p.rapidapi.com", "x-rapidapi-key": key },
-          signal: AbortSignal.timeout(15000),
-        });
-        if (res.ok) collectThreadTexts(await res.json().catch(() => null), texts);
-      } catch { /* 跳過這個關鍵字 */ }
-      if (texts.length >= 20) break;
-    }
-    const uniq = [...new Set(texts)].slice(0, 25);
+    // 三個關鍵字「並行」抓（各自 15s timeout，單一失敗不影響其他），再合併。
+    const perKeyword = await Promise.all(
+      keywords.slice(0, 3).map(async (kw) => {
+        const bucket: string[] = [];
+        try {
+          const res = await fetch(`https://threads-scraper-api2.p.rapidapi.com/api/v1/search/top?query=${encodeURIComponent(kw)}`, {
+            headers: { "x-rapidapi-host": "threads-scraper-api2.p.rapidapi.com", "x-rapidapi-key": key },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (res.ok) collectThreadTexts(await res.json().catch(() => null), bucket);
+        } catch { /* 跳過這個關鍵字 */ }
+        return bucket;
+      }),
+    );
+    const uniq = [...new Set(perKeyword.flat())].slice(0, 25);
     if (!uniq.length) return [];
     const kwLabel = keywords.join("、");
     try {
