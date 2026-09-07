@@ -10,6 +10,7 @@ import { RecentWorks } from "@/components/home/RecentWorks";
 import { BrandMemoryPanel } from "@/components/home/BrandMemoryPanel";
 import { AiLearnedCard } from "@/components/home/AiLearnedCard";
 import { PastActivityCard, type PastActivityItem } from "@/components/home/PastActivityCard";
+import { TodayInspirationCard } from "@/components/inspiration/TodayInspirationCard";
 import { brandCompleteness } from "@/lib/brandCompleteness";
 import { buildQuickActivityPayload, classifyQuickCreate, type QuickCreateInput } from "@/lib/home/quick-create";
 
@@ -162,6 +163,7 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
         <RecentWorks clientId={client.id} activities={client.activities ?? []} />
       </div>
       <div className="w-64 shrink-0 space-y-4">
+        <TodayInspirationCard clientId={client.id} />
         <BrandMemoryPanel
           clientId={client.id}
           primaryColor={client.primaryColor}

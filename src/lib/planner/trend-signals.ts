@@ -162,9 +162,45 @@ const threadsProvider: TrendSignalProvider = {
   },
 };
 
+/**
+ * 台灣季節／節慶靜態資料（無外部 API）。key = 月份(1–12)，每項 {label, kind, score}。
+ * 供靈感中心「季節時事 / 節日行銷」機會使用；importantDate（使用者輸入）之外的常青脈絡。
+ */
+const TAIWAN_SEASONAL: Record<number, { label: string; kind: TrendSignalKind; score: number }[]> = {
+  1: [{ label: "新年新氣象", kind: "season", score: 0.7 }, { label: "尾牙／年終", kind: "event", score: 0.65 }, { label: "農曆春節前採買", kind: "event", score: 0.75 }],
+  2: [{ label: "農曆新年", kind: "event", score: 0.8 }, { label: "情人節", kind: "event", score: 0.75 }, { label: "開工開學收心", kind: "season", score: 0.6 }],
+  3: [{ label: "初春換季", kind: "season", score: 0.7 }, { label: "白色情人節", kind: "event", score: 0.6 }, { label: "婦女節", kind: "event", score: 0.55 }],
+  4: [{ label: "春季賞花踏青", kind: "season", score: 0.65 }, { label: "清明連假", kind: "event", score: 0.6 }, { label: "兒童節", kind: "event", score: 0.55 }],
+  5: [{ label: "母親節", kind: "event", score: 0.8 }, { label: "初夏防曬季開始", kind: "season", score: 0.7 }, { label: "梅雨潮濕護理", kind: "season", score: 0.55 }],
+  6: [{ label: "夏季消暑", kind: "season", score: 0.7 }, { label: "端午連假", kind: "event", score: 0.65 }, { label: "畢業季", kind: "event", score: 0.6 }],
+  7: [{ label: "盛夏戶外／泳裝季", kind: "season", score: 0.72 }, { label: "暑假出遊", kind: "season", score: 0.68 }, { label: "夏日除毛需求高峰", kind: "season", score: 0.7 }],
+  8: [{ label: "七夕情人節", kind: "event", score: 0.72 }, { label: "父親節", kind: "event", score: 0.68 }, { label: "開學前準備", kind: "season", score: 0.65 }],
+  9: [{ label: "入秋換季保養", kind: "season", score: 0.75 }, { label: "開學季", kind: "event", score: 0.68 }, { label: "9/9 購物節", kind: "event", score: 0.6 }, { label: "中秋節", kind: "event", score: 0.7 }],
+  10: [{ label: "秋季乾燥肌護理", kind: "season", score: 0.7 }, { label: "雙十連假", kind: "event", score: 0.6 }, { label: "萬聖節", kind: "event", score: 0.6 }],
+  11: [{ label: "雙11購物節", kind: "event", score: 0.82 }, { label: "換季保暖", kind: "season", score: 0.68 }, { label: "感恩節／黑五", kind: "event", score: 0.65 }],
+  12: [{ label: "耶誕節", kind: "event", score: 0.78 }, { label: "雙12購物節", kind: "event", score: 0.72 }, { label: "年末回顧／跨年", kind: "season", score: 0.7 }, { label: "冬季乾燥護理", kind: "season", score: 0.62 }],
+};
+
+/** 季節／節慶 provider：依 ctx.month 給當月常青季節脈絡（不需任何 API key）。 */
+const seasonalProvider: TrendSignalProvider = {
+  name: "seasonal",
+  async fetch(ctx) {
+    const items = TAIWAN_SEASONAL[ctx.month] ?? [];
+    return items.map((s, i) => ({
+      id: `seasonal:${ctx.month}:${i}:${normLabel(s.label)}`,
+      source: "seasonal",
+      kind: s.kind,
+      label: s.label,
+      score: s.score,
+      meta: { month: ctx.month },
+      fetchedAt: nowIso(),
+    }));
+  },
+};
+
 /** 本版啟用的 providers。Threads 只在有 RAPIDAPI_KEY 時掛上（沒設自動跳過、不影響現有）。 */
 export function getTrendProviders(): TrendSignalProvider[] {
-  return [importantDateProvider, mockProvider, ...(process.env.RAPIDAPI_KEY ? [threadsProvider] : [])];
+  return [importantDateProvider, seasonalProvider, mockProvider, ...(process.env.RAPIDAPI_KEY ? [threadsProvider] : [])];
 }
 
 const normLabel = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");

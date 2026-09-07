@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ShoppingBag, Image as ImageIcon, Settings, CalendarDays, Sparkles, type LucideIcon } from "lucide-react";
+import { Home, ShoppingBag, Image as ImageIcon, Settings, Lightbulb, type LucideIcon } from "lucide-react";
 
 type NavItem = { label: string; href: string; icon: LucideIcon; tour: string; match: (p: string) => boolean };
 type NavGroup = { label?: string; items: NavItem[] };
@@ -9,18 +9,21 @@ type NavGroup = { label?: string; items: NavItem[] };
 export function SidebarNav({ currentClientId, collapsed }: { currentClientId: string; collapsed?: boolean }) {
   const pathname = usePathname();
   const base = `/clients/${currentClientId}`;
-  const isCalendar = (p: string) => p.startsWith(`${base}/marketing-plans`) && (p.endsWith("/calendar") || p === `${base}/marketing-plans/calendar`);
   const groups: NavGroup[] = [
     { items: [
       { label: "首頁", href: base, icon: Home, tour: "nav-home", match: (p) => p === base },
     ] },
-    { label: "企劃", items: [
-      { label: "AI 月度企劃", href: `${base}/marketing-plans`, icon: Sparkles, tour: "nav-planner", match: (p) => p.startsWith(`${base}/marketing-plans`) && !isCalendar(p) },
-      { label: "內容日曆", href: `${base}/marketing-plans/calendar`, icon: CalendarDays, tour: "nav-calendar", match: (p) => isCalendar(p) },
-    ] },
     { label: "內容", items: [
+      // 靈感中心：主要新功能入口（發現值得做的內容 → 一鍵帶入建立圖文）。
+      { label: "靈感中心", href: `${base}/inspiration`, icon: Lightbulb, tour: "nav-inspiration", match: (p) => p.startsWith(`${base}/inspiration`) },
       { label: "建立圖文", href: `${base}/activities`, icon: ShoppingBag, tour: "nav-activities", match: (p) => p.startsWith(`${base}/activities`) },
     ] },
+    // [已從主流程隱藏，保留 route/code] AI 月度企劃 + 內容日曆。仍可由 URL 直達
+    // /clients/{id}/marketing-plans 與 .../marketing-plans/calendar。Sparkles / CalendarDays / isCalendar 保留給它們。
+    // { label: "企劃", items: [
+    //   { label: "AI 月度企劃", href: `${base}/marketing-plans`, icon: Sparkles, tour: "nav-planner", match: (p) => p.startsWith(`${base}/marketing-plans`) && !isCalendar(p) },
+    //   { label: "內容日曆", href: `${base}/marketing-plans/calendar`, icon: CalendarDays, tour: "nav-calendar", match: (p) => isCalendar(p) },
+    // ] },
     { label: "資源", items: [
       { label: "素材庫", href: `${base}/components`, icon: ImageIcon, tour: "nav-library", match: (p) => p.startsWith(`${base}/components`) },
       { label: "品牌設定", href: `${base}/settings`, icon: Settings, tour: "nav-settings", match: (p) => p.startsWith(`${base}/settings`) },
