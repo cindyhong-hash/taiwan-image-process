@@ -40,15 +40,7 @@ export function OpportunityCard({
       <p className="mt-1.5 text-xs leading-relaxed text-gray-500">{opp.whyNow}</p>
 
       {typeof opp.brandFit === "number" && (
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-[11px] text-gray-400">
-            <span>品牌適配度</span>
-            <span className="font-medium text-violet-600">{opp.brandFit}%</span>
-          </div>
-          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
-            <div className="h-full rounded-full bg-violet-400" style={{ width: `${opp.brandFit}%` }} />
-          </div>
-        </div>
+        <p className="mt-2 text-[11px] text-gray-400">品牌適配 <span className="font-medium text-violet-600">{opp.brandFit}%</span></p>
       )}
 
       {opp.reuseNote && <p className="mt-3 text-[11px] text-emerald-600">· {opp.reuseNote}</p>}
