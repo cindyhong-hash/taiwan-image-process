@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { setLastClientId } from "@/lib/lastClient";
 import { ACTIVITY_REF_KEY, ACTIVITY_BASE_KEY, ACTIVITY_IMAGE_PROMPT_KEY, ACTIVITY_HANDOFF_KEY, ACTIVITY_UPDATE_FLAGS_KEY } from "@/components/activities/RolePickerModal";
@@ -51,23 +51,49 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
   const router = useRouter();
   const [client, setClient] = useState<Client | null>(null);
   const [assets, setAssets] = useState<GalleryAsset[]>([]);
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [quickCreating, setQuickCreating] = useState(false);
+
+  // 載入品牌 + 素材數。品牌讀取失敗 → 設 error 狀態顯示重試（不再永久卡「載入中」）；
+  // gallery 只用來算素材數，失敗就當 0、不阻擋整頁。
+  const load = useCallback((cid: string) => {
+    setLoadError(false);
+    fetch(`/api/clients/${cid}`)
+      .then((r) => { if (!r.ok) throw new Error("client fetch failed"); return r.json(); })
+      .then(setClient)
+      .catch(() => setLoadError(true));
+    fetch(`/api/library/gallery?clientId=${cid}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setAssets(Array.isArray(data) ? data : []))
+      .catch(() => setAssets([]));
+  }, []);
 
   useEffect(() => {
     params.then(({ clientId }) => {
       setLastClientId(clientId);
-      fetch(`/api/clients/${clientId}`)
-        .then((r) => r.json())
-        .then(setClient)
-        .catch(() => {});
-      fetch(`/api/library/gallery?clientId=${clientId}`)
-        .then((r) => r.json())
-        .then((data) => setAssets(Array.isArray(data) ? data : []))
-        .catch(() => {});
+      setClientId(clientId);
+      load(clientId);
     });
-  }, [params]);
+  }, [params, load]);
 
-  if (!client) return <div className="text-gray-400">載入中…</div>;
+  if (!client) {
+    if (loadError) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-24 text-center">
+          <p className="text-sm text-gray-500">載入失敗，請檢查網路後再試一次。</p>
+          <button
+            type="button"
+            onClick={() => clientId && load(clientId)}
+            className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
+          >
+            重新載入
+          </button>
+        </div>
+      );
+    }
+    return <div className="text-gray-400">載入中…</div>;
+  }
 
   const assetCount = assets.length;
   const { percent } = brandCompleteness({

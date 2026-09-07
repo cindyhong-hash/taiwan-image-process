@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, Search, CheckCircle2, Circle, X, Image as ImageIcon } from "lucide-react";
 import { AdCreationHeader } from "@/components/adcreation/AdCreationHeader";
@@ -137,6 +137,8 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   const [clientId, setClientId] = useState<string>("");
   const [client, setClient] = useState<Client | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [actionError, setActionError] = useState("");
   // [WIP-only] our edit — 活動 list 搜尋 + 狀態篩選（同事 廣告活動圖 功能區客製，勿 merge 入公司 repo）
   const [actSearch, setActSearch] = useState("");
   const [actStatus, setActStatus] = useState<string>("ALL");
@@ -172,25 +174,41 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
     router.push(`/clients/${clientId}/activities/new`);
   };
 
+  const load = useCallback((cid: string) => {
+    setLoadError(false);
+    fetch(`/api/clients/${cid}`)
+      .then((r) => { if (!r.ok) throw new Error("client fetch failed"); return r.json(); })
+      .then(setClient)
+      .catch(() => setLoadError(true));
+  }, []);
+
   useEffect(() => {
     params.then(({ clientId }) => {
       setClientId(clientId);
       setLastClientTab(clientId, "activities");
-      fetch(`/api/clients/${clientId}`).then((r) => r.json()).then(setClient);
+      load(clientId);
     });
     fetch("/api/clients").then((r) => r.json()).then(setClientsList).catch(() => {});
-  }, [params]);
+  }, [params, load]);
 
   const handleDelete = async (e: React.MouseEvent, activityId: string) => {
     e.preventDefault();
     e.stopPropagation();
     if (!confirm("確定要刪除這個活動？此操作無法復原。")) return;
+    setActionError("");
     setDeletingId(activityId);
-    await fetch(`/api/activities/${activityId}`, { method: "DELETE" });
-    setClient((prev) =>
-      prev ? { ...prev, activities: prev.activities.filter((a) => a.id !== activityId) } : prev
-    );
-    setDeletingId(null);
+    try {
+      const res = await fetch(`/api/activities/${activityId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+      // 只有成功才從列表移除。
+      setClient((prev) =>
+        prev ? { ...prev, activities: prev.activities.filter((a) => a.id !== activityId) } : prev
+      );
+    } catch {
+      setActionError("刪除失敗，請稍後再試。");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const toggleSelect = (id: string) => {
@@ -205,16 +223,20 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   const runBatchMove = async (targetClientId: string) => {
     if (selectedIds.size === 0 || batchBusy || !targetClientId) return;
     setBatchBusy(true);
+    setActionError("");
     try {
-      await Promise.all([...selectedIds].map((id) =>
+      const results = await Promise.all([...selectedIds].map((id) =>
         fetch(`/api/activities/${id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId: targetClientId }),
         })
       ));
+      if (results.some((r) => !r.ok)) throw new Error("batch move failed");
       // 移咗去第二個品牌 → 喺呢個品牌嘅列表消失。
       setClient((prev) => prev ? { ...prev, activities: prev.activities.filter((a) => !selectedIds.has(a.id)) } : prev);
       exitSelect();
+    } catch {
+      setActionError("移動失敗，請稍後再試。");
     } finally {
       setBatchBusy(false);
     }
@@ -223,20 +245,42 @@ export default function ClientFolderPage({ params }: { params: Promise<{ clientI
   const runBatchDelete = async () => {
     if (selectedIds.size === 0 || batchBusy) return;
     setBatchBusy(true);
+    setActionError("");
     try {
-      await Promise.all([...selectedIds].map((id) => fetch(`/api/activities/${id}`, { method: "DELETE" })));
+      const results = await Promise.all([...selectedIds].map((id) => fetch(`/api/activities/${id}`, { method: "DELETE" })));
+      if (results.some((r) => !r.ok)) throw new Error("batch delete failed");
       setClient((prev) => prev ? { ...prev, activities: prev.activities.filter((a) => !selectedIds.has(a.id)) } : prev);
       exitSelect();
+    } catch {
+      setActionError("刪除失敗，請稍後再試。");
     } finally {
       setBatchBusy(false);
     }
   };
 
-  if (!client) return <div className="text-gray-400">載入中...</div>;
+  if (!client) {
+    if (loadError) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-24 text-center">
+          <p className="text-sm text-gray-500">載入失敗，請檢查網路後再試一次。</p>
+          <button type="button" onClick={() => clientId && load(clientId)}
+            className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">重新載入</button>
+        </div>
+      );
+    }
+    return <div className="text-gray-400">載入中...</div>;
+  }
 
   return (
     <div className="w-full">
       <AdCreationHeader />
+
+      {actionError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError("")} className="text-red-400 hover:text-red-600"><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       <BrandMemoryBar
         clientId={clientId}

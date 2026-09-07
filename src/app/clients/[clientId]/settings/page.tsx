@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Settings, Plug, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import { BrandSettingsForm, type BrandFormValues } from "@/components/clients/BrandSettingsForm";
@@ -13,39 +13,72 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
   const [tab, setTab] = useState<SettingsTab>("settings");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  const [deleteError, setDeleteError] = useState(false);
   const router = useRouter();
+
+  const load = useCallback((cid: string) => {
+    setLoadError(false);
+    fetch(`/api/clients/${cid}`)
+      .then((r) => { if (!r.ok) throw new Error("client fetch failed"); return r.json(); })
+      .then(setClient)
+      .catch(() => setLoadError(true));
+  }, []);
 
   useEffect(() => {
     params.then(({ clientId }) => {
       setClientId(clientId);
-      fetch(`/api/clients/${clientId}`).then((r) => r.json()).then(setClient);
+      load(clientId);
     });
-  }, [params]);
+  }, [params, load]);
 
+  // 存檔：檢查 res.ok，失敗顯示錯誤且不導頁（不再「失敗也當成功」）。
   const handleSubmit = async (values: BrandFormValues) => {
-    await fetch(`/api/clients/${clientId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
-    });
-    router.push(`/clients/${clientId}`);
-    router.refresh();
+    setSaveError(false);
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      if (!res.ok) throw new Error("save failed");
+      router.push(`/clients/${clientId}`);
+      router.refresh();
+    } catch {
+      setSaveError(true);
+    }
   };
 
   const handleDelete = async () => {
     setDeleting(true);
+    setDeleteError(false);
     try {
-      await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
+      const res = await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
       try { localStorage.removeItem("lastClientId"); } catch { /* ignore */ }
       router.push("/clients");
       router.refresh();
+      setConfirmDelete(false);
+    } catch {
+      setDeleteError(true);
     } finally {
       setDeleting(false);
-      setConfirmDelete(false);
     }
   };
 
-  if (!client) return <div className="text-gray-400">載入中...</div>;
+  if (!client) {
+    if (loadError) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-24 text-center">
+          <p className="text-sm text-gray-500">載入失敗，請檢查網路後再試一次。</p>
+          <button type="button" onClick={() => clientId && load(clientId)}
+            className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">重新載入</button>
+        </div>
+      );
+    }
+    return <div className="text-gray-400">載入中...</div>;
+  }
 
   // AI 已學習側卡：以已填欄位數估算品牌辨識完成度
   const assetCount = client.pastPostImageUrls?.length ?? 0;
@@ -85,6 +118,11 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
           </div>
           <div className="flex gap-6 items-start">
             <div className="flex-1 min-w-0 max-w-3xl">
+              {saveError && (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+                  儲存失敗，請稍後再試一次。你的內容仍保留在下方表單。
+                </div>
+              )}
               <BrandSettingsForm initialValues={client} onSubmit={handleSubmit} submitLabel="更新品牌設定" />
             </div>
             <div className="hidden lg:block w-[300px] shrink-0 sticky top-6">
@@ -122,6 +160,9 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
             <p className="text-xs text-gray-500 mt-2 leading-relaxed">
               這會永久刪除此品牌，以及底下<b>所有活動、圖文與素材</b>，無法復原。
             </p>
+            {deleteError && (
+              <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">刪除失敗，請稍後再試。</p>
+            )}
             <div className="flex items-center justify-end gap-2 mt-4">
               <button type="button" onClick={() => setConfirmDelete(false)} disabled={deleting}
                 className="text-xs font-medium text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors disabled:opacity-50">取消</button>
