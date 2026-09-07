@@ -80,7 +80,7 @@ export function OpportunityCard({
           <button
             type="button"
             onClick={() => onReuse(opp.reuseActivityId!)}
-            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
+            className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
           >
             再次使用 <ArrowRight className="h-3.5 w-3.5" />
           </button>

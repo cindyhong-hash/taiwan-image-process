@@ -102,7 +102,7 @@ function buildReuseOpportunity(
     whyNow: samePeriod ? "去年這個時候做過，現在正是再做一次的時機。" : "先前表現不錯的主題，換個新角度重新利用。",
     suggestedAngle: "換成今年版本",
     suggestedFormat: (pick.layoutId && pick.layoutId !== "single" ? "carousel" : "single"),
-    cta: "查看去年內容 →",
+    cta: "查看去年內容",
     reuseActivityId: pick.id,
     reuseNote,
     tag: "brand",
@@ -287,7 +287,7 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
       suggestedAngle: o.suggestedAngle ? String(o.suggestedAngle) : undefined,
       tag: cleanTag(o.tag),
       suggestedFormat: cleanFormat(o.suggestedFormat),
-      cta: o.type === "trend" ? "看看 AI 怎麼切入 →" : o.type === "upcoming" ? "產生促銷靈感 →" : "查看建議題目 →",
+      cta: o.type === "trend" ? "看看 AI 怎麼切入" : o.type === "upcoming" ? "產生促銷靈感" : "查看建議題目",
       gapNote: o.gapNote ? String(o.gapNote) : undefined,
     }));
 
