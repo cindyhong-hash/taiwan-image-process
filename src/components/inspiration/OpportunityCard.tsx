@@ -3,6 +3,7 @@
  * 內容機會卡（第六節）。四型共用：正在升溫 / 近期值得準備 / 你可以重新利用 / 品牌內容缺口。
  * 重點順序：Type → Title → Why Now → Recommended Product → Suggested Angle → CTA。
  */
+import { useState } from "react";
 import { TrendingUp, CalendarClock, RefreshCw, PieChart, Sparkles, ArrowRight } from "lucide-react";
 import { OPPORTUNITY_META, type Opportunity, type OpportunityType } from "@/lib/inspiration/types";
 
@@ -26,6 +27,7 @@ export function OpportunityCard({
 }) {
   const meta = OPPORTUNITY_META[opp.type];
   const Icon = TYPE_ICON[opp.type];
+  const [imgError, setImgError] = useState(false);
 
   return (
     <div className="flex flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
@@ -54,9 +56,9 @@ export function OpportunityCard({
 
       {opp.recommendedProduct && (
         <div className="mt-3 flex items-center gap-2 rounded-lg bg-gray-50 p-2">
-          {opp.recommendedProduct.imageUrl ? (
+          {opp.recommendedProduct.imageUrl && !imgError ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={opp.recommendedProduct.imageUrl} alt={opp.recommendedProduct.label} className="h-8 w-8 rounded-md border border-gray-200 object-cover" />
+            <img src={opp.recommendedProduct.imageUrl} alt={opp.recommendedProduct.label} className="h-8 w-8 rounded-md border border-gray-200 object-cover" onError={() => setImgError(true)} />
           ) : (
             <span className="flex h-8 w-8 items-center justify-center rounded-md bg-violet-100 text-[10px] text-violet-500">產品</span>
           )}
