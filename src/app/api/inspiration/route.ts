@@ -151,9 +151,9 @@ export async function POST(request: Request) {
     where: {
       clientId,
       status: "DONE",
-      // 排除產品套圖裡「無產品」的積木（背景版/成分概念/裝飾）——推薦卡預覽要能看到產品或使用情境，
-      // 不要抽到空景。assetRole 為 null 的（一般貼文成品）保留。
-      OR: [{ assetRole: null }, { assetRole: { notIn: ["background", "ingredient", "decoration"] } }],
+      // 推薦卡預覽只用「有產品」的圖：產品套圖裡有產品的角色（主視覺/去背產品/質地/功能細節/使用情境/成品）。
+      // 排除無產品積木（背景版/成分/裝飾）與一般貼文成品（assetRole=null，可能是無產品的促銷/情境圖）。
+      assetRole: { in: ["hero", "product", "texture", "detail", "lifestyle", "finished"] },
     },
     orderBy: { createdAt: "desc" },
     take: 12,
