@@ -14,10 +14,10 @@ export function CreationCards({
   onFreeLayout: () => void;
 }) {
   const cardBase =
-    "group relative grid grid-cols-[45fr_55fr] items-stretch gap-3 overflow-hidden rounded-2xl border p-5 text-left transition-all cursor-pointer";
+    "group relative grid grid-cols-[42fr_58fr] items-stretch gap-3 overflow-hidden rounded-2xl border p-5 text-left transition-all cursor-pointer";
   const leftCol = "flex min-w-0 flex-col";
   const rightCol = "flex min-w-0 items-center justify-center";
-  const img = "h-full max-h-60 w-full object-contain";
+  const img = "h-full max-h-72 w-full object-contain";
   const cta =
     "pointer-events-none mt-auto inline-flex self-start items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium";
   const feat = "flex items-center gap-1.5 text-xs text-gray-500";
