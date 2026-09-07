@@ -15,7 +15,6 @@ import {
 } from "@/components/activities/RolePickerModal";
 import { detectUpdateFlags } from "@/lib/updateFlags";
 import { startPostFromBrief } from "@/lib/inspiration/handoff";
-import { loadFavorites, toggleFavorite } from "@/lib/inspiration/favorites";
 import {
   type ContentAngle,
   type InspirationBrief,
@@ -46,13 +45,7 @@ export function InspirationClient({ clientId }: { clientId: string }) {
   const [filterTag, setFilterTag] = useState<InspirationTag | "">("");
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<InspirationResult | null>(null);
-  const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [angleOpp, setAngleOpp] = useState<Opportunity | null>(null);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 從 localStorage 同步收藏到 state（合法一次性）
-    setFavIds(new Set(loadFavorites(clientId).map((r) => r.id)));
-  }, [clientId]);
 
   const fetchInspiration = useCallback(
     async (opts: { query?: string; filter?: InspirationTag | "" }) => {
@@ -156,17 +149,11 @@ export function InspirationClient({ clientId }: { clientId: string }) {
     router.push(`/clients/${clientId}/activities/new`);
   };
 
-  const handleToggleFav = (rec: Recommendation) => {
-    const nowFav = toggleFavorite(clientId, rec);
-    setFavIds((prev) => {
-      const next = new Set(prev);
-      if (nowFav) next.add(rec.id);
-      else next.delete(rec.id);
-      return next;
-    });
-  };
-
-  const opportunities = result?.opportunities ?? [];
+  // 機會卡固定顯示順序：升溫 → 值得準備 → 品牌內容缺口 → 你可以重新利用（重新利用放最右）
+  const OPP_ORDER: Record<string, number> = { trend: 0, upcoming: 1, gap: 2, reuse: 3 };
+  const opportunities = [...(result?.opportunities ?? [])].sort(
+    (a, b) => (OPP_ORDER[a.type] ?? 9) - (OPP_ORDER[b.type] ?? 9),
+  );
   const recommendations = result?.recommendations ?? [];
   const meta = result?.meta;
 
@@ -250,8 +237,6 @@ export function InspirationClient({ clientId }: { clientId: string }) {
                   <RecommendationCard
                     key={rec.id}
                     rec={rec}
-                    favorited={favIds.has(rec.id)}
-                    onToggleFavorite={handleToggleFav}
                     onUsePost={useRecommendation}
                   />
                 ))}

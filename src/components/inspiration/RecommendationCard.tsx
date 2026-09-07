@@ -1,21 +1,17 @@
 "use client";
 /**
  * 「為你推薦的靈感」卡（第七節）。Image Preview + Tag + Title + Description + Recommended Product +
- * Format Suggestion + Actions（♡ 收藏 / ✨ 用這個做貼文）。
+ * Format Suggestion + Action（✨ 用這個做貼文）。
  */
 import { useState } from "react";
-import { Heart, Sparkles, LayoutGrid, Square } from "lucide-react";
+import { Sparkles, LayoutGrid, Square } from "lucide-react";
 import { TAG_META, type Recommendation } from "@/lib/inspiration/types";
 
 export function RecommendationCard({
   rec,
-  favorited,
-  onToggleFavorite,
   onUsePost,
 }: {
   rec: Recommendation;
-  favorited: boolean;
-  onToggleFavorite: (rec: Recommendation) => void;
   onUsePost: (rec: Recommendation) => void;
 }) {
   const tag = TAG_META[rec.tag];
@@ -35,16 +31,6 @@ export function RecommendationCard({
         <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-gray-600 backdrop-blur">
           {tag.label}
         </span>
-        <button
-          type="button"
-          onClick={() => onToggleFavorite(rec)}
-          aria-label="收藏"
-          className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full backdrop-blur transition-colors ${
-            favorited ? "bg-rose-500 text-white" : "bg-white/90 text-gray-400 hover:text-rose-500"
-          }`}
-        >
-          <Heart className={`h-3.5 w-3.5 ${favorited ? "fill-current" : ""}`} />
-        </button>
       </div>
 
       <div className="flex flex-1 flex-col p-3.5">
@@ -62,20 +48,11 @@ export function RecommendationCard({
           {rec.suggestedFormat === "carousel" ? "建議：Carousel" : "建議：單圖"}
         </div>
 
-        <div className="mt-auto flex items-center gap-2 pt-3.5">
-          <button
-            type="button"
-            onClick={() => onToggleFavorite(rec)}
-            className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-              favorited ? "border-rose-200 bg-rose-50 text-rose-600" : "border-gray-200 text-gray-500 hover:bg-gray-50"
-            }`}
-          >
-            <Heart className={`h-3.5 w-3.5 ${favorited ? "fill-current" : ""}`} /> 收藏
-          </button>
+        <div className="mt-auto pt-3.5">
           <button
             type="button"
             onClick={() => onUsePost(rec)}
-            className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
+            className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
           >
             <Sparkles className="h-3.5 w-3.5" /> 用這個做貼文
           </button>
