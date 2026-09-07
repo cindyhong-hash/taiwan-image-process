@@ -17,8 +17,6 @@ import { detectUpdateFlags } from "@/lib/updateFlags";
 import { startPostFromBrief } from "@/lib/inspiration/handoff";
 import { loadFavorites, toggleFavorite } from "@/lib/inspiration/favorites";
 import {
-  INSPIRATION_TAGS,
-  TAG_META,
   type ContentAngle,
   type InspirationBrief,
   type InspirationResult,
@@ -169,7 +167,7 @@ export function InspirationClient({ clientId }: { clientId: string }) {
   };
 
   const opportunities = result?.opportunities ?? [];
-  const recommendations = (result?.recommendations ?? []).filter((r) => !filterTag || r.tag === filterTag);
+  const recommendations = result?.recommendations ?? [];
   const meta = result?.meta;
 
   return (
@@ -246,14 +244,6 @@ export function InspirationClient({ clientId }: { clientId: string }) {
             <h2 className="text-lg font-semibold text-gray-900">為你推薦的靈感</h2>
             <p className="mt-1 text-sm text-gray-500">綜合近期話題、品牌相關性與可製作性，精選適合你的內容題目。</p>
 
-            {/* filter row */}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <FilterPill label="全部" active={filterTag === ""} onClick={() => setFilterTag("")} />
-              {INSPIRATION_TAGS.map((t) => (
-                <FilterPill key={t} label={TAG_META[t].label} active={filterTag === t} onClick={() => setFilterTag(t)} />
-              ))}
-            </div>
-
             {recommendations.length > 0 ? (
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {recommendations.map((rec) => (
@@ -299,16 +289,3 @@ export function InspirationClient({ clientId }: { clientId: string }) {
   );
 }
 
-function FilterPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-        active ? "border-violet-300 bg-violet-100 text-violet-700" : "border-gray-200 bg-white text-gray-500 hover:border-violet-200 hover:text-violet-600"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
