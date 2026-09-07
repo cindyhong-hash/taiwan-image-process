@@ -153,7 +153,7 @@ export async function POST(request: Request) {
     take: 12,
     select: { imageUrl: true },
   });
-  const imagePool = [...products.map((p) => p.imageUrl), ...libPool.map((l) => l.imageUrl)].filter(Boolean);
+  const imagePool = [...new Set([...products.map((p) => p.imageUrl), ...libPool.map((l) => l.imageUrl)].filter(Boolean))];
 
   // ── 品牌 context（重用 planner-context）────────────────────────────────────────
   const toneLabels = client.toneLabels;
@@ -286,7 +286,8 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
   const recommendations: Recommendation[] = recSource
     .map((r, i) => {
       const product = resolveProduct(r.recommendedProductLabel, products);
-      const preview = product?.imageUrl ?? imagePool[imgIdx++ % Math.max(1, imagePool.length)] ?? null;
+      // 每張卡輪流用池子裡「不同」的圖（避免全用同一支產品圖而長得一樣）；池子空才退回產品圖
+      const preview = imagePool[imgIdx++ % Math.max(1, imagePool.length)] ?? product?.imageUrl ?? null;
       return {
         id: `rec:${i}`,
         title: String(r.title),
