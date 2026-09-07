@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { createHash } from "node:crypto";
+import {
+  createSiteGateToken,
+  SITE_GATE_COOKIE_NAME,
+  verifySiteGateCookie,
+  verifySitePassword,
+} from "@/lib/site-gate";
 
 // 冇設 SITE_PASSWORD 就完全唔閂閘（本機開發 / 未決定要唔要密碼保護時預設關閂）。
-const COOKIE_NAME = "site_gate";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 日內唔使再輸入
-
-function tokenFor(password: string): string {
-  return createHash("sha256").update(password).digest("hex");
-}
 
 function gatePage(error?: string): string {
   return `<!doctype html>
@@ -35,17 +35,18 @@ export async function proxy(request: NextRequest) {
   const password = process.env.SITE_PASSWORD;
   if (!password) return NextResponse.next();
 
-  const expected = tokenFor(password);
-  if (request.cookies.get(COOKIE_NAME)?.value === expected) {
+  const expected = createSiteGateToken(password);
+  if (verifySiteGateCookie(request.headers.get("cookie"), password)) {
     return NextResponse.next();
   }
 
   const contentType = request.headers.get("content-type") ?? "";
   if (request.method === "POST" && contentType.includes("form")) {
     const form = await request.formData();
-    if (form.get("password") === password) {
+    const candidate = form.get("password");
+    if (typeof candidate === "string" && verifySitePassword(candidate, password)) {
       const res = NextResponse.redirect(request.url);
-      res.cookies.set(COOKIE_NAME, expected, {
+      res.cookies.set(SITE_GATE_COOKIE_NAME, expected, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",

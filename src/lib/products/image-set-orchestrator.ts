@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { db } from "../db.ts";
-import { loadBuffer, saveBuffer } from "../storage.ts";
+import { deleteStoredAsset, loadBuffer, saveBuffer } from "../storage.ts";
 import { compileImageSetPrompt } from "./image-set-prompts.ts";
 import { generateImageSetRole, type ImageSetRoleGenerationInput, type ImageSetRoleGenerationOutput } from "./image-set-model-router.ts";
 import {
@@ -32,6 +32,7 @@ export type StoredImageSetProduct = Omit<ImageSetProduct, "rawImageUrls"> & {
   rawImageUrls: string;
   visualProfileJson: string;
   visualProfileSourceHash: string | null;
+  visualProfileUpdatedAt?: Date | null;
 };
 
 export type ImageSetClient = {
@@ -45,6 +46,52 @@ export type ImageSetRowStatus = "PENDING" | "GENERATING" | "DONE" | "FAILED";
 // 讓 orchestrator 在函式被平台砍之前先把未完成的列標 FAILED（不留孤兒列）。
 // 升級 Pro/Enterprise 後可連同 route maxDuration 一起調高。
 export const IMAGE_SET_BATCH_DEADLINE_MS = 270_000;
+export type ImageSetExecution = { leaseId: string; deadlineAt: number };
+
+export function createImageSetExecution(
+  invocationStartedAt: number,
+  leaseId: string,
+  budgetMs = IMAGE_SET_BATCH_DEADLINE_MS,
+): ImageSetExecution {
+  return { leaseId, deadlineAt: invocationStartedAt + budgetMs };
+}
+
+export async function claimProductPaidOperationLease(
+  productId: string,
+  execution: ImageSetExecution,
+  kind: "analysis" | "batch",
+  now = new Date(),
+): Promise<boolean> {
+  const result = await db.product.updateMany({
+    where: {
+      id: productId,
+      assets: {
+        none: {
+          status: { in: ["PENDING", "GENERATING"] },
+          generationLeaseExpiresAt: { gt: now },
+        },
+      },
+      OR: [
+        { paidOperationLeaseId: null },
+        { paidOperationLeaseExpiresAt: { lte: now } },
+      ],
+    },
+    data: {
+      paidOperationLeaseId: execution.leaseId,
+      paidOperationLeaseExpiresAt: new Date(execution.deadlineAt),
+      paidOperationKind: kind,
+    },
+  });
+  return result.count === 1;
+}
+
+export async function releaseProductPaidOperationLease(productId: string, leaseId: string): Promise<boolean> {
+  const result = await db.product.updateMany({
+    where: { id: productId, paidOperationLeaseId: leaseId },
+    data: { paidOperationLeaseId: null, paidOperationLeaseExpiresAt: null, paidOperationKind: null },
+  });
+  return result.count === 1;
+}
 
 type ImageSetRowMutation = {
   status?: ImageSetRowStatus;
@@ -52,6 +99,8 @@ type ImageSetRowMutation = {
   prompt?: string;
   paramsJson?: string;
   errorMessage?: string | null;
+  generationLeaseId?: string | null;
+  generationLeaseExpiresAt?: Date | null;
 };
 
 export type ImageSetRowParams = {
@@ -74,14 +123,16 @@ export type ImageSetBatchInput = {
 
 export type ImageSetBatchDependencies = {
   updateRow?: (id: string, data: ImageSetRowMutation) => Promise<unknown>;
-  transitionRow?: (id: string, from: ImageSetRowStatus[], data: ImageSetRowMutation) => Promise<boolean>;
-  failUnfinishedRows?: (rows: Array<{ id: string; errorMessage: string }>) => Promise<unknown>;
+  transitionRow?: (id: string, from: ImageSetRowStatus[], data: ImageSetRowMutation, execution: ImageSetExecution) => Promise<boolean>;
+  failUnfinishedRows?: (rows: Array<{ id: string; errorMessage: string }>, execution: ImageSetExecution) => Promise<unknown>;
   generateRole: (input: ImageSetRoleGenerationInput) => Promise<ImageSetRoleGenerationOutput>;
-  saveBuffer: (buffer: Buffer, extension: string, prefix: string) => Promise<string>;
-  loadAsDataUri?: (url: string) => Promise<string>;
+  saveBuffer: (buffer: Buffer, extension: string, prefix: string, signal?: AbortSignal) => Promise<string>;
+  deleteSavedAsset?: (url: string) => Promise<void>;
+  loadAsDataUri?: (url: string, signal?: AbortSignal) => Promise<string>;
   setDeadlineTimer?: (callback: () => void, delayMs: number) => unknown;
   clearDeadlineTimer?: (timer: unknown) => void;
-  deadlineMs?: number;
+  createAbortController?: () => AbortController;
+  waitForCleanupRetry?: (delayMs: number) => Promise<void>;
   now?: () => number;
   logError?: (...values: unknown[]) => void;
 };
@@ -171,7 +222,7 @@ function cachedProfileFor(product: StoredImageSetProduct): { profile: ProductVis
 }
 
 export type ImageSetAnalysisDependencies = {
-  analyze: typeof analyzeProductVisualProfile;
+  analyze: (product: ImageSetProduct, signal?: AbortSignal) => Promise<ProductVisualProfile>;
   persistProfile: (productId: string, data: {
     visualProfileJson: string;
     visualProfileSourceHash: string;
@@ -180,7 +231,7 @@ export type ImageSetAnalysisDependencies = {
 };
 
 const defaultAnalysisDependencies: ImageSetAnalysisDependencies = {
-  analyze: analyzeProductVisualProfile,
+  analyze: (product, signal) => analyzeProductVisualProfile(product, {}, signal),
   persistProfile: (productId, data) => db.product.update({ where: { id: productId }, data }),
 };
 
@@ -212,13 +263,15 @@ export async function analyzeImageSetProduct(
   client: ImageSetClient,
   force: boolean,
   dependencies: ImageSetAnalysisDependencies = defaultAnalysisDependencies,
+  signal?: AbortSignal,
 ) {
   const imageProduct = asImageSetProduct(product);
   const { profile: cachedProfile, sourceHash } = cachedProfileFor(product);
   const cached = !force && !!cachedProfile;
   const profile = cachedProfile && !force
     ? cachedProfile
-    : await dependencies.analyze(imageProduct);
+    : await dependencies.analyze(imageProduct, signal);
+  signal?.throwIfAborted();
   if (!cached) {
     await dependencies.persistProfile(product.id, {
       visualProfileJson: JSON.stringify(profile),
@@ -236,6 +289,50 @@ export async function analyzeImageSetProduct(
   };
 }
 
+export const IMAGE_SET_FORCE_ANALYSIS_COOLDOWN_MS = 60_000;
+
+export type RequestImageSetAnalysisDependencies<T> = {
+  now: () => number;
+  claimProductLease: (productId: string, execution: ImageSetExecution, kind: "analysis") => Promise<boolean>;
+  releaseProductLease: (productId: string, leaseId: string) => Promise<unknown>;
+  analyze: (signal?: AbortSignal) => Promise<T>;
+};
+
+export type RequestImageSetAnalysisResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; status: 409 | 429; error: string };
+
+/** Applies a durable product-wide paid-operation lease and force-analysis cooldown. */
+export async function requestImageSetAnalysis<T>(
+  request: {
+    product: StoredImageSetProduct;
+    client: ImageSetClient;
+    force: boolean;
+    execution: ImageSetExecution;
+    signal?: AbortSignal;
+  },
+  dependencies: RequestImageSetAnalysisDependencies<T>,
+): Promise<RequestImageSetAnalysisResult<T>> {
+  const now = dependencies.now();
+  if (
+    request.force &&
+    request.product.visualProfileUpdatedAt &&
+    now - request.product.visualProfileUpdatedAt.getTime() < IMAGE_SET_FORCE_ANALYSIS_COOLDOWN_MS
+  ) {
+    return { ok: false, status: 429, error: "產品剛完成分析，請稍候一分鐘再強制重新分析。" };
+  }
+  if (request.execution.deadlineAt <= now || request.signal?.aborted) {
+    return { ok: false, status: 409, error: "這次分析請求已逾時，請再試一次。" };
+  }
+  const claimed = await dependencies.claimProductLease(request.product.id, request.execution, "analysis");
+  if (!claimed) return { ok: false, status: 409, error: "這項產品已有付費處理正在進行，請稍候再試。" };
+  try {
+    return { ok: true, value: await dependencies.analyze(request.signal) };
+  } finally {
+    await dependencies.releaseProductLease(request.product.id, request.execution.leaseId).catch(() => {});
+  }
+}
+
 export function createImageSetRowParams(
   input: Pick<ImageSetBatchInput, "sourceHash" | "profile" | "artDirection">,
   roleSpec: ImageSetRoleSpec,
@@ -251,7 +348,8 @@ export function createImageSetRowParams(
   };
 }
 
-async function defaultLoadAsDataUri(url: string): Promise<string> {
+async function defaultLoadAsDataUri(url: string, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   let buffer: Buffer;
   if (url.startsWith("data:")) {
     const comma = url.indexOf(",");
@@ -260,24 +358,28 @@ async function defaultLoadAsDataUri(url: string): Promise<string> {
     const payload = url.slice(comma + 1);
     buffer = Buffer.from(metadata.includes(";base64") ? payload : decodeURIComponent(payload), metadata.includes(";base64") ? "base64" : "utf8");
   } else {
-    buffer = Buffer.from(await loadBuffer(url));
+    buffer = Buffer.from(await loadBuffer(url, signal));
   }
   const png = await sharp(buffer)
     .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
     .png()
     .toBuffer();
+  signal?.throwIfAborted();
   return `data:image/png;base64,${png.toString("base64")}`;
 }
 
 async function loadReferenceDataUris(
   product: ImageSetProduct,
   batchHeroImageUrl: string | undefined,
-  loadAsDataUri: (url: string) => Promise<string>,
+  loadAsDataUri: (url: string, signal?: AbortSignal) => Promise<string>,
+  signal?: AbortSignal,
 ): Promise<{ heroImageUrl?: string; rawImageUrls: string[]; batchHeroImageUrl?: string }> {
   const hero = product.heroImageUrl || undefined;
   const raw = [...new Set((product.rawImageUrls ?? []).filter(Boolean))].filter((url) => url !== hero);
   const urls = [...raw.slice(0, hero ? 4 : 5), ...(hero ? [hero] : [])];
-  const settled = await Promise.allSettled(urls.map(loadAsDataUri));
+  signal?.throwIfAborted();
+  const settled = await Promise.allSettled(urls.map((url) => loadAsDataUri(url, signal)));
+  signal?.throwIfAborted();
   const loaded = settled.flatMap((entry, index) => entry.status === "fulfilled" ? [{ url: urls[index], dataUri: entry.value }] : []);
   if (!loaded.length) {
     const failures = settled.flatMap((entry) => entry.status === "rejected" ? [entry.reason] : []);
@@ -287,8 +389,9 @@ async function loadReferenceDataUris(
   let batchHeroDataUri: string | undefined;
   if (batchHeroImageUrl) {
     try {
-      batchHeroDataUri = await loadAsDataUri(batchHeroImageUrl);
-    } catch {
+      batchHeroDataUri = await loadAsDataUri(batchHeroImageUrl, signal);
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason ?? error;
       // The generated hero is only a style anchor. Product identity references remain authoritative.
     }
   }
@@ -300,20 +403,22 @@ async function loadReferenceDataUris(
 }
 
 const defaultDependencies: ImageSetBatchDependencies = {
-  transitionRow: async (id, from, data) => {
-    const result = await db.libraryImage.updateMany({ where: { id, status: { in: from } }, data });
+  transitionRow: async (id, from, data, execution) => {
+    const result = await db.libraryImage.updateMany({ where: { id, status: { in: from }, generationLeaseId: execution.leaseId }, data });
     return result.count === 1;
   },
-  failUnfinishedRows: (rows) => db.$transaction(rows.map(({ id, errorMessage }) => db.libraryImage.updateMany({
-    where: { id, status: { in: ["PENDING", "GENERATING"] } },
-    data: { status: "FAILED", errorMessage },
+  failUnfinishedRows: (rows, execution) => db.$transaction(rows.map(({ id, errorMessage }) => db.libraryImage.updateMany({
+    where: { id, status: { in: ["PENDING", "GENERATING"] }, generationLeaseId: execution.leaseId },
+    data: { status: "FAILED", errorMessage, generationLeaseId: null, generationLeaseExpiresAt: null },
   }))),
   generateRole: generateImageSetRole,
   saveBuffer,
+  deleteSavedAsset: deleteStoredAsset,
   loadAsDataUri: defaultLoadAsDataUri,
   setDeadlineTimer: (callback, delayMs) => setTimeout(callback, delayMs),
   clearDeadlineTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
-  deadlineMs: IMAGE_SET_BATCH_DEADLINE_MS,
+  createAbortController: () => new AbortController(),
+  waitForCleanupRetry: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
   now: Date.now,
   logError: (...values) => console.error(...values),
 };
@@ -325,6 +430,7 @@ const defaultDependencies: ImageSetBatchDependencies = {
 export async function runImageSetBatch(
   input: ImageSetBatchInput,
   dependencies: ImageSetBatchDependencies = defaultDependencies,
+  execution: ImageSetExecution = createImageSetExecution((dependencies.now ?? Date.now)(), `legacy_${input.batchId}`),
 ): Promise<ImageSetBatchResult> {
   const result: ImageSetBatchResult = { statuses: {}, params: {} };
   const loadAsDataUri = dependencies.loadAsDataUri ?? defaultLoadAsDataUri;
@@ -340,11 +446,19 @@ export async function runImageSetBatch(
   });
   const setDeadlineTimer = dependencies.setDeadlineTimer ?? defaultDependencies.setDeadlineTimer!;
   const clearDeadlineTimer = dependencies.clearDeadlineTimer ?? defaultDependencies.clearDeadlineTimer!;
-  const deadlineMs = dependencies.deadlineMs ?? IMAGE_SET_BATCH_DEADLINE_MS;
+  const deleteSavedAsset = dependencies.deleteSavedAsset ?? defaultDependencies.deleteSavedAsset!;
+  const waitForCleanupRetry = dependencies.waitForCleanupRetry ?? defaultDependencies.waitForCleanupRetry!;
   const now = dependencies.now ?? Date.now;
-  const deadlineAt = now() + deadlineMs;
-  let deadlineReached = false;
-  const reachedDeadline = () => deadlineReached || now() >= deadlineAt;
+  const abortController = (dependencies.createAbortController ?? defaultDependencies.createAbortController!)();
+  const reachedDeadline = () => abortController.signal.aborted || now() >= execution.deadlineAt;
+
+  const deleteOrphan = async (url: string) => {
+    try {
+      await deleteSavedAsset(url);
+    } catch (error) {
+      logError("[image-set] orphan asset cleanup failed", error);
+    }
+  };
 
   const runRow = async (row: ImageSetRow, batchHeroImageUrl?: string): Promise<string | undefined> => {
     const initialParams = createImageSetRowParams(input, row.role);
@@ -353,7 +467,9 @@ export async function runImageSetBatch(
         status: "GENERATING",
         errorMessage: null,
         paramsJson: JSON.stringify(initialParams),
-      });
+        generationLeaseId: execution.leaseId,
+        generationLeaseExpiresAt: new Date(execution.deadlineAt),
+      }, execution);
       if (!claimed) {
         result.statuses[row.role.role] = "FAILED";
         result.params[row.role.role] = initialParams;
@@ -364,13 +480,15 @@ export async function runImageSetBatch(
           status: "FAILED",
           errorMessage: roleFailureMessage(row.role.role, true),
           paramsJson: JSON.stringify(initialParams),
-        }).catch(() => {});
+          generationLeaseId: null,
+          generationLeaseExpiresAt: null,
+        }, execution).catch(() => {});
         result.statuses[row.role.role] = "FAILED";
         result.params[row.role.role] = initialParams;
         return undefined;
       }
       const references = row.role.path === "edit"
-        ? await loadReferenceDataUris(input.product, batchHeroImageUrl, loadAsDataUri)
+        ? await loadReferenceDataUris(input.product, batchHeroImageUrl, loadAsDataUri, abortController.signal)
         : { rawImageUrls: [] as string[] };
       const prompt = compileImageSetPrompt({
         product: { name: input.product.name, category: input.product.category },
@@ -378,6 +496,7 @@ export async function runImageSetBatch(
         artDirection: input.artDirection,
         role: row.role,
       });
+      abortController.signal.throwIfAborted();
       const generated = await dependencies.generateRole({
         role: row.role.role,
         prompt,
@@ -385,19 +504,32 @@ export async function runImageSetBatch(
         rawImageUrls: references.rawImageUrls,
         batchHeroImageUrl: references.batchHeroImageUrl,
         aspectRatio: "1:1",
+        signal: abortController.signal,
       });
       if (!isConcreteProvider(generated.provider)) throw new Error("Image provider trace is missing or synthetic");
       if (reachedDeadline()) throw new Error("Image-set batch deadline reached");
-      const imageUrl = await dependencies.saveBuffer(generated.buffer, extension(generated.contentType), `product-set-${row.role.role}-`);
+      const imageUrl = await dependencies.saveBuffer(
+        generated.buffer,
+        extension(generated.contentType),
+        `product-set-${row.role.role}-`,
+        abortController.signal,
+      );
       const finalParams = createImageSetRowParams(input, row.role, generated.provider);
+      if (reachedDeadline()) {
+        await deleteOrphan(imageUrl);
+        throw abortController.signal.reason ?? new Error("Image-set batch deadline reached");
+      }
       const completed = !reachedDeadline() && await transitionRow(row.id, ["GENERATING"], {
         status: "DONE",
         imageUrl,
         prompt,
         paramsJson: JSON.stringify(finalParams),
         errorMessage: null,
-      });
+        generationLeaseId: null,
+        generationLeaseExpiresAt: null,
+      }, execution);
       if (!completed) {
+        await deleteOrphan(imageUrl);
         result.statuses[row.role.role] = "FAILED";
         result.params[row.role.role] = initialParams;
         return undefined;
@@ -413,10 +545,43 @@ export async function runImageSetBatch(
         status: "FAILED",
         errorMessage: roleFailureMessage(row.role.role, reachedDeadline()),
         paramsJson: JSON.stringify(initialParams),
-      }).catch(() => {});
+        generationLeaseId: null,
+        generationLeaseExpiresAt: null,
+      }, execution).catch(() => {});
       return undefined;
     }
   };
+
+  let resolveDeadline!: () => void;
+  const deadline = new Promise<void>((resolve) => { resolveDeadline = resolve; });
+  let deadlineCleanupStarted = false;
+  const finishAtDeadline = async () => {
+    if (deadlineCleanupStarted) return deadline;
+    deadlineCleanupStarted = true;
+    if (!abortController.signal.aborted) abortController.abort(new Error("Image-set absolute deadline reached"));
+    const unfinished = input.rows.filter((row) => result.statuses[row.role.role] !== "DONE");
+    const cleanupRows = unfinished.map((row) => ({ id: row.id, errorMessage: roleFailureMessage(row.role.role, true) }));
+    const retryDelays = [0, 1_000, 3_000];
+    for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+      if (attempt > 0) await waitForCleanupRetry(retryDelays[attempt]);
+      try {
+        await failUnfinishedRows(cleanupRows, execution);
+        break;
+      } catch (error) {
+        logError(`[image-set] deadline cleanup attempt ${attempt + 1} failed`, error);
+      }
+    }
+    for (const row of unfinished) {
+      result.statuses[row.role.role] = "FAILED";
+      result.params[row.role.role] = createImageSetRowParams(input, row.role);
+    }
+    resolveDeadline();
+  };
+  const remainingMs = Math.max(0, execution.deadlineAt - now());
+  const timer = remainingMs > 0
+    ? setDeadlineTimer(() => { void finishAtDeadline(); }, remainingMs)
+    : undefined;
+  if (remainingMs === 0) void finishAtDeadline();
 
   const work = (async () => {
     const hero = input.rows.find((row) => row.role.role === "hero");
@@ -431,26 +596,80 @@ export async function runImageSetBatch(
     )));
   })();
 
-  let resolveDeadline!: () => void;
-  const deadline = new Promise<void>((resolve) => { resolveDeadline = resolve; });
-  const timer = setDeadlineTimer(() => {
-    void (async () => {
-      deadlineReached = true;
-      const unfinished = input.rows.filter((row) => result.statuses[row.role.role] !== "DONE");
-      await failUnfinishedRows(unfinished.map((row) => ({ id: row.id, errorMessage: roleFailureMessage(row.role.role, true) })));
-      for (const row of unfinished) {
-        result.statuses[row.role.role] = "FAILED";
-        result.params[row.role.role] = createImageSetRowParams(input, row.role);
-      }
-      resolveDeadline();
-    })().catch((error) => {
-      logError("[image-set] deadline cleanup failed", error);
-      resolveDeadline();
-    });
-  }, deadlineMs);
   const winner = await Promise.race([work.then(() => "work" as const), deadline.then(() => "deadline" as const)]);
-  if (winner === "work") clearDeadlineTimer(timer);
+  if (deadlineCleanupStarted) await deadline;
+  else if (winner === "work" && timer !== undefined) clearDeadlineTimer(timer);
   return result;
+}
+
+export type ExpiredImageSetRow = {
+  id: string;
+  assetRole: ImageSetRole;
+  generationLeaseId: string;
+  generationLeaseExpiresAt: Date;
+};
+
+export type ReconcileStaleImageSetDependencies = {
+  listExpiredRows: (productId: string, cutoff: Date) => Promise<ExpiredImageSetRow[]>;
+  failExpiredRow: (row: ExpiredImageSetRow, cutoff: Date) => Promise<boolean>;
+  releaseExpiredProductLease: (productId: string, cutoff: Date) => Promise<boolean>;
+};
+
+const imageSetRoles = new Set<ImageSetRole>(["hero", "detail", "lifestyle", "background", "decoration"]);
+
+const defaultReconcileDependencies: ReconcileStaleImageSetDependencies = {
+  listExpiredRows: async (productId, cutoff) => {
+    const rows = await db.libraryImage.findMany({
+      where: {
+        productId,
+        status: { in: ["PENDING", "GENERATING"] },
+        generationLeaseId: { not: null },
+        generationLeaseExpiresAt: { lte: cutoff },
+      },
+      select: { id: true, assetRole: true, generationLeaseId: true, generationLeaseExpiresAt: true },
+    });
+    return rows.flatMap((row) => (
+      row.assetRole && imageSetRoles.has(row.assetRole as ImageSetRole) && row.generationLeaseId && row.generationLeaseExpiresAt
+        ? [{ ...row, assetRole: row.assetRole as ImageSetRole, generationLeaseId: row.generationLeaseId, generationLeaseExpiresAt: row.generationLeaseExpiresAt }]
+        : []
+    ));
+  },
+  failExpiredRow: async (row, cutoff) => {
+    const result = await db.libraryImage.updateMany({
+      where: {
+        id: row.id,
+        status: { in: ["PENDING", "GENERATING"] },
+        generationLeaseId: row.generationLeaseId,
+        generationLeaseExpiresAt: { equals: row.generationLeaseExpiresAt, lte: cutoff },
+      },
+      data: {
+        status: "FAILED",
+        errorMessage: roleFailureMessage(row.assetRole, true),
+        generationLeaseId: null,
+        generationLeaseExpiresAt: null,
+      },
+    });
+    return result.count === 1;
+  },
+  releaseExpiredProductLease: async (productId, cutoff) => {
+    const result = await db.product.updateMany({
+      where: { id: productId, paidOperationLeaseId: { not: null }, paidOperationLeaseExpiresAt: { lte: cutoff } },
+      data: { paidOperationLeaseId: null, paidOperationLeaseExpiresAt: null, paidOperationKind: null },
+    });
+    return result.count === 1;
+  },
+};
+
+/** Recovers work abandoned by a killed function. Every write is a status + lease + expiry CAS. */
+export async function reconcileStaleImageSetWork(
+  productId: string,
+  cutoff: Date = new Date(),
+  dependencies: ReconcileStaleImageSetDependencies = defaultReconcileDependencies,
+): Promise<{ failedRows: number; releasedProductLease: boolean }> {
+  const rows = await dependencies.listExpiredRows(productId, cutoff);
+  const settled = await Promise.all(rows.map((row) => dependencies.failExpiredRow(row, cutoff)));
+  const releasedProductLease = await dependencies.releaseExpiredProductLease(productId, cutoff);
+  return { failedRows: settled.filter(Boolean).length, releasedProductLease };
 }
 
 export type ImageSetPendingRowData = {
@@ -461,12 +680,17 @@ export type ImageSetPendingRowData = {
   status: "PENDING";
   batchId: string;
   paramsJson: string;
+  generationLeaseId: string;
+  generationLeaseExpiresAt: Date;
 };
 
 export type CreateImageSetBatchDependencies = {
   createRows: (rows: ImageSetPendingRowData[]) => Promise<Array<{ id: string }>>;
+  claimProductLease: (productId: string, execution: ImageSetExecution) => Promise<boolean>;
+  releaseProductLease: (productId: string, leaseId: string) => Promise<unknown>;
+  failCreatedRows?: (rowIds: string[], execution: ImageSetExecution) => Promise<boolean>;
   scheduleAfter: (callback: () => Promise<unknown>) => void;
-  runBatch: (input: ImageSetBatchInput) => Promise<unknown>;
+  runBatch: (input: ImageSetBatchInput, execution: ImageSetExecution) => Promise<unknown>;
   createBatchId: () => string;
 };
 
@@ -482,10 +706,11 @@ export async function createAndScheduleImageSetBatch(
     client: ImageSetClient;
     selectedRoles: string[];
     requestSourceHash?: string;
+    execution: ImageSetExecution;
   },
   dependencies: CreateImageSetBatchDependencies,
 ): Promise<CreateImageSetBatchResult> {
-  const { product, client, selectedRoles, requestSourceHash } = request;
+  const { product, client, selectedRoles, requestSourceHash, execution } = request;
   if (!selectedRoles.length) return { ok: false, status: 400, error: "未選擇任何套圖" };
   const { profile, sourceHash } = cachedProfileFor(product);
   if (!profile) return { ok: false, status: 409, error: "商品資料或圖片已更新，請先重新分析產品後再建立套圖。" };
@@ -505,6 +730,8 @@ export async function createAndScheduleImageSetBatch(
   }
 
   const artDirection = buildImageSetArtDirection(profile, imageSetBrand(client, product.primaryColorOverride));
+  const claimed = await dependencies.claimProductLease(product.id, execution);
+  if (!claimed) return { ok: false, status: 409, error: "這項產品已有套圖正在生成，請等待完成後再試。" };
   const batchId = dependencies.createBatchId();
   const pendingRows: ImageSetPendingRowData[] = roles.map((role) => ({
     clientId: product.clientId,
@@ -514,8 +741,16 @@ export async function createAndScheduleImageSetBatch(
     status: "PENDING",
     batchId,
     paramsJson: JSON.stringify(createImageSetRowParams({ sourceHash, profile, artDirection }, role)),
+    generationLeaseId: execution.leaseId,
+    generationLeaseExpiresAt: new Date(execution.deadlineAt),
   }));
-  const created = await dependencies.createRows(pendingRows);
+  let created: Array<{ id: string }>;
+  try {
+    created = await dependencies.createRows(pendingRows);
+  } catch (error) {
+    await dependencies.releaseProductLease(product.id, execution.leaseId).catch(() => {});
+    throw error;
+  }
   const batchInput: ImageSetBatchInput = {
     batchId,
     sourceHash,
@@ -524,7 +759,19 @@ export async function createAndScheduleImageSetBatch(
     product: imageProduct,
     rows: created.map((row, index) => ({ id: row.id, role: roles[index] })),
   };
-  dependencies.scheduleAfter(() => dependencies.runBatch(batchInput));
+  try {
+    dependencies.scheduleAfter(async () => {
+      try {
+        return await dependencies.runBatch(batchInput, execution);
+      } finally {
+        await dependencies.releaseProductLease(product.id, execution.leaseId).catch(() => {});
+      }
+    });
+  } catch (error) {
+    const cleaned = await dependencies.failCreatedRows?.(created.map((row) => row.id), execution).catch(() => false) ?? false;
+    if (cleaned) await dependencies.releaseProductLease(product.id, execution.leaseId).catch(() => {});
+    throw error;
+  }
   return {
     ok: true,
     batchId,
@@ -645,17 +892,18 @@ export async function prepareImageSetRegeneration(rowId: string): Promise<ImageS
 export async function regenerateImageSetItem(
   rowId: string,
   alreadyPrepared?: PreparedImageSetRegeneration,
+  execution?: ImageSetExecution,
 ): Promise<ImageSetBatchResult> {
   const prepared = alreadyPrepared ? { ok: true as const, value: alreadyPrepared } : await prepareImageSetRegeneration(rowId);
   if (!prepared.ok) throw new Error(prepared.error);
-  return runImageSetBatch(prepared.value.input);
+  return runImageSetBatch(prepared.value.input, defaultDependencies, execution);
 }
 
 export type RequestImageSetRegenerationDependencies = {
   prepare: (rowId: string) => Promise<ImageSetRegenerationPreparation>;
-  claimFailedRow: (rowId: string) => Promise<boolean>;
+  claimFailedRow: (rowId: string, execution: ImageSetExecution) => Promise<boolean>;
   scheduleAfter: (callback: () => Promise<unknown>) => void;
-  regenerate: (rowId: string, prepared: PreparedImageSetRegeneration) => Promise<unknown>;
+  regenerate: (rowId: string, prepared: PreparedImageSetRegeneration, execution: ImageSetExecution) => Promise<unknown>;
 };
 
 export type RequestImageSetRegenerationResult =
@@ -665,14 +913,15 @@ export type RequestImageSetRegenerationResult =
 /** Validates before any mutation, then schedules exactly one retry for the target row. */
 export async function requestImageSetRegeneration(
   rowId: string,
+  execution: ImageSetExecution,
   dependencies: RequestImageSetRegenerationDependencies,
 ): Promise<RequestImageSetRegenerationResult> {
   const prepared = await dependencies.prepare(rowId);
   if (!prepared.ok) return prepared;
-  const claimed = await dependencies.claimFailedRow(rowId);
+  const claimed = await dependencies.claimFailedRow(rowId, execution);
   if (!claimed) {
     return { ok: false, status: 409, error: "這張素材目前無法重新產生，請確認狀態為失敗後再試一次。" };
   }
-  dependencies.scheduleAfter(() => dependencies.regenerate(rowId, prepared.value));
+  dependencies.scheduleAfter(() => dependencies.regenerate(rowId, prepared.value, execution));
   return { ok: true, id: rowId, status: "GENERATING" };
 }

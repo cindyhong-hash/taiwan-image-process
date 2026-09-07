@@ -31,10 +31,11 @@ export type VisionRequest = {
   imageDataUrls: string[];
   systemPrompt: string;
   product: ProductVisualProfileInput;
+  signal?: AbortSignal;
 };
 
 export type ProductVisualAnalysisDependencies = {
-  loadAsDataUrl?: (url: string) => Promise<string>;
+  loadAsDataUrl?: (url: string, signal?: AbortSignal) => Promise<string>;
   completeVision?: (request: VisionRequest) => Promise<string>;
 };
 
@@ -72,7 +73,8 @@ export function countProductVisualReferenceImages(input: ProductVisualProfileInp
   return uniqueReferenceUrls(input).length;
 }
 
-async function defaultLoadAsDataUrl(url: string): Promise<string> {
+async function defaultLoadAsDataUrl(url: string, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   if (url.startsWith("data:")) {
     const [, encoded = ""] = url.split(",", 2);
     const buffer = Buffer.from(encoded, url.includes(";base64,") ? "base64" : "utf8");
@@ -80,14 +82,16 @@ async function defaultLoadAsDataUrl(url: string): Promise<string> {
       .resize(MAX_IMAGE_EDGE, MAX_IMAGE_EDGE, { fit: "inside", withoutEnlargement: true })
       .png()
       .toBuffer();
+    signal?.throwIfAborted();
     return `data:image/png;base64,${png.toString("base64")}`;
   }
 
-  const buffer = await loadBuffer(url);
+  const buffer = await loadBuffer(url, signal);
   const png = await sharp(buffer)
     .resize(MAX_IMAGE_EDGE, MAX_IMAGE_EDGE, { fit: "inside", withoutEnlargement: true })
     .png()
     .toBuffer();
+  signal?.throwIfAborted();
   return `data:image/png;base64,${png.toString("base64")}`;
 }
 
@@ -124,6 +128,7 @@ async function defaultCompleteVision(request: VisionRequest): Promise<string> {
       ],
       max_tokens: 1000,
     }),
+    signal: request.signal,
   });
   const data = await response.json() as {
     choices?: { message?: { content?: string | null } }[];
@@ -148,17 +153,22 @@ export function parseVisionJson(text: string): ProductVisualProfile | null {
 export async function analyzeProductVisualProfile(
   input: ProductVisualProfileInput,
   deps: ProductVisualAnalysisDependencies = {},
+  signal?: AbortSignal,
 ): Promise<ProductVisualProfile> {
+  signal?.throwIfAborted();
   const urls = uniqueReferenceUrls(input);
   if (urls.length === 0) return fallbackProductVisualProfile(input);
 
   try {
     const loadAsDataUrl = deps.loadAsDataUrl ?? defaultLoadAsDataUrl;
     const completeVision = deps.completeVision ?? defaultCompleteVision;
-    const imageDataUrls = await Promise.all(urls.map(loadAsDataUrl));
-    const profile = parseVisionJson(await completeVision({ imageDataUrls, systemPrompt: SYSTEM_PROMPT, product: input }));
+    const imageDataUrls = await Promise.all(urls.map((url) => loadAsDataUrl(url, signal)));
+    signal?.throwIfAborted();
+    const profile = parseVisionJson(await completeVision({ imageDataUrls, systemPrompt: SYSTEM_PROMPT, product: input, signal }));
+    signal?.throwIfAborted();
     return profile ? { ...profile, sourceImageCount: imageDataUrls.length } : fallbackProductVisualProfile(input);
   } catch {
+    if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
     return fallbackProductVisualProfile(input);
   }
 }

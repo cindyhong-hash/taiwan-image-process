@@ -6,12 +6,16 @@ import {
   IMAGE_SET_BATCH_DEADLINE_MS,
   analyzeImageSetProduct,
   createAndScheduleImageSetBatch,
+  createImageSetExecution,
   prepareImageSetRegenerationFromRow,
+  reconcileStaleImageSetWork,
+  requestImageSetAnalysis,
   requestImageSetRegeneration,
   readImageSetProduct,
   runImageSetBatch,
   type ImageSetBatchInput,
   type ImageSetBatchDependencies,
+  type StoredImageSetProduct,
 } from "./image-set-orchestrator.ts";
 import type { ProductVisualProfile } from "./product-visual-profile.ts";
 import type { ImageSetArtDirection } from "./product-visual-analysis.ts";
@@ -261,6 +265,32 @@ test("treats an unavailable optional batch hero anchor as non-fatal", async () =
   assert.equal(detailAnchor, undefined);
 });
 
+test("an abort while loading the optional hero anchor prevents the next paid generation", async () => {
+  const controller = new AbortController();
+  const generatedRoles: string[] = [];
+  const batch = input();
+  batch.rows = [batch.rows[0], batch.rows[1]];
+  await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    createAbortController: () => controller,
+    setDeadlineTimer: () => 1,
+    clearDeadlineTimer: () => {},
+    now: () => 10_000,
+    loadAsDataUri: async (url) => {
+      if (url.startsWith("/uploads/product-set-hero-")) {
+        controller.abort(new Error("deadline during hero anchor download"));
+        throw controller.signal.reason;
+      }
+      return `data:image/png;base64,${Buffer.from(url).toString("base64")}`;
+    },
+    generateRole: async ({ role }) => {
+      generatedRoles.push(role);
+      return { buffer: Buffer.from(role), contentType: "image/png", provider: `provider:${role}` };
+    },
+  }, { leaseId: "abort-anchor", deadlineAt: 20_000 });
+  assert.deepEqual(generatedRoles, ["hero"]);
+});
+
 test("deadline marks unfinished rows failed and late completion cannot overwrite them", async () => {
   assert.equal(IMAGE_SET_BATCH_DEADLINE_MS, 270_000);
   const batch = input();
@@ -271,6 +301,7 @@ test("deadline marks unfinished rows failed and late completion cannot overwrite
   let currentTime = 10_000;
   const statuses = new Map(batch.rows.map((row) => [row.id, "PENDING"]));
   const transitions: string[] = [];
+  const execution = createImageSetExecution(currentTime, "lease-deadline");
   const running = runImageSetBatch(batch, {
     ...fakeDeps(),
     generateRole: async ({ role }) => {
@@ -300,7 +331,7 @@ test("deadline marks unfinished rows failed and late completion cannot overwrite
     },
     clearDeadlineTimer: () => {},
     now: () => currentTime,
-  });
+  }, execution);
   await new Promise((resolve) => setImmediate(resolve));
   fireDeadline();
   const result = await running;
@@ -313,6 +344,200 @@ test("deadline marks unfinished rows failed and late completion cannot overwrite
   assert.ok(!transitions.includes("row-hero:DONE"));
 });
 
+test("uses the route invocation timestamp as the single absolute deadline", async () => {
+  const execution = createImageSetExecution(10_000, "lease-route");
+  assert.deepEqual(execution, { leaseId: "lease-route", deadlineAt: 280_000 });
+
+  const product = storedProduct();
+  const expectedHash = (await import("./product-visual-profile.ts")).computeProductVisualSourceHash({
+    ...product,
+    rawImageUrls: JSON.parse(product.rawImageUrls),
+  });
+  product.visualProfileSourceHash = expectedHash;
+  const callbacks: Array<() => Promise<unknown>> = [];
+  let seenDeadline = 0;
+  await createAndScheduleImageSetBatch({
+    product,
+    client: null,
+    selectedRoles: ["hero"],
+    requestSourceHash: expectedHash,
+    execution,
+  }, {
+    claimProductLease: async () => true,
+    releaseProductLease: async () => {},
+    createRows: async () => [{ id: "created-hero" }],
+    scheduleAfter: (callback) => { callbacks.push(callback); },
+    runBatch: async (_input, scheduledExecution) => { seenDeadline = scheduledExecution.deadlineAt; },
+    createBatchId: () => "batch-fixed",
+  });
+  await callbacks[0]();
+  assert.equal(seenDeadline, 280_000);
+});
+
+test("an expired absolute deadline aborts in-flight work and launches no later roles", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[0], batch.rows[1]];
+  let fireDeadline!: () => void;
+  let currentTime = 1_000;
+  const attempts: string[] = [];
+  const running = runImageSetBatch(batch, {
+    ...fakeDeps(),
+    generateRole: async ({ role, signal }) => {
+      attempts.push(role);
+      assert.ok(signal);
+      return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    },
+    setDeadlineTimer: (callback, delayMs) => {
+      assert.equal(delayMs, 500);
+      fireDeadline = () => { currentTime += delayMs; callback(); };
+      return 1;
+    },
+    clearDeadlineTimer: () => {},
+    failUnfinishedRows: async () => {},
+    now: () => currentTime,
+  }, { leaseId: "lease-short", deadlineAt: 1_500 });
+  await new Promise((resolve) => setImmediate(resolve));
+  fireDeadline();
+  await running;
+  assert.deepEqual(attempts, ["hero"]);
+});
+
+test("deletes a saved orphan when the DONE compare-and-set loses ownership", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[0]];
+  const deleted: string[] = [];
+  let transitions = 0;
+  const result = await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    transitionRow: async (_id, _from, data) => {
+      transitions += 1;
+      return data.status !== "DONE";
+    },
+    saveBuffer: async () => "https://blob.example/orphan.png",
+    deleteSavedAsset: async (url) => { deleted.push(url); },
+  }, createImageSetExecution(Date.now(), "lease-orphan"));
+  assert.equal(transitions >= 2, true);
+  assert.equal(result.statuses.hero, "FAILED");
+  assert.deepEqual(deleted, ["https://blob.example/orphan.png"]);
+});
+
+test("passes the request deadline signal into the asset save", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[0]];
+  let saveSignal: AbortSignal | undefined;
+  await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    saveBuffer: async (_buffer, _extension, _prefix, signal) => {
+      saveSignal = signal;
+      return "/uploads/saved.png";
+    },
+  }, createImageSetExecution(Date.now(), "lease-save"));
+  assert.ok(saveSignal);
+  assert.equal(saveSignal.aborted, false);
+});
+
+test("retries deadline cleanup inside the buffer and leaves durable reconciliation metadata", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[0]];
+  let fireDeadline!: () => void;
+  let cleanupAttempts = 0;
+  const waits: number[] = [];
+  const running = runImageSetBatch(batch, {
+    ...fakeDeps(),
+    generateRole: async ({ signal }) => new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true })),
+    setDeadlineTimer: (callback) => { fireDeadline = callback; return 1; },
+    clearDeadlineTimer: () => {},
+    failUnfinishedRows: async (rows, execution) => {
+      cleanupAttempts += 1;
+      assert.equal(execution.leaseId, "lease-cleanup");
+      assert.equal(rows[0].id, "row-hero");
+      if (cleanupAttempts < 3) throw new Error("temporary database outage");
+    },
+    waitForCleanupRetry: async (delayMs) => { waits.push(delayMs); },
+    now: () => 1_000,
+  }, { leaseId: "lease-cleanup", deadlineAt: 1_500 });
+  await new Promise((resolve) => setImmediate(resolve));
+  fireDeadline();
+  await running;
+  assert.equal(cleanupAttempts, 3);
+  assert.deepEqual(waits, [1_000, 3_000]);
+});
+
+test("deadline abort cannot return before its cleanup attempt finishes", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[0]];
+  let fireDeadline!: () => void;
+  let releaseCleanup!: () => void;
+  const cleanupGate = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+  let settled = false;
+  const running = runImageSetBatch(batch, {
+    ...fakeDeps(),
+    generateRole: async ({ signal }) => new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }),
+    setDeadlineTimer: (callback) => { fireDeadline = callback; return 1; },
+    clearDeadlineTimer: () => {},
+    failUnfinishedRows: async () => cleanupGate,
+    now: () => 1_000,
+  }, { leaseId: "lease-cleanup-gate", deadlineAt: 1_500 });
+  void running.then(() => { settled = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  fireDeadline();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  releaseCleanup();
+  await running;
+  assert.equal(settled, true);
+});
+
+test("reconciles only rows whose status, lease ownership and expiry are still stale", async () => {
+  const now = new Date("2026-09-07T10:00:00.000Z");
+  const observed = [{
+    id: "row-stale",
+    assetRole: "hero" as const,
+    generationLeaseId: "lease-old",
+    generationLeaseExpiresAt: new Date("2026-09-07T09:59:00.000Z"),
+  }];
+  const failed: unknown[] = [];
+  const released: unknown[] = [];
+  const result = await reconcileStaleImageSetWork("product-1", now, {
+    listExpiredRows: async () => observed,
+    failExpiredRow: async (row, cutoff) => { failed.push({ row, cutoff }); return true; },
+    releaseExpiredProductLease: async (productId, cutoff) => { released.push({ productId, cutoff }); return true; },
+  });
+  assert.deepEqual(result, { failedRows: 1, releasedProductLease: true });
+  assert.deepEqual(failed, [{ row: observed[0], cutoff: now }]);
+  assert.deepEqual(released, [{ productId: "product-1", cutoff: now }]);
+});
+
+test("active product lease rejects a duplicate batch before rows or callbacks are created", async () => {
+  const product = storedProduct();
+  const expectedHash = (await import("./product-visual-profile.ts")).computeProductVisualSourceHash({
+    ...product,
+    rawImageUrls: JSON.parse(product.rawImageUrls),
+  });
+  product.visualProfileSourceHash = expectedHash;
+  let creates = 0;
+  let schedules = 0;
+  const response = await createAndScheduleImageSetBatch({
+    product,
+    client: null,
+    selectedRoles: ["hero"],
+    requestSourceHash: expectedHash,
+    execution: createImageSetExecution(10_000, "lease-loser"),
+  }, {
+    claimProductLease: async () => false,
+    releaseProductLease: async () => {},
+    createRows: async () => { creates += 1; return []; },
+    scheduleAfter: () => { schedules += 1; },
+    runBatch: async () => {},
+    createBatchId: () => "batch-duplicate",
+  });
+  assert.deepEqual(response, { ok: false, status: 409, error: "這項產品已有套圖正在生成，請等待完成後再試。" });
+  assert.equal(creates, 0);
+  assert.equal(schedules, 0);
+});
+
 test("batch and retry routes stay within the Vercel Hobby 300s cap (290s) for the 270s internal cleanup deadline", async () => {
   const batchRoute = await readFile(new URL("../../app/api/products/[productId]/image-set/route.ts", import.meta.url), "utf8");
   const retryRoute = await readFile(new URL("../../app/api/library/images/[id]/regenerate/route.ts", import.meta.url), "utf8");
@@ -320,7 +545,7 @@ test("batch and retry routes stay within the Vercel Hobby 300s cap (290s) for th
   assert.match(retryRoute, /export const maxDuration = 290/);
 });
 
-function storedProduct() {
+function storedProduct(): StoredImageSetProduct {
   return {
     ...input().product,
     rawImageUrls: JSON.stringify(input().product.rawImageUrls),
@@ -392,6 +617,66 @@ test("analyze returns cache unless forced, and force persists the current source
   assert.equal(JSON.parse(writes[0].visualProfileJson).productType, "重新分析後");
 });
 
+test("analysis result arriving after its deadline is never persisted", async () => {
+  const product = storedProduct();
+  const controller = new AbortController();
+  let writes = 0;
+  await assert.rejects(analyzeImageSetProduct(product, null, true, {
+    analyze: async () => {
+      controller.abort(new Error("analysis deadline"));
+      return profile;
+    },
+    persistProfile: async () => { writes += 1; },
+  }, controller.signal), /analysis deadline/);
+  assert.equal(writes, 0);
+});
+
+test("force analysis cooldown rejects before lease acquisition or provider work", async () => {
+  const product = storedProduct();
+  product.visualProfileUpdatedAt = new Date("2026-09-07T10:00:00.000Z");
+  let claims = 0;
+  let analyzes = 0;
+  const response = await requestImageSetAnalysis({
+    product,
+    client: null,
+    force: true,
+    execution: { leaseId: "analysis-cooldown", deadlineAt: Date.parse("2026-09-07T10:02:00.000Z") },
+  }, {
+    now: () => Date.parse("2026-09-07T10:00:30.000Z"),
+    claimProductLease: async () => { claims += 1; return true; },
+    releaseProductLease: async () => {},
+    analyze: async () => { analyzes += 1; return { ok: true }; },
+  });
+  assert.deepEqual(response, { ok: false, status: 429, error: "產品剛完成分析，請稍候一分鐘再強制重新分析。" });
+  assert.equal(claims, 0);
+  assert.equal(analyzes, 0);
+});
+
+test("analysis lease race rejects duplicate paid work and successful work releases its lease", async () => {
+  const product = storedProduct();
+  product.visualProfileUpdatedAt = null;
+  const execution = createImageSetExecution(10_000, "analysis-lease");
+  let analyzes = 0;
+  let releases = 0;
+  const dependencies = {
+    now: () => 10_000,
+    claimProductLease: async () => false,
+    releaseProductLease: async () => { releases += 1; },
+    analyze: async () => { analyzes += 1; return { profile }; },
+  };
+  const rejected = await requestImageSetAnalysis({ product, client: null, force: true, execution }, dependencies);
+  assert.deepEqual(rejected, { ok: false, status: 409, error: "這項產品已有付費處理正在進行，請稍候再試。" });
+  assert.equal(analyzes, 0);
+
+  const accepted = await requestImageSetAnalysis(
+    { product, client: null, force: true, execution },
+    { ...dependencies, claimProductLease: async () => true },
+  );
+  assert.equal(accepted.ok, true);
+  assert.equal(analyzes, 1);
+  assert.equal(releases, 1);
+});
+
 test("POST creates every selected row as PENDING in one batch and schedules exactly one callback", async () => {
   const product = storedProduct();
   const expectedHash = (await import("./product-visual-profile.ts")).computeProductVisualSourceHash({
@@ -407,7 +692,10 @@ test("POST creates every selected row as PENDING in one batch and schedules exac
     client: null,
     selectedRoles: ["hero", "background", "decoration"],
     requestSourceHash: expectedHash,
+    execution: createImageSetExecution(10_000, "lease-create"),
   }, {
+    claimProductLease: async () => true,
+    releaseProductLease: async () => {},
     createRows: async (rows) => rows.map((row, index) => {
       creates.push(row);
       return { id: `created-${index}` };
@@ -430,10 +718,40 @@ test("POST creates every selected row as PENDING in one batch and schedules exac
   assert.equal(batchRuns, 1);
 });
 
+test("batch scheduling failure releases the durable product lease", async () => {
+  const product = storedProduct();
+  const expectedHash = (await import("./product-visual-profile.ts")).computeProductVisualSourceHash({
+    ...product,
+    rawImageUrls: JSON.parse(product.rawImageUrls),
+  });
+  product.visualProfileSourceHash = expectedHash;
+  let releases = 0;
+  await assert.rejects(createAndScheduleImageSetBatch({
+    product,
+    client: null,
+    selectedRoles: ["hero"],
+    requestSourceHash: expectedHash,
+    execution: createImageSetExecution(10_000, "lease-schedule-failed"),
+  }, {
+    claimProductLease: async () => true,
+    releaseProductLease: async () => { releases += 1; },
+    createRows: async () => [{ id: "created-hero" }],
+    failCreatedRows: async (rowIds, execution) => {
+      assert.deepEqual(rowIds, ["created-hero"]);
+      assert.equal(execution.leaseId, "lease-schedule-failed");
+      return true;
+    },
+    scheduleAfter: () => { throw new Error("after unavailable"); },
+    runBatch: async () => {},
+    createBatchId: () => "batch-schedule-failed",
+  }), /after unavailable/);
+  assert.equal(releases, 1);
+});
+
 test("stale retry returns 409 Traditional Chinese guidance and mutates no row", async () => {
   let updates = 0;
   let schedules = 0;
-  const response = await requestImageSetRegeneration("row-stale", {
+  const response = await requestImageSetRegeneration("row-stale", createImageSetExecution(10_000, "retry-stale"), {
     prepare: async () => ({ ok: false as const, status: 409 as const, error: "商品資料已更新，請先重新分析產品後再重新產生這張素材。" }),
     claimFailedRow: async () => { updates += 1; return true; },
     scheduleAfter: () => { schedules += 1; },
@@ -486,7 +804,7 @@ test("retry marks and regenerates only the requested row", async () => {
   const updates: string[] = [];
   const callbacks: Array<() => Promise<unknown>> = [];
   const prepared = { rowId: "row-target", input: { ...input(), rows: [{ id: "row-target", role: roles[1] }] } };
-  const response = await requestImageSetRegeneration("row-target", {
+  const response = await requestImageSetRegeneration("row-target", createImageSetExecution(10_000, "retry-target"), {
     prepare: async () => ({ ok: true as const, value: prepared }),
     claimFailedRow: async (id) => { updates.push(id); return true; },
     scheduleAfter: (callback) => { callbacks.push(callback); },
@@ -506,7 +824,7 @@ test("retry marks and regenerates only the requested row", async () => {
 test("retry returns 409 and schedules nothing when FAILED compare-and-set loses the race", async () => {
   let schedules = 0;
   const prepared = { rowId: "row-target", input: { ...input(), rows: [{ id: "row-target", role: roles[1] }] } };
-  const response = await requestImageSetRegeneration("row-target", {
+  const response = await requestImageSetRegeneration("row-target", createImageSetExecution(10_000, "retry-race"), {
     prepare: async () => ({ ok: true as const, value: prepared }),
     claimFailedRow: async () => false,
     scheduleAfter: () => { schedules += 1; },

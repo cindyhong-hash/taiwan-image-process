@@ -17,6 +17,7 @@ export type ReferenceGenerationInput = {
   imageDataUris: string[];
   batchHeroImageUrl?: string;
   aspectRatio?: string;
+  signal?: AbortSignal;
 };
 
 export type ImageSetRoleGenerationInput = {
@@ -26,6 +27,7 @@ export type ImageSetRoleGenerationInput = {
   rawImageUrls?: string[];
   batchHeroImageUrl?: string | null;
   aspectRatio?: string;
+  signal?: AbortSignal;
 };
 
 export type ImageSetRoleGenerationOutput = ProviderImage & {
@@ -37,7 +39,7 @@ export type ImageSetRoleProviders = {
   seedream: (input: ReferenceGenerationInput) => Promise<ProviderImage>;
   fluxEdit: (input: ReferenceGenerationInput) => Promise<ProviderImage>;
   textImage: (input: ReferenceGenerationInput) => Promise<ProviderImage>;
-  removeBg: (imageDataUri: string) => Promise<Buffer>;
+  removeBg: (imageDataUri: string, signal?: AbortSignal) => Promise<Buffer>;
 };
 
 function collectReferences(input: ImageSetRoleGenerationInput): Pick<ReferenceGenerationInput, "imageDataUris" | "batchHeroImageUrl"> {
@@ -63,6 +65,7 @@ const defaultProviders: ImageSetRoleProviders = {
     batchHeroImageUrl: input.batchHeroImageUrl,
     aspectRatio: input.aspectRatio,
     provider: "seedream",
+    signal: input.signal,
   }),
   fluxEdit: (input) => falImageGenerateWithReferences({
     prompt: input.prompt,
@@ -70,12 +73,14 @@ const defaultProviders: ImageSetRoleProviders = {
     batchHeroImageUrl: input.batchHeroImageUrl,
     aspectRatio: input.aspectRatio,
     provider: "flux",
+    signal: input.signal,
   }),
   textImage: (input) => generateImage({
     prompt: input.prompt,
     width: input.aspectRatio === "3:2" ? 1536 : 1024,
     height: input.aspectRatio === "3:2" ? 1024 : 1024,
     model: "flux-2-pro",
+    signal: input.signal,
   }),
   removeBg: falRemoveBg,
 };
@@ -92,7 +97,10 @@ export async function generateImageSetRole(
     prompt: input.prompt,
     aspectRatio: input.aspectRatio,
     imageDataUris: [] as string[],
+    signal: input.signal,
   };
+
+  input.signal?.throwIfAborted();
 
   if (input.role === "background") {
     const generated = await providers.textImage(base);
@@ -102,7 +110,8 @@ export async function generateImageSetRole(
   if (input.role === "decoration") {
     const generated = await providers.textImage(base);
     try {
-      const buffer = await providers.removeBg(imageToDataUri(generated));
+      input.signal?.throwIfAborted();
+      const buffer = await providers.removeBg(imageToDataUri(generated), input.signal);
       return {
         buffer,
         contentType: "image/png",
@@ -126,10 +135,12 @@ export async function generateImageSetRole(
     ["flux", providers.fluxEdit],
   ];
   for (const [provider, generate] of attempts) {
+    input.signal?.throwIfAborted();
     try {
       const generated = await generate(referenceInput);
       return { ...generated, provider: generated.provider ?? provider };
     } catch (error) {
+      if (input.signal?.aborted) throw input.signal.reason ?? new DOMException("Aborted", "AbortError");
       console.warn(
         `[image-set:${input.role}] ${provider} attempt failed`,
         error instanceof Error ? error.message : "unknown error",
