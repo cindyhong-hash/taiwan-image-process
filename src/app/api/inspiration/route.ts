@@ -148,7 +148,13 @@ export async function POST(request: Request) {
 
   // ── 圖片池：給推薦卡當預覽（重用既有 library 圖 / 過往成品，不另生圖）───────────
   const libPool = await db.libraryImage.findMany({
-    where: { clientId, status: "DONE" },
+    where: {
+      clientId,
+      status: "DONE",
+      // 排除產品套圖裡「無產品」的積木（背景版/成分概念/裝飾）——推薦卡預覽要能看到產品或使用情境，
+      // 不要抽到空景。assetRole 為 null 的（一般貼文成品）保留。
+      OR: [{ assetRole: null }, { assetRole: { notIn: ["background", "ingredient", "decoration"] } }],
+    },
     orderBy: { createdAt: "desc" },
     take: 12,
     select: { imageUrl: true },
