@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw, PenLine, Layers } from "lucide-react";
+import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw, PenLine } from "lucide-react";
 import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, imageSetCompleteness, type Product } from "@/lib/productMeta";
 import { ImageSetModal } from "@/components/products/ImageSetModal";
 import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
@@ -176,18 +176,12 @@ export default function ProductDetailPage({
               onClick={() => setShowAdLayout(true)}
               disabled={!hasBridgeImage}
               title="使用商品素材，自動建立可編輯的設計稿"
-              className="inline-flex items-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-5 py-3 text-sm font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Sparkles className="h-[18px] w-[18px]" /> AI 幫我排版
             </button>
-            <button
-              onClick={() => router.push(`/clients/${clientId}/magic-layers/compose?blank=1`)}
-              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold"
-            >
-              <Layers className="h-[18px] w-[18px]" /> 開啟空白畫布
-            </button>
           </div>
-          <p className="mt-2 text-xs text-gray-400">「AI 幫我排版」會用商品素材自動排成可編輯設計稿；「開啟空白畫布」則從零開始。</p>
+          <p className="mt-2 text-xs text-gray-400">「AI 幫我排版」會用商品素材自動排成可編輯設計稿，進編輯器後可自由微調。</p>
           {note && <p className="mt-2 text-xs text-gray-400">{note}</p>}
 
           {/* [單元E] 資產完整度儀表 */}
