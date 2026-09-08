@@ -20,6 +20,7 @@ import {
   type ImageSetOrphanCleanupJob,
   type StoredImageSetProduct,
 } from "./image-set-orchestrator.ts";
+import { ImageSetFallbackBudgetError } from "./image-set-model-router.ts";
 import type { ProductVisualProfile } from "./product-visual-profile.ts";
 import type { ImageSetArtDirection } from "./product-visual-analysis.ts";
 import type { ImageSetRoleSpec } from "./image-set-roles.ts";
@@ -166,6 +167,18 @@ test("logs complete provider errors but persists only a safe role-scoped Traditi
   assert.equal(persisted.length, 1);
   assert.match(persisted[0], /細節/);
   assert.doesNotMatch(persisted[0], /fal|401|upstream|secret/i);
+});
+
+test("persists a clear retry message when the router skips a fallback without enough batch time", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[1]];
+  const persisted: string[] = [];
+  await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    generateRole: async () => { throw new ImageSetFallbackBudgetError(); },
+    updateRow: async (_id, data) => { if (data.errorMessage) persisted.push(data.errorMessage); },
+  });
+  assert.deepEqual(persisted, ["細節素材剩餘生成時間不足，未啟動下一個備援服務；可單獨重新產生。"]);
 });
 
 test("normalizes direct data URI references through the 1600px pipeline", async () => {
@@ -385,9 +398,10 @@ test("an expired absolute deadline aborts in-flight work and launches no later r
   const attempts: string[] = [];
   const running = runImageSetBatch(batch, {
     ...fakeDeps(),
-    generateRole: async ({ role, signal }) => {
+    generateRole: async ({ role, signal, deadlineAt }) => {
       attempts.push(role);
       assert.ok(signal);
+      assert.equal(deadlineAt, 1_500);
       return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
     },
     setDeadlineTimer: (callback, delayMs) => {

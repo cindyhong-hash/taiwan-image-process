@@ -28,6 +28,7 @@ export type ImageSetRoleGenerationInput = {
   batchHeroImageUrl?: string | null;
   aspectRatio?: string;
   signal?: AbortSignal;
+  deadlineAt?: number;
 };
 
 export type ImageSetRoleGenerationOutput = ProviderImage & {
@@ -41,6 +42,49 @@ export type ImageSetRoleProviders = {
   textImage: (input: ReferenceGenerationInput) => Promise<ProviderImage>;
   removeBg: (imageDataUri: string, signal?: AbortSignal) => Promise<Buffer>;
 };
+
+type RouterTiming = {
+  now?: () => number;
+  timeoutSignal?: (milliseconds: number) => AbortSignal;
+};
+
+export class ImageSetFallbackBudgetError extends Error {
+  readonly code = "IMAGE_SET_FALLBACK_BUDGET_EXHAUSTED";
+
+  constructor() {
+    super("Image-set fallback time budget exhausted");
+    this.name = "ImageSetFallbackBudgetError";
+  }
+}
+
+const ATTEMPT_BUDGETS_MS = {
+  gpt: { minimum: 90_000, maximum: 90_000 },
+  seedream: { minimum: 90_000, maximum: 150_000 },
+  flux: { minimum: 60_000, maximum: 90_000 },
+} as const;
+const CLEANUP_RESERVE_MS = 30_000;
+
+function attemptSignal(
+  input: ImageSetRoleGenerationInput,
+  provider: keyof typeof ATTEMPT_BUDGETS_MS,
+  timing: Required<RouterTiming>,
+): AbortSignal | undefined {
+  if (!input.deadlineAt) return input.signal;
+
+  const remainingMs = input.deadlineAt - timing.now();
+  const laterProviders = provider === "gpt"
+    ? ATTEMPT_BUDGETS_MS.seedream.minimum + ATTEMPT_BUDGETS_MS.flux.minimum
+    : provider === "seedream"
+      ? ATTEMPT_BUDGETS_MS.flux.minimum
+      : 0;
+  const budgetMs = Math.min(
+    ATTEMPT_BUDGETS_MS[provider].maximum,
+    remainingMs - laterProviders - CLEANUP_RESERVE_MS,
+  );
+  if (budgetMs < ATTEMPT_BUDGETS_MS[provider].minimum) throw new ImageSetFallbackBudgetError();
+  const budgetSignal = timing.timeoutSignal(budgetMs);
+  return input.signal ? AbortSignal.any([input.signal, budgetSignal]) : budgetSignal;
+}
 
 function collectReferences(input: ImageSetRoleGenerationInput): Pick<ReferenceGenerationInput, "imageDataUris" | "batchHeroImageUrl"> {
   const hero = input.heroImageUrl || undefined;
@@ -92,7 +136,12 @@ function imageToDataUri(image: ProviderImage): string {
 export async function generateImageSetRole(
   input: ImageSetRoleGenerationInput,
   providers: ImageSetRoleProviders = defaultProviders,
+  timingOverrides: RouterTiming = {},
 ): Promise<ImageSetRoleGenerationOutput> {
+  const timing: Required<RouterTiming> = {
+    now: timingOverrides.now ?? Date.now,
+    timeoutSignal: timingOverrides.timeoutSignal ?? AbortSignal.timeout,
+  };
   const base = {
     prompt: input.prompt,
     aspectRatio: input.aspectRatio,
@@ -127,19 +176,35 @@ export async function generateImageSetRole(
     throw new Error(`${input.role} 生成失敗：缺少商品參考圖`);
   }
   const attempts: Array<[
+    keyof typeof ATTEMPT_BUDGETS_MS,
     ImageSetRoleGenerationOutput["provider"],
     (value: ReferenceGenerationInput) => Promise<ProviderImage>,
   ]> = [
-    ["gpt", providers.gpt],
-    ["seedream", providers.seedream],
-    ["flux", providers.fluxEdit],
+    ["gpt", "gpt", providers.gpt],
+    ["seedream", "seedream", providers.seedream],
+    ["flux", "flux", providers.fluxEdit],
   ];
-  for (const [provider, generate] of attempts) {
+  let attemptedProvider = false;
+  let skippedForBudget = false;
+  for (const [providerKey, provider, generate] of attempts) {
     input.signal?.throwIfAborted();
+    let signal: AbortSignal | undefined;
     try {
-      const generated = await generate(referenceInput);
+      signal = attemptSignal(input, providerKey, timing);
+    } catch (error) {
+      if (error instanceof ImageSetFallbackBudgetError) {
+        skippedForBudget = true;
+        console.warn(`[image-set:${input.role}] ${provider} skipped because the remaining batch time is insufficient`);
+        continue;
+      }
+      throw error;
+    }
+    try {
+      attemptedProvider = true;
+      const generated = await generate({ ...referenceInput, signal });
       return { ...generated, provider: generated.provider ?? provider };
     } catch (error) {
+      if (error instanceof ImageSetFallbackBudgetError) throw error;
       if (input.signal?.aborted) throw input.signal.reason ?? new DOMException("Aborted", "AbortError");
       console.warn(
         `[image-set:${input.role}] ${provider} attempt failed`,
@@ -147,5 +212,6 @@ export async function generateImageSetRole(
       );
     }
   }
+  if (!attemptedProvider && skippedForBudget) throw new ImageSetFallbackBudgetError();
   throw new Error(`${input.role} 生成失敗：所有圖片服務皆無法完成`);
 }

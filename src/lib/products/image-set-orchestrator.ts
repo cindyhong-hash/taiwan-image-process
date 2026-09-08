@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { db } from "../db.ts";
 import { deleteStoredAsset, loadBuffer, saveBuffer } from "../storage.ts";
 import { compileImageSetPrompt } from "./image-set-prompts.ts";
-import { generateImageSetRole, type ImageSetRoleGenerationInput, type ImageSetRoleGenerationOutput } from "./image-set-model-router.ts";
+import {
+  generateImageSetRole,
+  ImageSetFallbackBudgetError,
+  type ImageSetRoleGenerationInput,
+  type ImageSetRoleGenerationOutput,
+} from "./image-set-model-router.ts";
 import {
   analyzeProductVisualProfile,
   buildImageSetArtDirection,
@@ -360,7 +365,7 @@ function extension(contentType: string): string {
   return "jpg";
 }
 
-function roleFailureMessage(role: ImageSetRole, timedOut = false): string {
+function roleFailureMessage(role: ImageSetRole, timedOut = false, error?: unknown): string {
   const labels: Record<ImageSetRole, string> = {
     hero: "主視覺",
     detail: "細節素材",
@@ -368,6 +373,9 @@ function roleFailureMessage(role: ImageSetRole, timedOut = false): string {
     background: "情境背景",
     decoration: "品牌裝飾",
   };
+  if (error instanceof ImageSetFallbackBudgetError) {
+    return `${labels[role]}剩餘生成時間不足，未啟動下一個備援服務；可單獨重新產生。`;
+  }
   return timedOut
     ? `${labels[role]}生成逾時，可單獨重新產生；其他素材不受影響。`
     : `${labels[role]}生成失敗，可單獨重新產生；其他素材仍可繼續生成。`;
@@ -747,6 +755,7 @@ export async function runImageSetBatch(
         batchHeroImageUrl: references.batchHeroImageUrl,
         aspectRatio: "1:1",
         signal: abortController.signal,
+        deadlineAt: execution.deadlineAt,
       });
       if (!isConcreteProvider(generated.provider)) throw new Error("Image provider trace is missing or synthetic");
       if (reachedDeadline()) throw new Error("Image-set batch deadline reached");
@@ -781,7 +790,7 @@ export async function runImageSetBatch(
       result.params[row.role.role] = initialParams;
       await transitionRow(row.id, ["PENDING", "GENERATING"], {
         status: "FAILED",
-        errorMessage: roleFailureMessage(row.role.role, reachedDeadline()),
+        errorMessage: roleFailureMessage(row.role.role, reachedDeadline(), error),
         paramsJson: JSON.stringify(initialParams),
         generationLeaseId: null,
         generationLeaseExpiresAt: null,

@@ -47,6 +47,73 @@ test("hero tries GPT then Seedream then FLUX", async () => {
   assert.equal(output.provider, "flux");
 });
 
+test("a malformed GPT response leaves a bounded Seedream attempt and a viable FLUX fallback before the batch deadline", async () => {
+  let now = 0;
+  const attemptBudgets: number[] = [];
+  const attempts: string[] = [];
+  const output = await generateImageSetRole(
+    { ...productInput, deadlineAt: 270_000 },
+    fakeProviders({
+      gpt: async () => {
+        attempts.push("gpt");
+        throw new Error("GPT 多參考圖生成回應格式錯誤");
+      },
+      seedream: async () => {
+        attempts.push("seedream");
+        now += 150_000;
+        throw new Error("seedream timed out");
+      },
+      fluxEdit: async () => {
+        attempts.push("flux");
+        return image("flux");
+      },
+    }),
+    {
+      now: () => now,
+      timeoutSignal: (milliseconds) => {
+        attemptBudgets.push(milliseconds);
+        return new AbortController().signal;
+      },
+    },
+  );
+
+  assert.deepEqual(attempts, ["gpt", "seedream", "flux"]);
+  assert.deepEqual(attemptBudgets, [90_000, 150_000, 90_000]);
+  assert.equal(output.provider, "flux");
+});
+
+test("does not start a paid image provider when the batch has no viable attempt budget left", async () => {
+  const attempts: string[] = [];
+  await assert.rejects(
+    () => generateImageSetRole(
+      { ...productInput, deadlineAt: 270_000 },
+      fakeProviders({
+        gpt: async () => { attempts.push("gpt"); return image("gpt"); },
+        seedream: async () => { attempts.push("seedream"); return image("seedream"); },
+        fluxEdit: async () => { attempts.push("flux"); return image("flux"); },
+      }),
+      { now: () => 240_000 },
+    ),
+    /time budget/i,
+  );
+  assert.deepEqual(attempts, []);
+});
+
+test("skips an over-budget GPT attempt and still uses a viable backup provider", async () => {
+  const attempts: string[] = [];
+  const output = await generateImageSetRole(
+    { ...productInput, deadlineAt: 270_000 },
+    fakeProviders({
+      gpt: async () => { attempts.push("gpt"); return image("gpt"); },
+      seedream: async () => { attempts.push("seedream"); return image("seedream"); },
+      fluxEdit: async () => { attempts.push("flux"); return image("flux"); },
+    }),
+    { now: () => 70_000 },
+  );
+  assert.deepEqual(attempts, ["seedream"]);
+  assert.equal(output.provider, "seedream");
+});
+
 test("an aborted role stops before launching a paid fallback", async () => {
   const attempts: string[] = [];
   const controller = new AbortController();
