@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw, PenLine } from "lucide-react";
 import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, imageSetCompleteness, type Product } from "@/lib/productMeta";
 import { ImageSetModal } from "@/components/products/ImageSetModal";
-import { ACTIVITY_REF_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
+import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 
 export default function ProductDetailPage({
   params,
@@ -69,13 +69,21 @@ export default function ProductDetailPage({
   const presentRoles = new Set(assets.filter((a) => a.status === "DONE" && a.assetRole).map((a) => a.assetRole as string));
   const { doneCount, missingRoles } = imageSetCompleteness(presentRoles);
 
-  // [單元F] 用這組素材建立圖文：把主圖（或第一張素材）當參考圖帶進單圖流程
-  const bridgeImage = product.heroImageUrl || assets[0]?.imageUrl || product.rawImageUrls[0] || "";
+  // [單元F] 用這組素材建立圖文：帶「商品 context + 素材包」進建立圖文（fromProductAssets 模式）。
+  // 商品主體放進「產品圖」欄（不是參考風格圖）；賣點/定位只當 context，不直接當畫面 prompt。
+  const hasBridgeImage = Boolean(product.heroImageUrl || assets[0]?.imageUrl || product.rawImageUrls[0]);
   const useForContent = () => {
     try {
-      if (bridgeImage) sessionStorage.setItem(ACTIVITY_REF_KEY, bridgeImage);
-      const hint = [product.name, product.description].filter(Boolean).join("｜");
-      if (hint) sessionStorage.setItem(ACTIVITY_IMAGE_PROMPT_KEY, hint);
+      const pack = assets
+        .filter((a) => a.status === "DONE" && a.assetRole && a.imageUrl)
+        .map((a) => ({ role: a.assetRole as string, url: a.imageUrl as string }));
+      const heroUrl = product.heroImageUrl || pack.find((p) => p.role === "hero")?.url || product.rawImageUrls[0] || "";
+      sessionStorage.setItem(ACTIVITY_HANDOFF_KEY, JSON.stringify({
+        clientId,
+        fromProduct: { productId, name: product.name, description: product.description ?? "", category: product.category ?? "" },
+        productImageUrls: heroUrl ? [heroUrl] : [],
+        assetPack: pack,
+      }));
     } catch { /* ignore */ }
     router.push(`/clients/${clientId}/activities/new`);
   };
@@ -152,7 +160,7 @@ export default function ProductDetailPage({
             </button>
             <button
               onClick={useForContent}
-              disabled={!bridgeImage}
+              disabled={!hasBridgeImage}
               className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <PenLine className="h-[18px] w-[18px]" /> 使用這組素材建立圖文
