@@ -73,6 +73,8 @@ export default function ProductDetailPage({
   // [單元F] 用這組素材建立圖文：帶「商品 context + 素材包」進建立圖文（fromProductAssets 模式）。
   // 商品主體放進「產品圖」欄（不是參考風格圖）；賣點/定位只當 context，不直接當畫面 prompt。
   const hasBridgeImage = Boolean(product.heroImageUrl || assets[0]?.imageUrl || product.rawImageUrls[0]);
+  // 先隱藏「使用這組素材建立圖文」(Road A) 入口，保留程式碼與流程；改 true 即可恢復。
+  const SHOW_USE_FOR_CONTENT = false;
   const useForContent = () => {
     try {
       const pack = assets
@@ -188,13 +190,15 @@ export default function ProductDetailPage({
             >
               <Sparkles className="h-[18px] w-[18px]" /> AI 建立商品套圖
             </button>
-            <button
-              onClick={useForContent}
-              disabled={!hasBridgeImage}
-              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <PenLine className="h-[18px] w-[18px]" /> 使用這組素材建立圖文
-            </button>
+            {SHOW_USE_FOR_CONTENT && (
+              <button
+                onClick={useForContent}
+                disabled={!hasBridgeImage}
+                className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <PenLine className="h-[18px] w-[18px]" /> 使用這組素材建立圖文
+              </button>
+            )}
             <button
               onClick={useForFreeLayout}
               disabled={!hasBridgeImage || composing}
