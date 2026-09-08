@@ -45,7 +45,9 @@ export async function proxy(request: NextRequest) {
     const form = await request.formData();
     const candidate = form.get("password");
     if (typeof candidate === "string" && verifySitePassword(candidate, password)) {
-      const res = NextResponse.redirect(request.url);
+      // 303 See Other：登入 POST 成功後，讓瀏覽器改用 GET 重新載入。
+      // 若用預設的 307（保留 method），會再送一次 POST 到只吃 GET 的頁面 → 405。
+      const res = NextResponse.redirect(request.url, 303);
       res.cookies.set(SITE_GATE_COOKIE_NAME, expected, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
