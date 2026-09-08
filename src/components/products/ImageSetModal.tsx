@@ -289,6 +289,18 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
     }
   };
 
+  const discardResumeAndRestart = () => {
+    if (recoveryKind !== "resume") return;
+    clearSavedImageSetBatch(window.localStorage, productId);
+    setResumeRecovery(null);
+    setRecoveryKind(null);
+    setError(null);
+    setGen([]);
+    setPollingTimedOut(false);
+    finishedNotified.current = false;
+    void loadInitial();
+  };
+
   const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -389,7 +401,7 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
               <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f9f6ff]">{analyzing || !error ? <Loader2 className="h-6 w-6 animate-spin text-violet-600" /> : <AlertCircle className="h-6 w-6 text-red-500" />}</span>
               <p role="status" aria-live="polite" className="mt-5 max-w-md text-sm font-medium leading-6 text-gray-700">{progressLabel}</p>
               <p className="mt-2 text-xs text-gray-400">會依商品照片整理色彩、外觀細節與一致的視覺方向。</p>
-              {error && <div className="mt-4 flex flex-col items-center gap-3"><ErrorMessage>{recoveryAction?.title ? `${recoveryAction.title}：${error}` : error}</ErrorMessage><button type="button" onClick={retryRecovery} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><RefreshCw className="h-3.5 w-3.5" />{recoveryAction?.actionLabel ?? "重試"}</button></div>}
+              {error && <div className="mt-4 flex flex-col items-center gap-3"><ErrorMessage>{recoveryAction?.title ? `${recoveryAction.title}：${error}` : error}</ErrorMessage><div className="flex flex-wrap items-center justify-center gap-2"><button type="button" onClick={retryRecovery} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><RefreshCw className="h-3.5 w-3.5" />{recoveryAction?.actionLabel ?? "重試"}</button>{recoveryKind === "resume" && <button type="button" onClick={discardResumeAndRestart} className="inline-flex items-center gap-1.5 rounded-full border border-[#ebe4f9] bg-white px-5 py-2.5 text-xs font-bold text-violet-600 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">丟棄這批重新開始</button>}</div></div>}
             </div>
           ) : phase === "pick" ? (
             <div className="space-y-5">
