@@ -9,6 +9,7 @@ import {
   createAndScheduleImageSetBatch,
   createImageSetExecution,
   prepareImageSetRegenerationFromRow,
+  reconcileImageSetCleanupJobs,
   reconcileStaleImageSetWork,
   requestImageSetAnalysis,
   requestImageSetRegeneration,
@@ -426,6 +427,29 @@ test("deletes a saved orphan when the DONE compare-and-set loses ownership", asy
   assert.deepEqual(deleted, ["https://blob.example/orphan.png"]);
 });
 
+test("batch finalization honors the cleanup tombstone adoption barrier", async () => {
+  const batch = input();
+  batch.rows = [batch.rows[0]];
+  let ordinaryTransitions = 0;
+  let completions = 0;
+  const cleaned: string[] = [];
+  const result = await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    transitionRow: async () => { ordinaryTransitions += 1; return true; },
+    completeRow: async () => { completions += 1; return false; },
+    saveBuffer: async () => "https://blob.example/adoption-blocked.png",
+    cleanupOrphanAsset: async ({ assetUrl }) => {
+      cleaned.push(assetUrl);
+      return { resolved: true, deleted: true };
+    },
+  }, createImageSetExecution(Date.now(), "lease-adoption-blocked"));
+
+  assert.equal(completions, 1);
+  assert.equal(ordinaryTransitions >= 1, true);
+  assert.equal(result.statuses.hero, "FAILED");
+  assert.deepEqual(cleaned, ["https://blob.example/adoption-blocked.png"]);
+});
+
 test("orphan cleanup durably records first, retries transient deletes, then resolves its exact job", async () => {
   const input = {
     productId: "product-1",
@@ -441,6 +465,7 @@ test("orphan cleanup durably records first, retries transient deletes, then reso
       job ??= { id: "cleanup-1", ...value, attempts: 0 };
       return job;
     },
+    claimCleanupJob: async () => true,
     isCurrentAsset: async () => false,
     deleteAsset: async () => {
       deleteAttempts += 1;
@@ -451,10 +476,12 @@ test("orphan cleanup durably records first, retries transient deletes, then reso
       job = null;
       return true;
     },
-    recordCleanupFailure: async (value, errorMessage) => {
+    recordCleanupFailure: async (value, _execution, errorMessage) => {
       assert.equal(job?.id, value.id);
       if (job) job = { ...job, attempts: job.attempts + 1, lastError: errorMessage };
     },
+    releaseCleanupJob: async () => true,
+    createCleanupLease: () => ({ leaseId: "cleaner-transient", deadlineAt: 20_000 }),
     waitForRetry: async (delayMs) => { waits.push(delayMs); },
     logError: () => {},
   });
@@ -463,6 +490,34 @@ test("orphan cleanup durably records first, retries transient deletes, then reso
   assert.equal(deleteAttempts, 3);
   assert.deepEqual(waits, [250, 1_000]);
   assert.equal(job, null);
+});
+
+test("cleanup falls back to a bounded direct delete when the durable record cannot be written", async () => {
+  let deleteAttempts = 0;
+  const waits: number[] = [];
+  const result = await cleanupImageSetOrphanAsset({
+    productId: "product-1",
+    libraryImageId: "row-old",
+    generationLeaseId: "lease-old",
+    assetUrl: "https://blob.example/db-outage.png",
+  }, {
+    upsertCleanupJob: async () => { throw new Error("database unavailable"); },
+    claimCleanupJob: async () => false,
+    isCurrentAsset: async () => false,
+    deleteAsset: async () => {
+      deleteAttempts += 1;
+      if (deleteAttempts < 2) throw new Error("temporary blob outage");
+    },
+    completeCleanupJob: async () => true,
+    recordCleanupFailure: async () => {},
+    releaseCleanupJob: async () => true,
+    createCleanupLease: () => ({ leaseId: "cleaner-direct", deadlineAt: 20_000 }),
+    waitForRetry: async (delayMs) => { waits.push(delayMs); },
+    logError: () => {},
+  });
+  assert.deepEqual(result, { resolved: true, deleted: true });
+  assert.equal(deleteAttempts, 2);
+  assert.deepEqual(waits, [250, 1_000, 250]);
 });
 
 test("persistent orphan delete failure survives and a later stale reconciliation completes it", async () => {
@@ -481,6 +536,7 @@ test("persistent orphan delete failure survives and a later stale reconciliation
       job ??= { id: "cleanup-persistent", ...value, attempts: 0 };
       return job;
     },
+    claimCleanupJob: async () => true,
     isCurrentAsset: async () => false,
     deleteAsset: async () => {
       deleteAttempts += 1;
@@ -491,10 +547,12 @@ test("persistent orphan delete failure survives and a later stale reconciliation
       job = null;
       return true;
     },
-    recordCleanupFailure: async (_value: ImageSetOrphanCleanupJob, errorMessage: string) => {
+    recordCleanupFailure: async (_value: ImageSetOrphanCleanupJob, _execution: { leaseId: string; deadlineAt: number }, errorMessage: string) => {
       recordedAttempts += 1;
       if (job) job = { ...job, attempts: recordedAttempts, lastError: errorMessage };
     },
+    releaseCleanupJob: async () => true,
+    createCleanupLease: () => ({ leaseId: "cleaner-persistent", deadlineAt: 20_000 }),
     waitForRetry: async () => {},
     logError: () => {},
   };
@@ -526,16 +584,42 @@ test("orphan reconciliation never deletes an asset that is now the successful cu
     assetUrl: "https://blob.example/current.png",
   }, {
     upsertCleanupJob: async (value) => ({ id: "cleanup-current", ...value, attempts: 0 }),
+    claimCleanupJob: async () => true,
     isCurrentAsset: async () => true,
     deleteAsset: async () => { deleted = true; },
     completeCleanupJob: async () => { completed = true; return true; },
     recordCleanupFailure: async () => {},
+    releaseCleanupJob: async () => true,
+    createCleanupLease: () => ({ leaseId: "cleaner-current", deadlineAt: 20_000 }),
     waitForRetry: async () => {},
     logError: () => {},
   });
   assert.deepEqual(result, { resolved: true, deleted: false });
   assert.equal(deleted, false);
   assert.equal(completed, true);
+});
+
+test("a cleaner that loses the tombstone lease performs no blob deletion", async () => {
+  let deleted = false;
+  const result = await cleanupImageSetOrphanAsset({
+    productId: "product-1",
+    libraryImageId: "row-old",
+    generationLeaseId: "generation-old",
+    assetUrl: "https://blob.example/claimed-by-other-worker.png",
+  }, {
+    upsertCleanupJob: async (value) => ({ id: "cleanup-claimed", ...value, attempts: 0 }),
+    claimCleanupJob: async () => false,
+    isCurrentAsset: async () => false,
+    deleteAsset: async () => { deleted = true; },
+    completeCleanupJob: async () => true,
+    recordCleanupFailure: async () => {},
+    releaseCleanupJob: async () => true,
+    createCleanupLease: () => ({ leaseId: "cleaner-loser", deadlineAt: 20_000 }),
+    waitForRetry: async () => {},
+    logError: () => {},
+  });
+  assert.deepEqual(result, { resolved: false, deleted: false });
+  assert.equal(deleted, false);
 });
 
 test("passes the request deadline signal into the asset save", async () => {
@@ -627,6 +711,23 @@ test("reconciles only rows whose status, lease ownership and expiry are still st
   assert.deepEqual(result, { failedRows: 1, releasedProductLease: true, cleanedAssets: 0 });
   assert.deepEqual(failed, [{ row: observed[0], cutoff: now }]);
   assert.deepEqual(released, [{ productId: "product-1", cutoff: now }]);
+});
+
+test("global cleanup reconciliation drains jobs after their product is gone", async () => {
+  const jobs = [
+    { id: "cleanup-1", productId: "deleted-product", libraryImageId: "row-1", generationLeaseId: "lease-1", assetUrl: "https://blob.example/one.png", attempts: 0 },
+    { id: "cleanup-2", productId: "deleted-product", libraryImageId: "row-2", generationLeaseId: "lease-2", assetUrl: "https://blob.example/two.png", attempts: 0 },
+  ] as ImageSetOrphanCleanupJob[];
+  const cleaned: string[] = [];
+  const count = await reconcileImageSetCleanupJobs(25, {
+    listOrphanCleanupJobs: async (limit) => jobs.slice(0, limit),
+    cleanupOrphanAsset: async (job) => {
+      cleaned.push(job.assetUrl);
+      return { resolved: true, deleted: true };
+    },
+  });
+  assert.equal(count, 2);
+  assert.deepEqual(cleaned, ["https://blob.example/one.png", "https://blob.example/two.png"]);
 });
 
 test("active product lease rejects a duplicate batch before rows or callbacks are created", async () => {

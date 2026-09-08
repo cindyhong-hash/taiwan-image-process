@@ -6,6 +6,7 @@ import {
   analyzeImageSetProduct,
   claimProductPaidOperationLease,
   createImageSetExecution,
+  reconcileImageSetCleanupJobs,
   reconcileStaleImageSetWork,
   releaseProductPaidOperationLease,
   requestImageSetAnalysis,
@@ -25,6 +26,7 @@ export const POST = protectPaidRoute(async (
   const product = await db.product.findUnique({ where: { id: productId }, include: { client: true } });
   if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await reconcileStaleImageSetWork(product.id, new Date());
+  await reconcileImageSetCleanupJobs(10);
   const execution = createImageSetExecution(invocationStartedAt, randomUUID(), 110_000);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Image-set analysis absolute deadline reached")), Math.max(0, execution.deadlineAt - Date.now()));

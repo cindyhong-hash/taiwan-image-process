@@ -5,6 +5,7 @@ import { protectPaidRoute } from "@/lib/site-gate";
 import {
   createImageSetExecution,
   prepareImageSetRegeneration,
+  reconcileImageSetCleanupJobs,
   reconcileStaleImageSetWork,
   regenerateImageSetItem,
   requestImageSetRegeneration,
@@ -27,6 +28,7 @@ export const POST = protectPaidRoute(async (
   if (!target) return NextResponse.json({ error: "找不到這張素材" }, { status: 404 });
   if (!target.product) return NextResponse.json({ error: "找不到這張素材所屬的產品" }, { status: 400 });
   await reconcileStaleImageSetWork(target.product.id, new Date());
+  await reconcileImageSetCleanupJobs(10);
   const execution = createImageSetExecution(invocationStartedAt, randomUUID());
   const result = await requestImageSetRegeneration(id, execution, {
     prepare: prepareImageSetRegeneration,

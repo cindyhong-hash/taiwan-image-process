@@ -122,10 +122,13 @@ model ImageAssetCleanupJob {
   assetUrl          String   @unique
   attempts          Int      @default(0)
   lastError         String?
+  cleanupLeaseId        String?
+  cleanupLeaseExpiresAt DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   @@index([productId, createdAt])
+  @@index([cleanupLeaseExpiresAt, createdAt])
 }
 
 // ── AI 商品套圖（Product Image Set）──────────────────────────────────────────

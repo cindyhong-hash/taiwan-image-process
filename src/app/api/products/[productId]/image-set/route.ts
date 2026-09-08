@@ -7,6 +7,7 @@ import {
   createAndScheduleImageSetBatch,
   createImageSetExecution,
   readImageSetProduct,
+  reconcileImageSetCleanupJobs,
   reconcileStaleImageSetWork,
   releaseProductPaidOperationLease,
   runImageSetBatch,
@@ -24,6 +25,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const product = await db.product.findUnique({ where: { id: productId }, include: { client: true } });
   if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await reconcileStaleImageSetWork(product.id, new Date());
+  await reconcileImageSetCleanupJobs(10);
   return NextResponse.json(await readImageSetProduct(product, product.client));
 }
 
@@ -46,6 +48,7 @@ export const POST = protectPaidRoute(async (
   const product = await db.product.findUnique({ where: { id: productId }, include: { client: true } });
   if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await reconcileStaleImageSetWork(product.id, new Date());
+  await reconcileImageSetCleanupJobs(10);
   const execution = createImageSetExecution(invocationStartedAt, randomUUID());
   const result = await createAndScheduleImageSetBatch({
     product,
