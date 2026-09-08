@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Loader2, Sparkles, X } from "lucide-react";
 import { ML_WIZARD_SEED_KEY } from "@/components/activities/RolePickerModal";
 import {
+  previewAssetsForOption,
   selectAdLayoutOption,
   type AdLayoutOption,
 } from "@/lib/magic-layers/ad-layout-options";
@@ -44,6 +45,12 @@ const PREVIEW_POSITIONS: Record<string, { product: string; benefit: string; titl
   },
 };
 
+function textForPreview(option: AdLayoutOption, id: "text_title" | "text_sub") {
+  const layer = option.layers.find((candidate) => candidate.id === id);
+  const style = layer?.meta.style as { text?: unknown } | undefined;
+  return typeof style?.text === "string" && style.text.trim() ? style.text : undefined;
+}
+
 function LayoutOptionPreview({
   option,
   selected,
@@ -54,7 +61,10 @@ function LayoutOptionPreview({
   onSelect: () => void;
 }) {
   const preview = option.preview;
+  const assets = previewAssetsForOption(option);
   const position = PREVIEW_POSITIONS[option.id] ?? PREVIEW_POSITIONS["product-focus"];
+  const headline = textForPreview(option, "text_title") ?? "建立你的\n品牌設計";
+  const hasSafePanel = option.layers.some((layer) => layer.id === "text_safe_panel");
 
   return (
     <button
@@ -68,22 +78,27 @@ function LayoutOptionPreview({
       }`}
     >
       <div className="relative aspect-[4/3] overflow-hidden bg-[#f4f5f8]">
-        {preview?.backgroundUrl && (
+        {assets.backgroundUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview.backgroundUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <img src={assets.backgroundUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-white/5" />
-        {preview?.benefitUrl && (
+        {assets.supportUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview.benefitUrl} alt="" className={`absolute object-contain ${position.benefit}`} />
+          <img src={assets.supportUrl} alt="" className={`absolute object-contain ${position.benefit}`} />
         )}
-        {preview?.heroUrl && (
+        {assets.productUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview.heroUrl} alt="" className={`absolute object-contain drop-shadow-xl ${position.product}`} />
+          <img src={assets.productUrl} alt="" className={`absolute object-contain drop-shadow-xl ${position.product}`} />
         )}
         {preview?.purpose === "promo" && <div className="absolute left-[5%] top-[6%] h-[25%] w-[54%] rounded-lg" style={{ backgroundColor: preview.accentColor }} />}
-        <div className={`absolute ${position.title} text-[11px] font-extrabold leading-tight`} style={{ color: preview?.purpose === "promo" ? "#ffffff" : preview?.textColor }}>
-          {option.id === "editorial" ? "為日常留一點\n溫柔呵護" : option.id === "scene-led" ? "把美好，\n放進生活裡" : "剛剛好的\n日常保養"}
+        {hasSafePanel && preview?.purpose !== "promo" && <div className={`absolute ${position.title} -m-2 rounded-md bg-white/55`} />}
+        {assets.decorationUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={assets.decorationUrl} alt="" className="absolute right-[8%] top-[8%] h-[17%] w-[17%] object-contain opacity-75" />
+        )}
+        <div className={`absolute ${position.title} whitespace-pre-line text-[11px] font-extrabold leading-tight`} style={{ color: preview?.purpose === "promo" ? "#ffffff" : preview?.textColor }}>
+          {headline}
         </div>
         {selected && (
           <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-violet-600 text-white shadow-sm">
@@ -170,7 +185,7 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
             <div className="flex items-end justify-between gap-3">
               <div>
                 <div className="text-sm font-bold text-gray-900">選一個設計方向</div>
-                <p className="mt-1 text-xs leading-5 text-gray-500">三個方向都可在下一步自由調整文字、尺寸與圖層。</p>
+                <p className="mt-1 text-xs leading-5 text-gray-500">每個方向都已挑選必要素材並建立文字層級；下一步仍可自由調整。</p>
               </div>
               <button type="button" onClick={() => { setOptions(null); setCanvas(null); setSelectedOptionId(null); }} className="flex shrink-0 items-center gap-1 text-xs font-medium text-gray-500 hover:text-violet-700">
                 <ArrowLeft className="h-3.5 w-3.5" />重選條件
@@ -213,7 +228,7 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
 
         <button type="button" onClick={options ? continueToEditor : generate} disabled={busy}
           className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-60">
-          {busy ? <><Loader2 className="h-4 w-4 animate-spin" />排版中…（約十幾秒）</> : options ? <><Check className="h-4 w-4" />使用這個方向進入編輯</> : <><Sparkles className="h-4 w-4" />產生設計稿</>}
+          {busy ? <><Loader2 className="h-4 w-4 animate-spin" />正在建立三個可編輯設計稿…</> : options ? <><Check className="h-4 w-4" />使用這個設計稿進入編輯</> : <><Sparkles className="h-4 w-4" />建立 3 個設計方向</>}
         </button>
       </div>
     </div>
