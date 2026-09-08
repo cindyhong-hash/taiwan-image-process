@@ -264,6 +264,15 @@ export async function cleanupImageSetOrphanAsset(
     for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
       if (attempt > 0) await dependencies.waitForRetry(retryDelays[attempt]);
       try {
+        // The durable barrier could not be written, so fail closed if the
+        // exact URL is already adopted by a successful row. This check is
+        // repeated before every bounded attempt; the normal path remains the
+        // tombstone/CAS path above, which coordinates adoption atomically.
+        const directFallbackJob: ImageSetOrphanCleanupJob = { id: "direct-fallback", ...input, attempts: 0 };
+        if (await dependencies.isCurrentAsset(directFallbackJob)) {
+          dependencies.logError("[image-set] direct orphan delete skipped because the asset is already current");
+          return { resolved: false, deleted: false };
+        }
         await dependencies.deleteAsset(input.assetUrl);
         return { resolved: true, deleted: true };
       } catch (error) {

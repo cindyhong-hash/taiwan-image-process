@@ -520,6 +520,29 @@ test("cleanup falls back to a bounded direct delete when the durable record cann
   assert.deepEqual(waits, [250, 1_000, 250]);
 });
 
+test("direct cleanup fallback fails closed when the URL is already a current asset", async () => {
+  let deleted = false;
+  const result = await cleanupImageSetOrphanAsset({
+    productId: "product-1",
+    libraryImageId: "row-old",
+    generationLeaseId: "lease-old",
+    assetUrl: "https://blob.example/already-adopted.png",
+  }, {
+    upsertCleanupJob: async () => { throw new Error("database unavailable"); },
+    claimCleanupJob: async () => false,
+    isCurrentAsset: async () => true,
+    deleteAsset: async () => { deleted = true; },
+    completeCleanupJob: async () => true,
+    recordCleanupFailure: async () => {},
+    releaseCleanupJob: async () => true,
+    createCleanupLease: () => ({ leaseId: "cleaner-direct-current", deadlineAt: 20_000 }),
+    waitForRetry: async () => {},
+    logError: () => {},
+  });
+  assert.deepEqual(result, { resolved: false, deleted: false });
+  assert.equal(deleted, false);
+});
+
 test("persistent orphan delete failure survives and a later stale reconciliation completes it", async () => {
   const orphan = {
     productId: "product-1",
