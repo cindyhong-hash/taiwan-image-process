@@ -3,7 +3,7 @@
  * 內容機會卡（第六節）。四型共用：正在升溫 / 近期值得準備 / 你可以重新利用 / 品牌內容缺口。
  * 重點順序：Type → Title → Why Now → Suggested Angle → CTA。
  */
-import { TrendingUp, CalendarClock, RefreshCw, PieChart, Sparkles, ArrowRight } from "lucide-react";
+import { TrendingUp, CalendarClock, RefreshCw, PieChart, Sparkles, ArrowRight, Quote } from "lucide-react";
 import { OPPORTUNITY_META, type Opportunity, type OpportunityType } from "@/lib/inspiration/types";
 
 const TYPE_ICON: Record<OpportunityType, typeof TrendingUp> = {
@@ -41,9 +41,10 @@ export function OpportunityCard({
       {opp.gapNote && <p className="mt-3 text-[11px] text-violet-600">· {opp.gapNote}</p>}
 
       {opp.suggestedAngle && (
-        <p className="mt-3 rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs italic leading-relaxed text-violet-700">
-          「{opp.suggestedAngle}」
-        </p>
+        <div className={`mt-3 flex gap-2 rounded-lg border px-3 py-2.5 ${meta.quoteClass}`}>
+          <Quote className={`h-4 w-4 shrink-0 ${meta.markClass}`} fill="currentColor" />
+          <p className="text-xs italic leading-relaxed">{opp.suggestedAngle}</p>
+        </div>
       )}
 
       <div className="mt-auto flex items-center gap-1.5 pt-4">

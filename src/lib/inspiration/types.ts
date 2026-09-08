@@ -117,12 +117,12 @@ export const TAG_META: Record<InspirationTag, { label: string; color: string }> 
 
 export const OPPORTUNITY_META: Record<
   OpportunityType,
-  { label: string; badgeClass: string }
+  { label: string; badgeClass: string; quoteClass: string; markClass: string }
 > = {
-  trend: { label: "正在升溫", badgeClass: "bg-rose-50 text-rose-600 border-rose-200" },
-  upcoming: { label: "近期值得準備", badgeClass: "bg-amber-50 text-amber-700 border-amber-200" },
-  reuse: { label: "你可以重新利用", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  gap: { label: "品牌內容缺口", badgeClass: "bg-violet-50 text-violet-700 border-violet-200" },
+  trend: { label: "正在升溫", badgeClass: "bg-rose-50 text-rose-600 border-rose-200", quoteClass: "border-rose-100 bg-rose-50/70 text-rose-700", markClass: "text-rose-300" },
+  upcoming: { label: "近期值得準備", badgeClass: "bg-amber-50 text-amber-700 border-amber-200", quoteClass: "border-amber-100 bg-amber-50/70 text-amber-800", markClass: "text-amber-300" },
+  reuse: { label: "你可以重新利用", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200", quoteClass: "border-emerald-100 bg-emerald-50/70 text-emerald-700", markClass: "text-emerald-300" },
+  gap: { label: "品牌內容缺口", badgeClass: "bg-violet-50 text-violet-700 border-violet-200", quoteClass: "border-violet-100 bg-violet-50/70 text-violet-700", markClass: "text-violet-300" },
 };
 
 export const INSPIRATION_TAGS: InspirationTag[] = [
