@@ -173,11 +173,12 @@ export type ImageSetOrphanCleanupJob = ImageSetOrphanAsset & {
 };
 
 export type ImageSetOrphanCleanupResult = { resolved: boolean; deleted: boolean };
+export type ImageSetOrphanDeletionClaim = "claimed" | "safe_without_original_lease" | "blocked";
 
 export type ImageSetOrphanCleanupDependencies = {
   upsertCleanupJob: (input: ImageSetOrphanAsset) => Promise<ImageSetOrphanCleanupJob>;
   claimCleanupJob: (job: ImageSetOrphanCleanupJob, execution: ImageSetExecution) => Promise<boolean>;
-  claimOrphanDeletion: (input: ImageSetOrphanAsset) => Promise<boolean>;
+  claimOrphanDeletion: (input: ImageSetOrphanAsset) => Promise<ImageSetOrphanDeletionClaim>;
   isCurrentAsset: (job: ImageSetOrphanCleanupJob) => Promise<boolean>;
   deleteAsset: (url: string) => Promise<void>;
   completeCleanupJob: (job: ImageSetOrphanCleanupJob, execution: ImageSetExecution) => Promise<boolean>;
@@ -203,24 +204,36 @@ const defaultOrphanCleanupDependencies: ImageSetOrphanCleanupDependencies = {
     leaseId: execution.leaseId,
     deadlineAt: execution.deadlineAt,
   }),
-  claimOrphanDeletion: async (input) => (await db.libraryImage.updateMany({
-    where: {
-      id: input.libraryImageId,
-      OR: [
-        { status: { in: ["PENDING", "GENERATING"] }, generationLeaseId: input.generationLeaseId },
-        // Stale reconciliation may already have safely cleared the old lease.
-        // FAILED + no lease still means no worker can adopt this URL; DONE,
-        // a replacement lease, and missing rows all fail closed.
-        { status: "FAILED", generationLeaseId: null },
-      ],
-    },
-    data: {
-      status: "FAILED",
-      errorMessage: "未完成的商品套圖素材已交由清理流程處理。",
-      generationLeaseId: null,
-      generationLeaseExpiresAt: null,
-    },
-  })).count === 1,
+  claimOrphanDeletion: async (input) => {
+    const claimed = await db.libraryImage.updateMany({
+      where: {
+        id: input.libraryImageId,
+        OR: [
+          { status: { in: ["PENDING", "GENERATING"] }, generationLeaseId: input.generationLeaseId },
+          // Stale reconciliation may already have safely cleared the old lease.
+          { status: "FAILED", generationLeaseId: null },
+        ],
+      },
+      data: {
+        status: "FAILED",
+        errorMessage: "未完成的商品套圖素材已交由清理流程處理。",
+        generationLeaseId: null,
+        generationLeaseExpiresAt: null,
+      },
+    });
+    if (claimed.count === 1) return "claimed";
+    const current = await db.libraryImage.findUnique({
+      where: { id: input.libraryImageId },
+      select: { status: true, generationLeaseId: true },
+    });
+    if (!current) return "safe_without_original_lease";
+    // A replacement generation lease cannot complete the old lease's result;
+    // a DONE row, however, may already own the URL and must block deletion.
+    if (["PENDING", "GENERATING"].includes(current.status) && current.generationLeaseId !== input.generationLeaseId) {
+      return "safe_without_original_lease";
+    }
+    return "blocked";
+  },
   isCurrentAsset: async (job) => (await db.libraryImage.count({
     where: { status: "DONE", imageUrl: job.assetUrl },
   })) > 0,
@@ -285,7 +298,8 @@ export async function cleanupImageSetOrphanAsset(
       if (attempt > 0) await dependencies.waitForRetry(retryDelays[attempt]);
       try {
         if (!directDeletionClaimed) {
-          directDeletionClaimed = await dependencies.claimOrphanDeletion(input);
+          const claim = await dependencies.claimOrphanDeletion(input);
+          directDeletionClaimed = claim !== "blocked";
           if (!directDeletionClaimed) {
             dependencies.logError("[image-set] direct orphan delete skipped because the generation lease was not owned");
             return { resolved: false, deleted: false };

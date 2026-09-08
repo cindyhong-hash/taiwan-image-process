@@ -466,7 +466,7 @@ test("orphan cleanup durably records first, retries transient deletes, then reso
       return job;
     },
     claimCleanupJob: async () => true,
-    claimOrphanDeletion: async () => true,
+    claimOrphanDeletion: async () => "claimed" as const,
     isCurrentAsset: async () => false,
     deleteAsset: async () => {
       deleteAttempts += 1;
@@ -504,7 +504,7 @@ test("cleanup falls back to a bounded direct delete when the durable record cann
   }, {
     upsertCleanupJob: async () => { throw new Error("database unavailable"); },
     claimCleanupJob: async () => false,
-    claimOrphanDeletion: async () => true,
+    claimOrphanDeletion: async () => "claimed" as const,
     isCurrentAsset: async () => false,
     deleteAsset: async () => {
       deleteAttempts += 1;
@@ -532,7 +532,7 @@ test("direct cleanup fallback fails closed when the URL is already a current ass
   }, {
     upsertCleanupJob: async () => { throw new Error("database unavailable"); },
     claimCleanupJob: async () => false,
-    claimOrphanDeletion: async () => true,
+    claimOrphanDeletion: async () => "claimed" as const,
     isCurrentAsset: async () => true,
     deleteAsset: async () => { deleted = true; },
     completeCleanupJob: async () => true,
@@ -556,7 +556,7 @@ test("direct cleanup fallback does not delete when the generation-lease CAS lose
   }, {
     upsertCleanupJob: async () => { throw new Error("database unavailable"); },
     claimCleanupJob: async () => false,
-    claimOrphanDeletion: async () => false,
+    claimOrphanDeletion: async () => "blocked",
     isCurrentAsset: async () => false,
     deleteAsset: async () => { deleted = true; },
     completeCleanupJob: async () => true,
@@ -568,6 +568,32 @@ test("direct cleanup fallback does not delete when the generation-lease CAS lose
   });
   assert.deepEqual(result, { resolved: false, deleted: false });
   assert.equal(deleted, false);
+});
+
+test("direct cleanup can remove an old URL after the original row is gone or replaced", async () => {
+  let deleted = 0;
+  for (const claim of ["safe_without_original_lease", "safe_without_original_lease"] as const) {
+    const result = await cleanupImageSetOrphanAsset({
+      productId: "product-1",
+      libraryImageId: `row-${deleted}`,
+      generationLeaseId: "lease-old",
+      assetUrl: `https://blob.example/replaced-${deleted}.png`,
+    }, {
+      upsertCleanupJob: async () => { throw new Error("database unavailable"); },
+      claimCleanupJob: async () => false,
+      claimOrphanDeletion: async () => claim,
+      isCurrentAsset: async () => false,
+      deleteAsset: async () => { deleted += 1; },
+      completeCleanupJob: async () => true,
+      recordCleanupFailure: async () => {},
+      releaseCleanupJob: async () => true,
+      createCleanupLease: () => ({ leaseId: "cleaner-safe", deadlineAt: 20_000 }),
+      waitForRetry: async () => {},
+      logError: () => {},
+    });
+    assert.deepEqual(result, { resolved: true, deleted: true });
+  }
+  assert.equal(deleted, 2);
 });
 
 test("persistent orphan delete failure survives and a later stale reconciliation completes it", async () => {
@@ -587,7 +613,7 @@ test("persistent orphan delete failure survives and a later stale reconciliation
       return job;
     },
     claimCleanupJob: async () => true,
-    claimOrphanDeletion: async () => true,
+    claimOrphanDeletion: async () => "claimed" as const,
     isCurrentAsset: async () => false,
     deleteAsset: async () => {
       deleteAttempts += 1;
@@ -636,7 +662,7 @@ test("orphan reconciliation never deletes an asset that is now the successful cu
   }, {
     upsertCleanupJob: async (value) => ({ id: "cleanup-current", ...value, attempts: 0 }),
     claimCleanupJob: async () => true,
-    claimOrphanDeletion: async () => true,
+    claimOrphanDeletion: async () => "claimed",
     isCurrentAsset: async () => true,
     deleteAsset: async () => { deleted = true; },
     completeCleanupJob: async () => { completed = true; return true; },
@@ -661,7 +687,7 @@ test("a cleaner that loses the tombstone lease performs no blob deletion", async
   }, {
     upsertCleanupJob: async (value) => ({ id: "cleanup-claimed", ...value, attempts: 0 }),
     claimCleanupJob: async () => false,
-    claimOrphanDeletion: async () => false,
+    claimOrphanDeletion: async () => "blocked",
     isCurrentAsset: async () => false,
     deleteAsset: async () => { deleted = true; },
     completeCleanupJob: async () => true,
