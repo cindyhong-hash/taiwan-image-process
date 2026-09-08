@@ -125,7 +125,9 @@ export function compileImageSetPrompt({ product, profile, artDirection, role }: 
     ].join("\n");
     const textExclusions = [
       ...role.mustNotShow,
-      "不得出現任何商品、瓶罐、包裝、Logo 或文字",
+      role.role === "detail"
+        ? "不得出現完整商品、完整瓶罐、包裝、Logo 或文字；僅可出現緊裁切、無品牌的按壓頭作為出料動作"
+        : "不得出現任何商品、瓶罐、包裝、Logo 或文字",
       "不得加入未提供的成分、功效、認證、安全或醫療宣稱",
       "不得加入任何色碼（hex）、數字、標籤或浮水印",
     ];

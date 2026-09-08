@@ -66,6 +66,19 @@ test("abstract benefit visuals receive supplied use-case context without product
   assert.doesNotMatch(prompt, /\[MUST PRESERVE\]/);
 });
 
+test("detail asks for a real photographic product texture while benefit stays conceptual", () => {
+  const detail = planImageSetRoles(beautyDeviceProfile).find(({ role }) => role === "detail")!;
+  const benefit = planImageSetRoles(beautyDeviceProfile).find(({ role }) => role === "benefit")!;
+  const detailPrompt = compileImageSetPrompt({ product, profile: beautyDeviceProfile, artDirection, role: detail });
+  const benefitPrompt = compileImageSetPrompt({ product, profile: beautyDeviceProfile, artDirection, role: benefit });
+
+  assert.match(detailPrompt, /photographic macro/i);
+  assert.match(detailPrompt, /dispensed|pump|nozzle|spread on skin|dense foam/i);
+  assert.match(detailPrompt, /抽象液體波浪|漂浮微粒|功效意象圖/);
+  assert.match(benefitPrompt, /conceptual|abstract/i);
+  assert.match(benefitPrompt, /真實攝影微距質地|擠出的乳液、凝露或泡沫|按壓頭出料/);
+});
+
 test("background forbids the product and reserves layout space", () => {
   const role = planImageSetRoles(beautyDeviceProfile).find(({ role }) => role === "background")!;
   const prompt = compileImageSetPrompt({ product, profile: beautyDeviceProfile, artDirection, role });
