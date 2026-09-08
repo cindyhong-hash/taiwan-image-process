@@ -54,20 +54,28 @@ test("product roles contain identity locks", () => {
   assert.match(prompt, /\[ROLE OBJECTIVE\][\s\S]*\[PRODUCT FACTS\][\s\S]*\[MUST PRESERVE\][\s\S]*\[SHARED ART DIRECTION\][\s\S]*\[COMPOSITION AND CAMERA\][\s\S]*\[MUST NOT SHOW\]/);
 });
 
-test("product facts include supplied use cases and suitable scenes", () => {
-  const role = planImageSetRoles(beautyDeviceProfile)[2];
+test("abstract benefit visuals receive supplied use-case context without product identity locks", () => {
+  const role = planImageSetRoles(beautyDeviceProfile).find(({ role }) => role === "benefit")!;
   const prompt = compileImageSetPrompt({ product, profile: beautyDeviceProfile, artDirection, role });
 
-  assert.match(prompt, /Use cases: 腿部日常修整/);
-  assert.match(prompt, /Suitable scenes: 明亮浴室/);
+  assert.match(prompt, /Supplied use cases: 腿部日常修整/);
+  assert.match(prompt, /liquid, particles, soft light/i);
+  assert.match(prompt, /actual product|Logo/i);
+  assert.doesNotMatch(prompt, /Product name: 女性電動除毛刀/);
+  assert.doesNotMatch(prompt, /Visible text or logos: Schick/);
+  assert.doesNotMatch(prompt, /\[MUST PRESERVE\]/);
 });
 
 test("background forbids the product and reserves layout space", () => {
-  const role = planImageSetRoles(beautyDeviceProfile)[3];
+  const role = planImageSetRoles(beautyDeviceProfile).find(({ role }) => role === "background")!;
   const prompt = compileImageSetPrompt({ product, profile: beautyDeviceProfile, artDirection, role });
 
   assert.match(prompt, /不出現任何產品/);
   assert.match(prompt, /留白/);
+  assert.match(prompt, /product-free/i);
+  assert.match(prompt, /no product depiction/i);
+  assert.doesNotMatch(prompt, /Product name: 女性電動除毛刀/);
+  assert.doesNotMatch(prompt, /一致產品攝影/);
 });
 
 test("brand yellow remains an accent rather than the dominant palette", () => {

@@ -5,6 +5,7 @@ import {
   gptImageGenerateWithReferences,
 } from "../generate.ts";
 import type { ImageSetRole } from "./image-set-roles.ts";
+import type { ImageSetGenerationPath } from "./image-set-roles.ts";
 
 export type ProviderImage = {
   buffer: Buffer;
@@ -29,6 +30,7 @@ export type ImageSetRoleGenerationInput = {
   aspectRatio?: string;
   signal?: AbortSignal;
   deadlineAt?: number;
+  generationPath?: ImageSetGenerationPath;
 };
 
 export type ImageSetRoleGenerationOutput = ProviderImage & {
@@ -151,7 +153,21 @@ export async function generateImageSetRole(
 
   input.signal?.throwIfAborted();
 
-  if (input.role === "background") {
+  if (input.generationPath === "cutout") {
+    // `heroImageUrl` is normally an earlier remove-background derivative. The
+    // composable asset pack must cut out the uploaded original instead.
+    const source = input.rawImageUrls?.find(Boolean);
+    if (!source) throw new Error(`${input.role} 去背失敗：缺少原始商品照`);
+    try {
+      const buffer = await providers.removeBg(source, input.signal);
+      return { buffer, contentType: "image/png", provider: "fal:remove-background" };
+    } catch (error) {
+      if (input.signal?.aborted) throw input.signal.reason ?? error;
+      throw new Error(`${input.role} 去背失敗，請單獨重試`);
+    }
+  }
+
+  if ((input.generationPath === "text" || input.role === "background") && input.role !== "decoration") {
     const generated = await providers.textImage(base);
     return { ...generated, provider: generated.provider ?? "text:unreported" };
   }

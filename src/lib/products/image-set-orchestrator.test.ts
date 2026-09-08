@@ -23,7 +23,7 @@ import {
 import { ImageSetFallbackBudgetError } from "./image-set-model-router.ts";
 import type { ProductVisualProfile } from "./product-visual-profile.ts";
 import type { ImageSetArtDirection } from "./product-visual-analysis.ts";
-import type { ImageSetRoleSpec } from "./image-set-roles.ts";
+import { planImageSetRoles, type ImageSetRoleSpec } from "./image-set-roles.ts";
 
 const profile: ProductVisualProfile = {
   version: 1,
@@ -49,11 +49,11 @@ const artDirection: ImageSetArtDirection = {
 };
 
 const roles: ImageSetRoleSpec[] = [
-  { role: "hero", label: "主視覺", path: "edit", cutout: false, sceneCn: "主視覺", objective: "hero", composition: "hero", mustNotShow: [] },
-  { role: "detail", label: "細節", path: "edit", cutout: false, sceneCn: "細節", objective: "detail", composition: "detail", mustNotShow: [] },
-  { role: "lifestyle", label: "情境", path: "edit", cutout: false, sceneCn: "情境", objective: "lifestyle", composition: "lifestyle", mustNotShow: [] },
-  { role: "background", label: "背景", path: "text", cutout: false, sceneCn: "背景", objective: "background", composition: "background", mustNotShow: [] },
-  { role: "decoration", label: "裝飾", path: "text", cutout: true, sceneCn: "裝飾", objective: "decoration", composition: "decoration", mustNotShow: [] },
+  { role: "hero", label: "主視覺", usageDescription: "legacy", path: "edit", cutout: false, sceneCn: "主視覺", objective: "hero", composition: "hero", mustNotShow: [] },
+  { role: "detail", label: "細節", usageDescription: "legacy", path: "edit", cutout: false, sceneCn: "細節", objective: "detail", composition: "detail", mustNotShow: [] },
+  { role: "lifestyle", label: "情境", usageDescription: "legacy", path: "edit", cutout: false, sceneCn: "情境", objective: "lifestyle", composition: "lifestyle", mustNotShow: [] },
+  { role: "background", label: "背景", usageDescription: "legacy", path: "text", cutout: false, sceneCn: "背景", objective: "background", composition: "background", mustNotShow: [] },
+  { role: "decoration", label: "裝飾", usageDescription: "legacy", path: "text", cutout: true, sceneCn: "裝飾", objective: "decoration", composition: "decoration", mustNotShow: [] },
 ];
 
 function input(): ImageSetBatchInput {
@@ -102,6 +102,28 @@ test("starts hero before dependent roles and uses its saved URL as their style a
   assert.ok(events.indexOf("hero:done") < events.findIndex((event) => event.startsWith("lifestyle:start")));
   assert.ok(events.includes("detail:start:anchored"));
   assert.ok(events.includes("lifestyle:start:anchored"));
+});
+
+test("new ad-asset roles load an original only for the cutout and keep text assets product-free", async () => {
+  const batch = input();
+  batch.rows = planImageSetRoles(profile).map((role) => ({ id: `ad-${role.role}`, role }));
+  const requests: Array<{ role: string; path: string | undefined; hasProductReference: boolean }> = [];
+  await runImageSetBatch(batch, {
+    ...fakeDeps(),
+    generateRole: async (request) => {
+      requests.push({
+        role: request.role,
+        path: request.generationPath,
+        hasProductReference: Boolean(request.heroImageUrl || request.rawImageUrls?.length),
+      });
+      return { buffer: Buffer.from(request.role), contentType: "image/png", provider: `provider:${request.role}` };
+    },
+  });
+
+  assert.deepEqual(requests.find(({ role }) => role === "hero"), { role: "hero", path: "cutout", hasProductReference: true });
+  for (const role of ["detail", "background", "benefit", "decoration"]) {
+    assert.deepEqual(requests.find((request) => request.role === role), { role, path: "text", hasProductReference: false });
+  }
 });
 
 test("continues the remaining roles when hero fails", async () => {
@@ -178,7 +200,7 @@ test("persists a clear retry message when the router skips a fallback without en
     generateRole: async () => { throw new ImageSetFallbackBudgetError(); },
     updateRow: async (_id, data) => { if (data.errorMessage) persisted.push(data.errorMessage); },
   });
-  assert.deepEqual(persisted, ["細節素材剩餘生成時間不足，未啟動下一個備援服務；可單獨重新產生。"]);
+  assert.deepEqual(persisted, ["質地細節剩餘生成時間不足，未啟動下一個備援服務；可單獨重新產生。"]);
 });
 
 test("normalizes direct data URI references through the 1600px pipeline", async () => {
@@ -875,6 +897,33 @@ test("active product lease rejects a duplicate batch before rows or callbacks ar
   assert.equal(schedules, 0);
 });
 
+test("new product-body cutouts require an uploaded original instead of an existing hero derivative", async () => {
+  const product = storedProduct();
+  product.rawImageUrls = "[]";
+  const expectedHash = (await import("./product-visual-profile.ts")).computeProductVisualSourceHash({
+    ...product,
+    rawImageUrls: JSON.parse(product.rawImageUrls),
+  });
+  product.visualProfileSourceHash = expectedHash;
+  let claimed = 0;
+  const response = await createAndScheduleImageSetBatch({
+    product,
+    client: null,
+    selectedRoles: ["hero"],
+    requestSourceHash: expectedHash,
+    execution: createImageSetExecution(10_000, "lease-no-raw"),
+  }, {
+    claimProductLease: async () => { claimed += 1; return true; },
+    releaseProductLease: async () => {},
+    createRows: async () => [],
+    scheduleAfter: () => {},
+    runBatch: async () => {},
+    createBatchId: () => "batch-no-raw",
+  });
+  assert.deepEqual(response, { ok: false, status: 400, error: "需要至少一張原始商品照，才能建立商品主體去背 PNG。" });
+  assert.equal(claimed, 0);
+});
+
 test("batch and retry routes stay within the Vercel Hobby 300s cap (290s) for the 270s internal cleanup deadline", async () => {
   const batchRoute = await readFile(new URL("../../app/api/products/[productId]/image-set/route.ts", import.meta.url), "utf8");
   const retryRoute = await readFile(new URL("../../app/api/library/images/[id]/regenerate/route.ts", import.meta.url), "utf8");
@@ -1138,16 +1187,16 @@ test("stale retry returns 409 Traditional Chinese guidance and mutates no row", 
   assert.equal(schedules, 0);
 });
 
-test("retry preparation rejects a stale source hash and otherwise preserves the saved role spec", async () => {
+test("retry preparation accepts a legacy lifestyle row and preserves its saved edit role spec", async () => {
   const product = storedProduct();
   const sourceHash = (await import("./product-visual-profile.ts")).computeProductVisualSourceHash({
     ...product,
     rawImageUrls: JSON.parse(product.rawImageUrls),
   });
   product.visualProfileSourceHash = sourceHash;
-  const savedRole = { ...roles[1], sceneCn: "使用者確認過的專屬細節構圖" };
+  const savedRole = { ...roles[2], sceneCn: "使用者確認過的專屬使用情境構圖" };
   const row = {
-    id: "row-detail",
+    id: "row-lifestyle",
     batchId: "batch-existing",
     paramsJson: JSON.stringify({
       imageSet: true,
@@ -1162,7 +1211,10 @@ test("retry preparation rejects a stale source hash and otherwise preserves the 
 
   const prepared = prepareImageSetRegenerationFromRow(row);
   assert.equal(prepared.ok, true);
-  if (prepared.ok) assert.equal(prepared.value.input.rows[0].role.sceneCn, "使用者確認過的專屬細節構圖");
+  if (prepared.ok) {
+    assert.equal(prepared.value.input.rows[0].role.role, "lifestyle");
+    assert.equal(prepared.value.input.rows[0].role.sceneCn, "使用者確認過的專屬使用情境構圖");
+  }
 
   const stale = prepareImageSetRegenerationFromRow({
     ...row,

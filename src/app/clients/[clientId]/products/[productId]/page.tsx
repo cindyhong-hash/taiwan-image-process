@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw, PenLine } from "lucide-react";
-import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, type Product } from "@/lib/productMeta";
+import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, imageSetCompleteness, type Product } from "@/lib/productMeta";
 import { ImageSetModal } from "@/components/products/ImageSetModal";
 import { ACTIVITY_REF_KEY, ACTIVITY_IMAGE_PROMPT_KEY } from "@/components/activities/RolePickerModal";
 
@@ -67,8 +67,7 @@ export default function ProductDetailPage({
 
   // [單元E] 完整度：核心套圖角色有幾種已備齊（只算已完成的素材）
   const presentRoles = new Set(assets.filter((a) => a.status === "DONE" && a.assetRole).map((a) => a.assetRole as string));
-  const doneCount = CORE_ROLES.filter((r) => presentRoles.has(r)).length;
-  const missingRoles = CORE_ROLES.filter((r) => !presentRoles.has(r));
+  const { doneCount, missingRoles } = imageSetCompleteness(presentRoles);
 
   // [單元F] 用這組素材建立圖文：把主圖（或第一張素材）當參考圖帶進單圖流程
   const bridgeImage = product.heroImageUrl || assets[0]?.imageUrl || product.rawImageUrls[0] || "";

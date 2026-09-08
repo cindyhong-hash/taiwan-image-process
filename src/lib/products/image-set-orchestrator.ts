@@ -157,7 +157,8 @@ export type ImageSetBatchResult = {
 export type ImageSetSuggestion = {
   role: ImageSetRole;
   label: string;
-  path: "edit" | "text";
+  usageDescription: string;
+  path: ImageSetRoleSpec["path"];
   cutout: boolean;
   sceneCn: string;
 };
@@ -367,10 +368,11 @@ function extension(contentType: string): string {
 
 function roleFailureMessage(role: ImageSetRole, timedOut = false, error?: unknown): string {
   const labels: Record<ImageSetRole, string> = {
-    hero: "主視覺",
-    detail: "細節素材",
+    hero: "商品主體",
+    detail: "質地細節",
     lifestyle: "使用情境",
     background: "情境背景",
+    benefit: "賣點視覺",
     decoration: "品牌裝飾",
   };
   if (error instanceof ImageSetFallbackBudgetError) {
@@ -413,9 +415,10 @@ function suggestionsFor(profile: ProductVisualProfile, artDirection: ImageSetArt
     artDirection.palette.dominant.length ? `產品主色：${artDirection.palette.dominant.join("、")}` : "",
     artDirection.palette.accent.length ? `品牌輔色：${artDirection.palette.accent.join("、")}，僅作點綴，不作主色` : "",
   ].filter(Boolean).join("；");
-  return planImageSetRoles(profile).map(({ role, label, path, cutout, sceneCn }) => ({
+  return planImageSetRoles(profile).map(({ role, label, usageDescription, path, cutout, sceneCn }) => ({
     role,
     label,
+    usageDescription,
     path,
     cutout,
     sceneCn: [sceneCn, artDirection.concept && `視覺方向：${artDirection.concept}`, paletteDirection].filter(Boolean).join("；"),
@@ -737,7 +740,7 @@ export async function runImageSetBatch(
         result.params[row.role.role] = initialParams;
         return undefined;
       }
-      const references = row.role.path === "edit"
+      const references = row.role.path === "edit" || row.role.path === "cutout"
         ? await loadReferenceDataUris(input.product, batchHeroImageUrl, loadAsDataUri, abortController.signal)
         : { rawImageUrls: [] as string[] };
       const prompt = compileImageSetPrompt({
@@ -756,6 +759,7 @@ export async function runImageSetBatch(
         aspectRatio: "1:1",
         signal: abortController.signal,
         deadlineAt: execution.deadlineAt,
+        generationPath: row.role.path,
       });
       if (!isConcreteProvider(generated.provider)) throw new Error("Image provider trace is missing or synthetic");
       if (reachedDeadline()) throw new Error("Image-set batch deadline reached");
@@ -869,7 +873,7 @@ export type ReconcileImageSetCleanupDependencies = {
   cleanupOrphanAsset: (job: ImageSetOrphanCleanupJob) => Promise<ImageSetOrphanCleanupResult>;
 };
 
-const imageSetRoles = new Set<ImageSetRole>(["hero", "detail", "lifestyle", "background", "decoration"]);
+const imageSetRoles = new Set<ImageSetRole>(["hero", "detail", "lifestyle", "background", "benefit", "decoration"]);
 
 const defaultReconcileDependencies: ReconcileStaleImageSetDependencies = {
   listExpiredRows: async (productId, cutoff) => {
@@ -1011,8 +1015,11 @@ export async function createAndScheduleImageSetBatch(
   if (roles.length !== selectedRoles.length) return { ok: false, status: 400, error: "套圖角色資料無效，請重新選擇。" };
 
   const imageProduct = asImageSetProduct(product);
+  if (roles.some((role) => role.path === "cutout") && !imageProduct.rawImageUrls.some(Boolean)) {
+    return { ok: false, status: 400, error: "需要至少一張原始商品照，才能建立商品主體去背 PNG。" };
+  }
   if (roles.some((role) => role.path === "edit") && ![...imageProduct.rawImageUrls, imageProduct.heroImageUrl].some(Boolean)) {
-    return { ok: false, status: 400, error: "需要至少一張商品參考圖，才能生成主視覺、細節或使用情境。" };
+    return { ok: false, status: 400, error: "需要至少一張商品照，才能建立產品參考素材。" };
   }
 
   const artDirection = buildImageSetArtDirection(profile, imageSetBrand(client, product.primaryColorOverride));
@@ -1112,7 +1119,7 @@ function isValidSavedRoleSpec(role: unknown): role is ImageSetRoleSpec {
   return (
     typeof value.role === "string" &&
     typeof value.label === "string" &&
-    (value.path === "edit" || value.path === "text") &&
+    (value.path === "cutout" || value.path === "edit" || value.path === "text") &&
     typeof value.cutout === "boolean" &&
     typeof value.sceneCn === "string" &&
     typeof value.objective === "string" &&
@@ -1143,7 +1150,7 @@ export function prepareImageSetRegenerationFromRow(row: ImageSetRegenerationRow)
     return { ok: false, status: 409, error: "商品資料或圖片已更新，請先重新分析產品後再重新產生這張素材。" };
   }
 
-  const knownRole = planImageSetRoles(profile).some((role) => role.role === params.roleSpec.role);
+  const knownRole = imageSetRoles.has(params.roleSpec.role);
   if (!knownRole || !isValidSavedRoleSpec(params.roleSpec)) {
     return { ok: false, status: 400, error: "商品套圖角色資料無效，請重新建立套圖。" };
   }

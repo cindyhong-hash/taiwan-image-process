@@ -47,6 +47,30 @@ test("hero tries GPT then Seedream then FLUX", async () => {
   assert.equal(output.provider, "flux");
 });
 
+test("a cutout role removes the background from the raw original without starting an image generator", async () => {
+  const generators: string[] = [];
+  let removeBgInput = "";
+  const output = await generateImageSetRole(
+    { ...productInput, generationPath: "cutout" },
+    fakeProviders({
+      gpt: async () => { generators.push("gpt"); return image("gpt"); },
+      seedream: async () => { generators.push("seedream"); return image("seedream"); },
+      fluxEdit: async () => { generators.push("flux"); return image("flux"); },
+      textImage: async () => { generators.push("text"); return image("text"); },
+      removeBg: async (input) => {
+        removeBgInput = input;
+        return Buffer.from("transparent-product");
+      },
+    }),
+  );
+
+  assert.equal(removeBgInput, productInput.rawImageUrls?.[0]);
+  assert.deepEqual(generators, []);
+  assert.equal(output.contentType, "image/png");
+  assert.equal(output.buffer.toString(), "transparent-product");
+  assert.equal(output.provider, "fal:remove-background");
+});
+
 test("a malformed GPT response leaves a bounded Seedream attempt and a viable FLUX fallback before the batch deadline", async () => {
   let now = 0;
   const attemptBudgets: number[] = [];

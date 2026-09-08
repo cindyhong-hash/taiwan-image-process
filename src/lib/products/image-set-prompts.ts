@@ -114,6 +114,38 @@ export function compileImageSetPrompt({ product, profile, artDirection, role }: 
     "不得加入任何額外文字、色碼（hex）、數字、標籤或浮水印（產品本身既有的品牌字樣除外）",
   ];
 
+  // Only legacy edit rows use a generated product photograph. New ad-asset roles
+  // intentionally receive context without the product identity that would make
+  // the model place a bottle into every background, texture, and benefit visual.
+  if (role.path === "text") {
+    const context = [
+      `Product positioning (context only; never depict the product): ${profile.productType || product.category || "unspecified"}`,
+      `Supplied use cases: ${list(profile.useCases, "none supplied")}`,
+      `Suitable scenes: ${list(profile.suitableScenes, "none supplied")}`,
+    ].join("\n");
+    const textExclusions = [
+      ...role.mustNotShow,
+      "不得出現任何商品、瓶罐、包裝、Logo 或文字",
+      "不得加入未提供的成分、功效、認證、安全或醫療宣稱",
+      "不得加入任何色碼（hex）、數字、標籤或浮水印",
+    ];
+    return [
+      "[ROLE OBJECTIVE]",
+      role.objective,
+      "[PRODUCT CONTEXT — NOT A SUBJECT]",
+      context,
+      "[VISUAL DIRECTION]",
+      palette,
+      `Lighting: ${artDirection.lighting}`,
+      `Background language: ${artDirection.backgroundLanguage}`,
+      "[COMPOSITION]",
+      role.composition,
+      `Role scene: ${role.sceneCn}`,
+      "[MUST NOT SHOW]",
+      textExclusions.join("\n"),
+    ].join("\n");
+  }
+
   return [
     "[ROLE OBJECTIVE]",
     role.objective,

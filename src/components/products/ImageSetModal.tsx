@@ -55,7 +55,7 @@ function isRoleStatus(value: unknown): value is ImageSetUiRoleStatus {
 function selection(payload: ImageSetPayload): ItemState[] {
   return payload.suggestions.map((item) => ({
     ...item,
-    checked: (payload.profile?.sourceImageCount ?? 0) > 0 || item.path !== "edit",
+    checked: (payload.profile?.sourceImageCount ?? 0) > 0 || (item.path !== "edit" && item.path !== "cutout"),
   }));
 }
 
@@ -426,10 +426,10 @@ export function ImageSetModal({ productId, onClose, onFinished }: {
               <div>
                 <div className="mb-3 flex items-end justify-between gap-3"><div><h3 className="text-sm font-bold text-gray-900">選擇這次要建立的素材</h3><p className="mt-1 text-xs text-gray-400">角色可自由取消；各張會共用同一套視覺方向。</p></div><span className="shrink-0 text-xs font-medium text-violet-600">已選 {chosen.length}/{items.length}</span></div>
                 <div className="space-y-2.5">{items.map((item) => {
-                  const disabled = item.path === "edit" && (profile?.sourceImageCount ?? 0) === 0;
+                  const disabled = (item.path === "edit" || item.path === "cutout") && (profile?.sourceImageCount ?? 0) === 0;
                   return <label key={item.role} className={`flex items-start gap-3 rounded-xl border-[1.5px] p-3.5 transition-colors ${item.checked ? "border-violet-600 bg-violet-50" : "border-[#ebeff5] bg-white hover:border-violet-300"} ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer"}`}>
                     <input type="checkbox" checked={item.checked} disabled={disabled} onChange={() => setItems((current) => current.map((candidate) => candidate.role === item.role ? { ...candidate, checked: !candidate.checked } : candidate))} className="mt-1 accent-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
-                    <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-gray-900">{item.label}<span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-gray-400">{item.path === "edit" ? "商品參考生成" : "視覺概念生成"}</span></span><span className="mt-1 block whitespace-normal break-words text-xs leading-5 text-gray-500">{item.sceneCn}</span></span>
+                    <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-gray-900">{item.label}<span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-gray-400">{item.path === "cutout" ? "原圖去背 PNG" : item.path === "edit" ? "商品參考生成" : "視覺概念生成"}</span></span><span className="mt-1 block whitespace-normal break-words text-xs leading-5 text-gray-500">{item.usageDescription}</span></span>
                   </label>;
                 })}</div>
               </div>

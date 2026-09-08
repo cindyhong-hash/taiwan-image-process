@@ -22,21 +22,27 @@ const beautyDeviceProfile: ProductVisualProfile = {
   sourceImageCount: 3,
 };
 
-test("beauty devices receive detail and usage roles instead of texture and ingredient", () => {
+test("new batches plan a composable ad-asset pack instead of five product photographs", () => {
   const roles = planImageSetRoles(beautyDeviceProfile);
 
-  assert.deepEqual(roles.map((role) => role.role), ["hero", "detail", "lifestyle", "background", "decoration"]);
-  assert.match(roles[1].label, /刀頭|功能細節/);
-  assert.match(roles[1].sceneCn, /刀頭|按鍵/);
-  assert.match(roles[2].sceneCn, /護理|使用情境/);
-  assert.match(roles[2].sceneCn, /腿部日常修整/);
-  assert.match(roles[3].sceneCn, /明亮浴室/);
-  assert.match(roles[3].sceneCn, /不出現任何產品/);
+  assert.deepEqual(roles.map((role) => role.role), ["hero", "detail", "background", "benefit", "decoration"]);
+  assert.deepEqual(roles.map((role) => role.label), ["商品主體", "質地細節", "情境背景", "賣點視覺", "裝飾元素"]);
+  assert.equal(roles[0].path, "cutout");
+  assert.equal(roles[0].cutout, true);
+  assert.equal(roles[1].path, "text");
+  assert.equal(roles[2].path, "text");
+  assert.equal(roles[3].path, "text");
+  assert.match(roles[1].sceneCn, /質地|液體|泡沫/);
+  assert.match(roles[2].sceneCn, /明亮浴室/);
+  assert.match(roles[2].mustNotShow.join("\n"), /產品|Logo|文字/);
+  assert.match(roles[3].sceneCn, /腿部日常修整/);
+  assert.match(roles[3].mustNotShow.join("\n"), /產品|Logo/);
   assert.match(roles[4].sceneCn, /銀藍曲線/);
+  assert.match(roles[4].mustNotShow.join("\n"), /完整場景/);
 });
 
-test("sparse archetype profiles keep detail and lifestyle copy generic", () => {
-  const inventedNouns = /刀頭|按鍵|質地|成分|食材|餐桌|享用|介面|接口|布料|五金|車縫|穿搭/;
+test("sparse archetype profiles keep ad-asset copy generic without inventing product facts", () => {
+  const inventedNouns = /刀頭|按鍵|成分|食材|餐桌|享用|介面|接口|布料|五金|車縫|穿搭/;
 
   for (const productArchetype of ["skincare", "food_beverage", "electronics", "fashion"] as const) {
     const roles = planImageSetRoles({
@@ -58,10 +64,10 @@ test("sparse archetype profiles keep detail and lifestyle copy generic", () => {
       sourceImageCount: 0,
     });
 
-    assert.doesNotMatch(roles[1].sceneCn, inventedNouns, `${productArchetype} detail should not invent facts`);
-    assert.doesNotMatch(roles[2].sceneCn, inventedNouns, `${productArchetype} lifestyle should not invent facts`);
-    assert.match(roles[1].sceneCn, /可見|商品/);
-    assert.match(roles[2].sceneCn, /使用情境/);
+    assert.doesNotMatch(roles[1].sceneCn, inventedNouns, `${productArchetype} texture should not invent facts`);
+    assert.doesNotMatch(roles[3].sceneCn, inventedNouns, `${productArchetype} benefit should not invent facts`);
+    assert.match(roles[1].sceneCn, /質地|抽象/);
+    assert.match(roles[3].sceneCn, /賣點|功效|抽象/);
   }
 });
 
@@ -86,7 +92,7 @@ test("unknown products still receive five safe generic roles", () => {
   });
 
   assert.equal(roles.length, 5);
-  assert.deepEqual(roles.map((role) => role.role), ["hero", "detail", "lifestyle", "background", "decoration"]);
-  assert.equal(roles[3].role, "background");
-  assert.match(roles[3].sceneCn, /不出現任何產品/);
+  assert.deepEqual(roles.map((role) => role.role), ["hero", "detail", "background", "benefit", "decoration"]);
+  assert.equal(roles[2].role, "background");
+  assert.match(roles[2].sceneCn, /不出現任何產品/);
 });

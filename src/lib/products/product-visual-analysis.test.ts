@@ -142,3 +142,10 @@ test("uses product colors as dominant and brand color as accent", () => {
   assert.deepEqual(art.palette.dominant, ["白", "冰藍", "銀"]);
   assert.deepEqual(art.palette.accent, ["#ffeb85"]);
 });
+
+test("art direction frames new sets as composable advertising assets rather than repeated product photography", () => {
+  const art = buildImageSetArtDirection(beautyDeviceProfile, {});
+
+  assert.match(art.concept, /可合成廣告素材包/);
+  assert.doesNotMatch(`${art.concept}\n${art.lighting}\n${art.cameraLanguage}`, /產品攝影/);
+});

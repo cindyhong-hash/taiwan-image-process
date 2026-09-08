@@ -179,15 +179,15 @@ export function buildImageSetArtDirection(
 ): ImageSetArtDirection {
   const dominant = profile.appearance.colors;
   const accent = brand.primaryColor?.trim() ? [brand.primaryColor.trim()] : [];
-  const productDescription = [profile.productType, profile.appearance.shape].filter(Boolean).join("，");
+  const productDescription = profile.productType.trim();
 
   return {
-    concept: productDescription ? `${productDescription} 的一致產品攝影` : "一致產品攝影",
+    concept: productDescription ? `${productDescription} 的可合成廣告素材包` : "可合成廣告素材包",
     palette: { dominant, accent },
-    lighting: "柔和、乾淨且跨畫面一致的產品攝影光線",
+    lighting: "柔和、乾淨且跨素材一致的高級廣告光線",
     materials: profile.appearance.materials,
     backgroundLanguage: profile.suitableScenes[0] ?? "乾淨且保留呼吸感的背景",
-    cameraLanguage: "清晰產品攝影，保留真實比例與可辨識細節",
+    cameraLanguage: "清晰、高級且便於後續廣告合成的視覺語言",
     consistencyRules: [
       "所有畫面視為同一產品的不同視角。",
       "維持產品的外型、比例、顏色、結構與可見 Logo／文字。",

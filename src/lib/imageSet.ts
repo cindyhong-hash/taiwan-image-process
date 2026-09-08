@@ -4,7 +4,7 @@ import { falFlux2Edit, generateImage, translateBriefToEnglishPrompt, falRemoveBg
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 import { buildImageSetArtDirection, type ImageSetArtDirection } from "@/lib/products/product-visual-analysis";
 import { fallbackProductVisualProfile, type ProductVisualProfile } from "@/lib/products/product-visual-profile";
-import { planImageSetRoles, type ImageSetRole } from "@/lib/products/image-set-roles";
+import { planImageSetRoles, type ImageSetGenerationPath, type ImageSetRole } from "@/lib/products/image-set-roles";
 export { regenerateImageSetItem } from "@/lib/products/image-set-orchestrator";
 
 export type { ImageSetArtDirection } from "@/lib/products/product-visual-analysis";
@@ -13,7 +13,8 @@ export type { ImageSetRole, ImageSetRoleSpec } from "@/lib/products/image-set-ro
 
 // [PRODUCT] AI 商品套圖：把產品的一組「可疊積木」批次生成出來。
 //
-// 兩條生成路徑（呼應設計決策）：
+// 三條素材路徑（呼應設計決策）：
+//  • path="cutout" 原始商品照去背（falRemoveBg）→ 保留商品身份，輸出透明 PNG
 //  • path="edit"  實拍類：以去背主圖為錨點做合成/換背景（falFlux2Edit）→ 產品外觀一致
 //  • path="text"  概念/背景類：純文字生圖（generateImage）→ 走品牌風格、可不含產品實拍
 // cutout=true 的積木生成後再去背成透明 PNG，方便之後排版疊加。
@@ -21,7 +22,8 @@ export type { ImageSetRole, ImageSetRoleSpec } from "@/lib/products/image-set-ro
 export type SetItem = {
   role: ImageSetRole;
   label: string;                // 使用者可見名稱
-  path: "edit" | "text";
+  usageDescription: string;
+  path: ImageSetGenerationPath;
   cutout: boolean;
   sceneCn: string;              // 中文場景描述（生成前翻成英文）
 };
@@ -33,6 +35,7 @@ type ProductLike = {
   category: string | null;
   primaryColorOverride: string | null;
   heroImageUrl: string | null;
+  rawImageUrls?: string[];
   description?: string | null;
 };
 type ClientLike = { primaryColor?: string | null } | null;
@@ -57,9 +60,10 @@ export function buildImageSetSuggestions(
     artDirection.palette.accent.length ? `品牌輔色：${artDirection.palette.accent.join("、")}，僅作點綴，不作主色` : "",
   ].filter(Boolean).join("；");
 
-  return planImageSetRoles(profile).map(({ role, label, path, cutout, sceneCn }) => ({
+  return planImageSetRoles(profile).map(({ role, label, usageDescription, path, cutout, sceneCn }) => ({
     role,
     label,
+    usageDescription,
     path,
     cutout,
     sceneCn: [sceneCn, artDirection.concept && `視覺方向：${artDirection.concept}`, paletteDirection].filter(Boolean).join("；"),
@@ -83,7 +87,12 @@ export async function generateImageSetItem(
 
     let out: Buffer;
     let contentType = "image/png";
-    if (item.path === "edit") {
+    if (item.path === "cutout") {
+      const originalImageUrl = product.rawImageUrls?.find(Boolean);
+      if (!originalImageUrl) throw new Error("需要原始商品照才能建立商品主體");
+      out = await falRemoveBg(await toDataUri(await loadBuffer(originalImageUrl)));
+      contentType = "image/png";
+    } else if (item.path === "edit") {
       if (!product.heroImageUrl) throw new Error("需要去背主圖作為錨點");
       const heroBuf = await loadBuffer(product.heroImageUrl);
       const heroUri = await toDataUri(heroBuf);
@@ -96,7 +105,7 @@ export async function generateImageSetItem(
       contentType = img.contentType;
     }
 
-    if (item.cutout) {
+    if (item.cutout && item.path !== "cutout") {
       const cut = await falRemoveBg(await toDataUri(out));
       out = await sharp(cut).png().toBuffer();
       contentType = "image/png";
