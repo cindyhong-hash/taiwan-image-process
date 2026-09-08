@@ -205,7 +205,7 @@ export default function ProductDetailPage({
               className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {composing ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Layers className="h-[18px] w-[18px]" />}
-              {composing ? "排版中…" : "用素材包排成廣告"}
+              {composing ? "帶入中…" : "帶入自由畫布"}
             </button>
           </div>
           {note && <p className="mt-2 text-xs text-gray-400">{note}</p>}
