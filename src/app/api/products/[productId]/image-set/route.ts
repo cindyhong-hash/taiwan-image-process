@@ -1,8 +1,15 @@
 import { after, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
+import { protectPaidRoute } from "@/lib/site-gate";
 import {
+  claimProductPaidOperationLease,
   createAndScheduleImageSetBatch,
+  createImageSetExecution,
   readImageSetProduct,
+  reconcileImageSetCleanupJobs,
+  reconcileStaleImageSetWork,
+  releaseProductPaidOperationLease,
   runImageSetBatch,
 } from "@/lib/products/image-set-orchestrator";
 
@@ -12,17 +19,22 @@ import {
 export const maxDuration = 290;
 export const dynamic = "force-dynamic";
 
-// GET is intentionally read-only: the modal decides when it wants the paid analysis endpoint.
+// GET never starts paid analysis. It may only CAS-reconcile work whose durable lease has expired.
 export async function GET(_request: Request, { params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  const product = await db.product.findUnique({ where: { id: productId } });
+  const product = await db.product.findUnique({ where: { id: productId }, include: { client: true } });
   if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const client = await db.client.findUnique({ where: { id: product.clientId } });
-  return NextResponse.json(await readImageSetProduct(product, client));
+  await reconcileStaleImageSetWork(product.id, new Date());
+  await reconcileImageSetCleanupJobs(10);
+  return NextResponse.json(await readImageSetProduct(product, product.client));
 }
 
 // POST creates rows synchronously, then schedules one resilient batch callback.
-export async function POST(request: Request, { params }: { params: Promise<{ productId: string }> }) {
+export const POST = protectPaidRoute(async (
+  request: Request,
+  { params }: { params: Promise<{ productId: string }> },
+  { invocationStartedAt },
+) => {
   const { productId } = await params;
   const body = await request.json().catch(() => ({}));
   const requestedItems: unknown[] = Array.isArray(body.items) ? body.items : [];
@@ -33,20 +45,37 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   }))];
   if (!selectedRoles.length) return NextResponse.json({ error: "未選擇任何套圖" }, { status: 400 });
 
-  const product = await db.product.findUnique({ where: { id: productId } });
+  const product = await db.product.findUnique({ where: { id: productId }, include: { client: true } });
   if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const client = await db.client.findUnique({ where: { id: product.clientId } });
+  await reconcileStaleImageSetWork(product.id, new Date());
+  await reconcileImageSetCleanupJobs(10);
+  const execution = createImageSetExecution(invocationStartedAt, randomUUID());
   const result = await createAndScheduleImageSetBatch({
     product,
-    client,
+    client: product.client,
     selectedRoles,
     requestSourceHash: typeof body.sourceHash === "string" ? body.sourceHash : undefined,
+    execution,
   }, {
+    claimProductLease: (id, value) => claimProductPaidOperationLease(id, value, "batch"),
+    releaseProductLease: releaseProductPaidOperationLease,
     createRows: (rows) => db.$transaction((tx) => Promise.all(rows.map((data) => tx.libraryImage.create({ data })))),
+    failCreatedRows: async (rowIds, value) => {
+      const failed = await db.libraryImage.updateMany({
+        where: { id: { in: rowIds }, status: "PENDING", generationLeaseId: value.leaseId },
+        data: {
+          status: "FAILED",
+          errorMessage: "背景工作未能啟動，請重新建立套圖。",
+          generationLeaseId: null,
+          generationLeaseExpiresAt: null,
+        },
+      });
+      return failed.count === rowIds.length;
+    },
     scheduleAfter: (callback) => after(callback),
-    runBatch: (input) => runImageSetBatch(input),
+    runBatch: (input, value) => runImageSetBatch(input, undefined, value),
     createBatchId: () => `pset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json(result);
-}
+});

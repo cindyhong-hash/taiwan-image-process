@@ -56,7 +56,14 @@ const FAL_FLUX2_MODEL = process.env.FAL_FLUX2_MODEL ?? "fal-ai/flux-2-pro";
 // 2D 插畫：Recraft V3（插畫/風格化專用，style=digital_illustration，$0.04/張）。
 const FAL_RECRAFT_MODEL = process.env.FAL_RECRAFT_MODEL ?? "fal-ai/recraft/v3/text-to-image";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  signal?.throwIfAborted();
+  const timer = setTimeout(resolve, ms);
+  signal?.addEventListener("abort", () => {
+    clearTimeout(timer);
+    reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+  }, { once: true });
+});
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -77,6 +84,13 @@ export interface GenerateImageInput {
   model?: string;
   /** Recraft 風格：realistic_image | digital_illustration | vector_illustration。 */
   style?: string;
+  /** Optional shared cancellation signal for request-scoped paid work. */
+  signal?: AbortSignal;
+}
+
+function boundedSignal(signal: AbortSignal | undefined, milliseconds: number, timeoutSignal: (milliseconds: number) => AbortSignal = AbortSignal.timeout): AbortSignal {
+  const timeout = timeoutSignal(milliseconds);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 export interface GeneratedImage {
@@ -353,6 +367,7 @@ async function generateCopyN8n(input: GenerateCopyInput): Promise<{ copyText: st
 // ─── Image generation ───────────────────────────────────────────────────────
 
 export async function generateImage(input: GenerateImageInput): Promise<GeneratedImage> {
+  input.signal?.throwIfAborted();
   if (PROVIDER === "n8n") return generateImageN8n(input);
   return generateImageInApp(input);
 }
@@ -363,25 +378,33 @@ async function generateImageInApp(input: GenerateImageInput): Promise<GeneratedI
 
   // 1st priority: fal.ai. 按「生成類型」(input.model) 揀模型；prem 模型失敗就回落 schnell。
   if (FAL_KEY) {
+    input.signal?.throwIfAborted();
     try {
       if (input.model === "flux-2-pro") return await falFlux2Pro(input, seed);
       if (input.model === "recraft") return await falRecraft(input, seed);
       return await falAiImage(input, seed);
     } catch (e) {
+      input.signal?.throwIfAborted();
       console.error("[generateImage] fal.ai failed:", e instanceof Error ? e.message : e);
       // 真人/插畫模型失敗 → 回落 schnell（總好過冇圖），再失敗先去 HF。
       if (input.model) {
+        input.signal?.throwIfAborted();
         try { return await falAiImage(input, seed); }
-        catch (e2) { console.error("[generateImage] fal schnell fallback failed:", e2 instanceof Error ? e2.message : e2); }
+        catch (e2) {
+          input.signal?.throwIfAborted();
+          console.error("[generateImage] fal schnell fallback failed:", e2 instanceof Error ? e2.message : e2);
+        }
       }
     }
   }
 
   // 2nd priority: HuggingFace FLUX (素材生成 / fallback)
   if (HF_TOKEN) {
+    input.signal?.throwIfAborted();
     try {
       return await huggingFaceImage(input, seed);
     } catch (e) {
+      input.signal?.throwIfAborted();
       const hfErr = e instanceof Error ? e.message : String(e);
       console.error("[generateImage] HuggingFace failed:", hfErr);
       throw new Error(`圖片生成失敗（fal.ai + HuggingFace 均失敗）：${hfErr}`);
@@ -390,6 +413,7 @@ async function generateImageInApp(input: GenerateImageInput): Promise<GeneratedI
 
   // Last resort: Pollinations (only when no other provider)
   if (POLLINATIONS_TOKEN || !FAL_KEY) {
+    input.signal?.throwIfAborted();
     try {
       return await pollinationsImage(input, seed);
     } catch (e) {
@@ -465,6 +489,7 @@ export interface GptReferenceGenerationInput {
   batchHeroImageUrl?: string;
   aspectRatio?: string;
   model?: string;
+  signal?: AbortSignal;
 }
 
 type GptReferenceGenerationDependencies = {
@@ -484,6 +509,7 @@ export async function gptImageGenerateWithReferences(
 ): Promise<GeneratedImage> {
   const apiKey = dependencies.apiKey ?? OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY 未設定，無法用 GPT 多參考圖生成");
+  input.signal?.throwIfAborted();
 
   const fetchFn = dependencies.fetchFn ?? fetch;
   const batchHero = input.batchHeroImageUrl?.trim() || undefined;
@@ -524,9 +550,10 @@ export async function gptImageGenerateWithReferences(
         image_config: { aspect_ratio: input.aspectRatio || "1:1", quality: "high" },
         messages: [{ role: "user", content }],
       }),
-      signal: (dependencies.timeoutSignal ?? AbortSignal.timeout)(90_000),
+      signal: boundedSignal(input.signal, 90_000, dependencies.timeoutSignal),
     });
   } catch (error) {
+    if (input.signal?.aborted) throw input.signal.reason ?? new DOMException("Aborted", "AbortError");
     const reason = error instanceof DOMException && error.name === "TimeoutError" ? "逾時" : "連線失敗";
     throw new Error(`GPT 多參考圖生成${reason}`);
   }
@@ -555,8 +582,10 @@ export async function gptImageGenerateWithReferences(
 
   let imageResponse: Response;
   try {
-    imageResponse = await fetchFn(imageUrl, { signal: AbortSignal.timeout(60_000) });
+    input.signal?.throwIfAborted();
+    imageResponse = await fetchFn(imageUrl, { signal: boundedSignal(input.signal, 60_000) });
   } catch {
+    if (input.signal?.aborted) throw input.signal.reason ?? new DOMException("Aborted", "AbortError");
     throw new Error("GPT 多參考圖圖片下載失敗");
   }
   if (!imageResponse.ok) throw new Error(`GPT 多參考圖圖片下載失敗 HTTP ${imageResponse.status}`);
@@ -574,6 +603,7 @@ export interface FalReferenceGenerationInput {
   batchHeroImageUrl?: string;
   aspectRatio?: string;
   provider: "seedream" | "flux";
+  signal?: AbortSignal;
 }
 
 type FalReferenceGenerationDependencies = {
@@ -591,6 +621,7 @@ export async function falImageGenerateWithReferences(
 ): Promise<GeneratedImage> {
   const apiKey = dependencies.apiKey ?? FAL_KEY;
   if (!apiKey) throw new Error("FAL_KEY 未設定，無法用多參考圖生成");
+  input.signal?.throwIfAborted();
   const fetchFn = dependencies.fetchFn ?? fetch;
   const uniqueProductViews = [...new Set(input.imageDataUris.filter(Boolean))];
   if (!uniqueProductViews.length) throw new Error("FAL 多參考圖生成缺少商品參考圖");
@@ -621,9 +652,10 @@ export async function falImageGenerateWithReferences(
         image_urls: imageUrls,
         image_size: input.aspectRatio === "3:2" ? "landscape_4_3" : "square_hd",
       }),
-      signal: AbortSignal.timeout(input.provider === "seedream" ? 180_000 : 120_000),
+      signal: boundedSignal(input.signal, input.provider === "seedream" ? 180_000 : 120_000),
     });
   } catch {
+    if (input.signal?.aborted) throw input.signal.reason ?? new DOMException("Aborted", "AbortError");
     throw new Error(`${input.provider === "seedream" ? "Seedream" : "FLUX.2"} 多參考圖連線失敗`);
   }
   if (!response.ok) {
@@ -639,7 +671,8 @@ export async function falImageGenerateWithReferences(
   }
   if (!imageUrl) throw new Error("FAL 多參考圖回應無圖片 URL");
 
-  const imageResponse = await fetchFn(imageUrl, { signal: AbortSignal.timeout(60_000) });
+  input.signal?.throwIfAborted();
+  const imageResponse = await fetchFn(imageUrl, { signal: boundedSignal(input.signal, 60_000) });
   if (!imageResponse.ok) throw new Error(`FAL 多參考圖圖片下載失敗 HTTP ${imageResponse.status}`);
   return {
     buffer: Buffer.from(await imageResponse.arrayBuffer()),
@@ -889,13 +922,14 @@ export async function falRelightComposite(compositeDataUri: string, aspectRatio?
  * Used by the text-preserving paste pipeline so the product's real pixels (incl. Chinese label)
  * are pasted unchanged onto an AI background — never redrawn.
  */
-export async function falRemoveBg(imageDataUri: string): Promise<Buffer> {
+export async function falRemoveBg(imageDataUri: string, signal?: AbortSignal): Promise<Buffer> {
   if (!FAL_KEY) throw new Error("FAL_KEY 未設定，無法去背");
+  signal?.throwIfAborted();
   const res = await fetch(`https://fal.run/${FAL_REMBG_MODEL}`, {
     method: "POST",
     headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ image_url: imageDataUri }),
-    signal: AbortSignal.timeout(60_000),
+    signal: boundedSignal(signal, 60_000),
   });
   if (!res.ok) {
     const t = await res.text().catch(() => "");
@@ -904,7 +938,8 @@ export async function falRemoveBg(imageDataUri: string): Promise<Buffer> {
   const data = await res.json();
   const url = data.image?.url ?? data.images?.[0]?.url;
   if (!url) throw new Error("去背回應無圖片 URL");
-  const r = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+  signal?.throwIfAborted();
+  const r = await fetch(url, { signal: boundedSignal(signal, 60_000) });
   if (!r.ok) throw new Error(`去背圖下載失敗：${r.status}`);
   return Buffer.from(await r.arrayBuffer());
 }
@@ -1018,6 +1053,7 @@ export async function falNanoTextToImage(i: { prompt: string; aspectRatio?: stri
 
 async function falAiImage(input: GenerateImageInput, seed: number): Promise<GeneratedImage> {
   if (!FAL_KEY) throw new Error("FAL_KEY 未設定");
+  input.signal?.throwIfAborted();
   const w = input.width ?? 1024;
   const h = input.height ?? 1024;
   const imageSize = w > h ? "landscape_4_3" : h > w ? "portrait_4_3" : "square_hd";
@@ -1026,7 +1062,7 @@ async function falAiImage(input: GenerateImageInput, seed: number): Promise<Gene
     method: "POST",
     headers: { "Authorization": `Key ${FAL_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: input.prompt, image_size: imageSize, num_inference_steps: 4, seed, enable_safety_checker: false }),
-    signal: AbortSignal.timeout(90_000),
+    signal: boundedSignal(input.signal, 90_000),
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
@@ -1035,7 +1071,8 @@ async function falAiImage(input: GenerateImageInput, seed: number): Promise<Gene
   const data = await res.json();
   const imageUrl = data.images?.[0]?.url;
   if (!imageUrl) throw new Error("fal.ai 回應無圖片 URL");
-  const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(60_000) });
+  input.signal?.throwIfAborted();
+  const imgRes = await fetch(imageUrl, { signal: boundedSignal(input.signal, 60_000) });
   if (!imgRes.ok) throw new Error(`fal.ai 圖片下載失敗：${imgRes.status}`);
   const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
   return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed, provider: "fal-ai/flux/schnell" };
@@ -1049,8 +1086,9 @@ function falImageSize(input: GenerateImageInput): string {
 }
 
 /** Download a fal result image URL into a GeneratedImage buffer. */
-async function falFetchImage(url: string, seed: number, provider: string): Promise<GeneratedImage> {
-  const imgRes = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+async function falFetchImage(url: string, seed: number, provider: string, signal?: AbortSignal): Promise<GeneratedImage> {
+  signal?.throwIfAborted();
+  const imgRes = await fetch(url, { signal: boundedSignal(signal, 60_000) });
   if (!imgRes.ok) throw new Error(`fal 圖片下載失敗：${imgRes.status}`);
   const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
   return { buffer: Buffer.from(await imgRes.arrayBuffer()), contentType, seed, provider };
@@ -1059,6 +1097,7 @@ async function falFetchImage(url: string, seed: number, provider: string): Promi
 /** 真人寫實 text→image：FLUX.2 [pro]（fal-ai/flux-2-pro）。 */
 async function falFlux2Pro(input: GenerateImageInput, seed: number): Promise<GeneratedImage> {
   if (!FAL_KEY) throw new Error("FAL_KEY 未設定");
+  input.signal?.throwIfAborted();
   const res = await fetch(`https://fal.run/${FAL_FLUX2_MODEL}`, {
     method: "POST",
     headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
@@ -1069,7 +1108,7 @@ async function falFlux2Pro(input: GenerateImageInput, seed: number): Promise<Gen
       output_format: "jpeg",
       enable_safety_checker: false,
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: boundedSignal(input.signal, 120_000),
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
@@ -1078,12 +1117,13 @@ async function falFlux2Pro(input: GenerateImageInput, seed: number): Promise<Gen
   const data = await res.json();
   const url = data.images?.[0]?.url;
   if (!url) throw new Error("FLUX.2 pro 回應無圖片 URL");
-  return falFetchImage(url, seed, FAL_FLUX2_MODEL);
+  return falFetchImage(url, seed, FAL_FLUX2_MODEL, input.signal);
 }
 
 /** 2D 插畫 text→image：Recraft V3（style 預設 digital_illustration）。 */
 async function falRecraft(input: GenerateImageInput, seed: number): Promise<GeneratedImage> {
   if (!FAL_KEY) throw new Error("FAL_KEY 未設定");
+  input.signal?.throwIfAborted();
   const res = await fetch(`https://fal.run/${FAL_RECRAFT_MODEL}`, {
     method: "POST",
     headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
@@ -1092,7 +1132,7 @@ async function falRecraft(input: GenerateImageInput, seed: number): Promise<Gene
       image_size: falImageSize(input),
       style: input.style ?? "digital_illustration",
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: boundedSignal(input.signal, 120_000),
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
@@ -1101,7 +1141,7 @@ async function falRecraft(input: GenerateImageInput, seed: number): Promise<Gene
   const data = await res.json();
   const url = data.images?.[0]?.url;
   if (!url) throw new Error("Recraft V3 回應無圖片 URL");
-  return falFetchImage(url, seed, FAL_RECRAFT_MODEL);
+  return falFetchImage(url, seed, FAL_RECRAFT_MODEL, input.signal);
 }
 
 async function pollinationsImage(input: GenerateImageInput, seed: number): Promise<GeneratedImage> {
@@ -1119,8 +1159,9 @@ async function pollinationsImage(input: GenerateImageInput, seed: number): Promi
 
   let lastErr = "";
   for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await sleep(2500 * attempt);
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(60_000) });
+    input.signal?.throwIfAborted();
+    if (attempt > 0) await sleep(2500 * attempt, input.signal);
+    const res = await fetch(url, { headers, signal: boundedSignal(input.signal, 60_000) });
     const contentType = res.headers.get("content-type") ?? "";
     if (res.ok && contentType.startsWith("image/")) {
       return { buffer: Buffer.from(await res.arrayBuffer()), contentType, seed, provider: `pollinations:${model}` };
@@ -1141,12 +1182,13 @@ async function huggingFaceImage(input: GenerateImageInput, seed: number): Promis
 
   let lastErr = "";
   for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await sleep(4000 * attempt); // HF cold-start can take ~20s
+    input.signal?.throwIfAborted();
+    if (attempt > 0) await sleep(4000 * attempt, input.signal); // HF cold-start can take ~20s
     const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${HF_TOKEN}`, "Content-Type": "application/json" },
       body,
-      signal: AbortSignal.timeout(90_000),
+      signal: boundedSignal(input.signal, 90_000),
     });
     const contentType = res.headers.get("content-type") ?? "";
     if (res.ok && contentType.startsWith("image/")) {
@@ -1160,12 +1202,13 @@ async function huggingFaceImage(input: GenerateImageInput, seed: number): Promis
 
 async function generateImageN8n(input: GenerateImageInput): Promise<GeneratedImage> {
   if (!N8N_WEBHOOK_URL) throw new Error("GEN_PROVIDER=n8n 但 N8N_WEBHOOK_URL 未設定");
+  input.signal?.throwIfAborted();
   const seed = input.seed ?? Math.floor(Math.random() * 1_000_000_000);
   const res = await fetch(N8N_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "image", ...input, seed }),
-    signal: AbortSignal.timeout(120_000),
+    body: JSON.stringify({ kind: "image", prompt: input.prompt, width: input.width, height: input.height, seed, model: input.model, style: input.style }),
+    signal: boundedSignal(input.signal, 120_000),
   });
   if (!res.ok) throw new Error(`n8n image webhook 錯誤 ${res.status}`);
   const contentType = res.headers.get("content-type") ?? "";
@@ -1178,7 +1221,8 @@ async function generateImageN8n(input: GenerateImageInput): Promise<GeneratedIma
     return { buffer: Buffer.from(data.imageBase64, "base64"), contentType: data.contentType ?? "image/png", seed, provider: "n8n" };
   }
   if (data.imageUrl) {
-    const imgRes = await fetch(data.imageUrl, { signal: AbortSignal.timeout(60_000) });
+    input.signal?.throwIfAborted();
+    const imgRes = await fetch(data.imageUrl, { signal: boundedSignal(input.signal, 60_000) });
     return {
       buffer: Buffer.from(await imgRes.arrayBuffer()),
       contentType: imgRes.headers.get("content-type") ?? "image/png",

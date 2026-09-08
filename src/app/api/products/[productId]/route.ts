@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { reconcileImageSetCleanupJobs, reconcileStaleImageSetWork } from "@/lib/products/image-set-orchestrator";
 
 function parseProduct(p: Record<string, unknown>) {
   return { ...p, rawImageUrls: JSON.parse((p.rawImageUrls as string) ?? "[]") };
@@ -39,5 +40,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
 export async function DELETE(_req: Request, { params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
   await db.product.delete({ where: { id: productId } });
+  // Cleanup tombstones intentionally outlive the product FK. Drain them after
+  // deletion so the blob does not remain stranded when this was the last
+  // request touching the product.
+  await reconcileStaleImageSetWork(productId, new Date()).catch(() => {});
+  await reconcileImageSetCleanupJobs(25).catch(() => {});
   return NextResponse.json({ success: true });
 }

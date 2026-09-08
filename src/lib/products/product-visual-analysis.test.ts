@@ -103,6 +103,36 @@ test("records the number of references actually analyzed instead of the model co
   assert.equal(result.sourceImageCount, 3);
 });
 
+test("propagates the shared abort signal and never starts vision after a reference deadline", async () => {
+  const controller = new AbortController();
+  let visionCalls = 0;
+  await assert.rejects(
+    () => analyzeProductVisualProfile(productWithThreeReferences, {
+      loadAsDataUrl: async (_url, signal) => {
+        assert.equal(signal, controller.signal);
+        controller.abort(new Error("analysis absolute deadline reached"));
+        throw controller.signal.reason;
+      },
+      completeVision: async () => { visionCalls += 1; return validBeautyDeviceProfileJson; },
+    }, controller.signal),
+    /deadline/i,
+  );
+  assert.equal(visionCalls, 0);
+});
+
+test("passes the same request-scoped signal to vision completion", async () => {
+  const controller = new AbortController();
+  let seen: AbortSignal | undefined;
+  await analyzeProductVisualProfile(productWithThreeReferences, {
+    loadAsDataUrl: async (url) => `data:image/png;base64,${url}`,
+    completeVision: async (request) => {
+      seen = request.signal;
+      return validBeautyDeviceProfileJson;
+    },
+  }, controller.signal);
+  assert.equal(seen, controller.signal);
+});
+
 test("uses product colors as dominant and brand color as accent", () => {
   const art = buildImageSetArtDirection(beautyDeviceProfile, {
     primaryColor: "#ffeb85",

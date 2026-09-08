@@ -104,8 +104,31 @@ model LibraryImage {
   productId    String?                     // [PRODUCT] 所屬產品（null＝一般素材）
   product      Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   assetRole    String?                     // [PRODUCT] 積木角色：hero｜product｜texture｜ingredient｜background｜decoration｜finished
+  generationLeaseId        String?         // [PRODUCT] 付費生成工作擁有權；CAS 防止重複與晚到結果覆寫
+  generationLeaseExpiresAt DateTime?       // [PRODUCT] process death 後由 stale reconciliation 回收
 
   @@index([productId])
+  @@index([productId, status, generationLeaseExpiresAt])
+}
+
+// Durable tombstones for blobs saved by a worker that lost its row lease after upload.
+// These intentionally keep scalar ownership identifiers instead of foreign keys so cleanup
+// remains possible even if the originating product or library row is deleted first.
+model ImageAssetCleanupJob {
+  id                String   @id @default(cuid())
+  productId         String
+  libraryImageId    String
+  generationLeaseId String
+  assetUrl          String   @unique
+  attempts          Int      @default(0)
+  lastError         String?
+  cleanupLeaseId        String?
+  cleanupLeaseExpiresAt DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([productId, createdAt])
+  @@index([cleanupLeaseExpiresAt, createdAt])
 }
 
 // ── AI 商品套圖（Product Image Set）──────────────────────────────────────────
@@ -125,11 +148,15 @@ model Product {
   visualProfileJson       String    @default("{}")
   visualProfileSourceHash String?
   visualProfileUpdatedAt  DateTime?
+  paidOperationLeaseId        String?
+  paidOperationLeaseExpiresAt DateTime?
+  paidOperationKind           String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   assets               LibraryImage[]               // 這支產品擁有的資產（套圖積木＋回存成品）
 
   @@index([clientId, updatedAt])
+  @@index([paidOperationLeaseExpiresAt])
 }
 
 // ── AI 月度企劃（Monthly Marketing Planner）────────────────────────────────────

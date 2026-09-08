@@ -47,6 +47,45 @@ test("hero tries GPT then Seedream then FLUX", async () => {
   assert.equal(output.provider, "flux");
 });
 
+test("an aborted role stops before launching a paid fallback", async () => {
+  const attempts: string[] = [];
+  const controller = new AbortController();
+  await assert.rejects(
+    () => generateImageSetRole({ ...productInput, signal: controller.signal }, fakeProviders({
+      gpt: async () => {
+        attempts.push("gpt");
+        controller.abort(new Error("absolute deadline reached"));
+        throw new Error("gpt interrupted");
+      },
+      seedream: async () => { attempts.push("seedream"); return image("seedream"); },
+      fluxEdit: async () => { attempts.push("flux"); return image("flux"); },
+    })),
+    /deadline|abort/i,
+  );
+  assert.deepEqual(attempts, ["gpt"]);
+});
+
+test("passes the shared deadline signal through text generation and background removal", async () => {
+  const controller = new AbortController();
+  const seen: AbortSignal[] = [];
+  await generateImageSetRole(
+    { ...productInput, role: "decoration", signal: controller.signal },
+    fakeProviders({
+      textImage: async (input) => {
+        assert.ok(input.signal);
+        seen.push(input.signal);
+        return image("text", "provider:text");
+      },
+      removeBg: async (_dataUri, signal) => {
+        assert.ok(signal);
+        seen.push(signal);
+        return Buffer.from("transparent");
+      },
+    }),
+  );
+  assert.deepEqual(seen, [controller.signal, controller.signal]);
+});
+
 test("router preserves the concrete provider returned by an image adapter", async () => {
   const output = await generateImageSetRole(productInput, fakeProviders({
     gpt: async () => { throw new Error("timeout"); },
@@ -222,6 +261,33 @@ test("GPT generation installs an exact 90-second timeout signal", async () => {
     },
   );
   assert.deepEqual(timeoutValues, [90_000]);
+});
+
+test("GPT and FAL adapters refuse to start when the absolute deadline signal is already aborted", async () => {
+  const { falImageGenerateWithReferences, gptImageGenerateWithReferences } = await import("../generate.ts");
+  const controller = new AbortController();
+  controller.abort(new Error("deadline"));
+  let requests = 0;
+  const fetchFn = async () => {
+    requests += 1;
+    return new Response(null, { status: 500 });
+  };
+
+  await assert.rejects(
+    () => gptImageGenerateWithReferences(
+      { prompt: "p", imageDataUris: ["hero"], signal: controller.signal },
+      { apiKey: "test-key", fetchFn },
+    ),
+    /deadline|abort/i,
+  );
+  await assert.rejects(
+    () => falImageGenerateWithReferences(
+      { prompt: "p", imageDataUris: ["hero"], provider: "seedream", signal: controller.signal },
+      { apiKey: "test-key", fetchFn },
+    ),
+    /deadline|abort/i,
+  );
+  assert.equal(requests, 0);
 });
 
 test("GPT generation downloads a remote URL response", async () => {

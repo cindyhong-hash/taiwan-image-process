@@ -80,3 +80,41 @@ test("brand yellow remains an accent rather than the dominant palette", () => {
   // 但品牌色 hex 不得出現在生圖 prompt——否則影像模型會把色碼當文字/浮水印畫出來
   assert.doesNotMatch(prompt, /#[0-9a-f]{3,8}\b/i);
 });
+
+test("describes distinct valid brand hex colors without exposing raw color codes", () => {
+  const role = planImageSetRoles(beautyDeviceProfile)[0];
+  const yellowPrompt = compileImageSetPrompt({ product, profile: beautyDeviceProfile, artDirection, role });
+  const violetPrompt = compileImageSetPrompt({
+    product,
+    profile: beautyDeviceProfile,
+    artDirection: { ...artDirection, palette: { dominant: ["#7c3aed"], accent: ["#ffeb85"] } },
+    role,
+  });
+
+  assert.match(yellowPrompt, /warm light yellow/i);
+  assert.match(violetPrompt, /dominant palette: vivid violet/i);
+  assert.match(violetPrompt, /accent palette: warm light yellow/i);
+  assert.doesNotMatch(`${yellowPrompt}\n${violetPrompt}`, /#[0-9a-f]{3,8}\b/i);
+});
+
+test("handles alpha hex conservatively and drops invalid hash-prefixed colors", () => {
+  const role = planImageSetRoles(beautyDeviceProfile)[0];
+  const prompt = compileImageSetPrompt({
+    product,
+    profile: beautyDeviceProfile,
+    artDirection: {
+      ...artDirection,
+      palette: {
+        dominant: ["#73ea", "#73ea", "#not-a-color", "冰藍"],
+        accent: ["#ffeb8580", "#ffeb8580", "#12345"],
+      },
+    },
+    role,
+  });
+
+  assert.match(prompt, /dominant palette: translucent vivid violet、冰藍/i);
+  assert.match(prompt, /accent palette: translucent warm light yellow/i);
+  assert.doesNotMatch(prompt, /not-a-color|#12345|#[0-9a-f]{3,8}\b/i);
+  assert.equal((prompt.match(/translucent vivid violet/gi) ?? []).length, 1);
+  assert.equal((prompt.match(/translucent warm light yellow/gi) ?? []).length, 1);
+});
