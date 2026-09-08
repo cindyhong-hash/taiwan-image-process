@@ -168,8 +168,9 @@ export async function POST(request: Request) {
       clientId,
       status: "DONE",
       // 推薦卡預覽只用「有產品」的圖：產品套圖裡有產品的角色（主視覺/去背產品/質地/功能細節/使用情境/成品）。
-      // 排除無產品積木（背景版/成分/裝飾）與一般貼文成品（assetRole=null，可能是無產品的促銷/情境圖）。
-      assetRole: { in: ["hero", "product", "texture", "detail", "lifestyle", "finished"] },
+      // 預覽池只取「有產品入鏡」的圖：hero（去背商品）、product、lifestyle（legacy 情境含商品）、finished。
+      // 新素材包的 detail(質地)/background/benefit(賣點)/decoration 皆為無產品素材，不當產品預覽；一般貼文成品 assetRole=null 也排除。
+      assetRole: { in: ["hero", "product", "lifestyle", "finished"] },
     },
     orderBy: { createdAt: "desc" },
     take: 12,
