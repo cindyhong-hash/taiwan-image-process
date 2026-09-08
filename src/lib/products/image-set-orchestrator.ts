@@ -177,6 +177,7 @@ export type ImageSetOrphanCleanupResult = { resolved: boolean; deleted: boolean 
 export type ImageSetOrphanCleanupDependencies = {
   upsertCleanupJob: (input: ImageSetOrphanAsset) => Promise<ImageSetOrphanCleanupJob>;
   claimCleanupJob: (job: ImageSetOrphanCleanupJob, execution: ImageSetExecution) => Promise<boolean>;
+  claimOrphanDeletion: (input: ImageSetOrphanAsset) => Promise<boolean>;
   isCurrentAsset: (job: ImageSetOrphanCleanupJob) => Promise<boolean>;
   deleteAsset: (url: string) => Promise<void>;
   completeCleanupJob: (job: ImageSetOrphanCleanupJob, execution: ImageSetExecution) => Promise<boolean>;
@@ -202,6 +203,19 @@ const defaultOrphanCleanupDependencies: ImageSetOrphanCleanupDependencies = {
     leaseId: execution.leaseId,
     deadlineAt: execution.deadlineAt,
   }),
+  claimOrphanDeletion: async (input) => (await db.libraryImage.updateMany({
+    where: {
+      id: input.libraryImageId,
+      status: { in: ["PENDING", "GENERATING"] },
+      generationLeaseId: input.generationLeaseId,
+    },
+    data: {
+      status: "FAILED",
+      errorMessage: "未完成的商品套圖素材已交由清理流程處理。",
+      generationLeaseId: null,
+      generationLeaseExpiresAt: null,
+    },
+  })).count === 1,
   isCurrentAsset: async (job) => (await db.libraryImage.count({
     where: { status: "DONE", imageUrl: job.assetUrl },
   })) > 0,
@@ -261,13 +275,19 @@ export async function cleanupImageSetOrphanAsset(
   // intentionally bounded and never reports success unless the provider delete
   // itself completed.
   if (!job) {
+    let directDeletionClaimed = false;
     for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
       if (attempt > 0) await dependencies.waitForRetry(retryDelays[attempt]);
       try {
-        // The durable barrier could not be written, so fail closed if the
-        // exact URL is already adopted by a successful row. This check is
-        // repeated before every bounded attempt; the normal path remains the
-        // tombstone/CAS path above, which coordinates adoption atomically.
+        if (!directDeletionClaimed) {
+          directDeletionClaimed = await dependencies.claimOrphanDeletion(input);
+          if (!directDeletionClaimed) {
+            dependencies.logError("[image-set] direct orphan delete skipped because the generation lease was not owned");
+            return { resolved: false, deleted: false };
+          }
+        }
+        // The row CAS above is the adoption barrier. Keep this check as a
+        // second fail-closed guard for legacy paths that may have the same URL.
         const directFallbackJob: ImageSetOrphanCleanupJob = { id: "direct-fallback", ...input, attempts: 0 };
         if (await dependencies.isCurrentAsset(directFallbackJob)) {
           dependencies.logError("[image-set] direct orphan delete skipped because the asset is already current");

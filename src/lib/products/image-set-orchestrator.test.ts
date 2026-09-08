@@ -466,6 +466,7 @@ test("orphan cleanup durably records first, retries transient deletes, then reso
       return job;
     },
     claimCleanupJob: async () => true,
+    claimOrphanDeletion: async () => true,
     isCurrentAsset: async () => false,
     deleteAsset: async () => {
       deleteAttempts += 1;
@@ -503,6 +504,7 @@ test("cleanup falls back to a bounded direct delete when the durable record cann
   }, {
     upsertCleanupJob: async () => { throw new Error("database unavailable"); },
     claimCleanupJob: async () => false,
+    claimOrphanDeletion: async () => true,
     isCurrentAsset: async () => false,
     deleteAsset: async () => {
       deleteAttempts += 1;
@@ -530,12 +532,37 @@ test("direct cleanup fallback fails closed when the URL is already a current ass
   }, {
     upsertCleanupJob: async () => { throw new Error("database unavailable"); },
     claimCleanupJob: async () => false,
+    claimOrphanDeletion: async () => true,
     isCurrentAsset: async () => true,
     deleteAsset: async () => { deleted = true; },
     completeCleanupJob: async () => true,
     recordCleanupFailure: async () => {},
     releaseCleanupJob: async () => true,
     createCleanupLease: () => ({ leaseId: "cleaner-direct-current", deadlineAt: 20_000 }),
+    waitForRetry: async () => {},
+    logError: () => {},
+  });
+  assert.deepEqual(result, { resolved: false, deleted: false });
+  assert.equal(deleted, false);
+});
+
+test("direct cleanup fallback does not delete when the generation-lease CAS loses the adoption race", async () => {
+  let deleted = false;
+  const result = await cleanupImageSetOrphanAsset({
+    productId: "product-1",
+    libraryImageId: "row-raced",
+    generationLeaseId: "lease-raced",
+    assetUrl: "https://blob.example/raced-adoption.png",
+  }, {
+    upsertCleanupJob: async () => { throw new Error("database unavailable"); },
+    claimCleanupJob: async () => false,
+    claimOrphanDeletion: async () => false,
+    isCurrentAsset: async () => false,
+    deleteAsset: async () => { deleted = true; },
+    completeCleanupJob: async () => true,
+    recordCleanupFailure: async () => {},
+    releaseCleanupJob: async () => true,
+    createCleanupLease: () => ({ leaseId: "cleaner-raced", deadlineAt: 20_000 }),
     waitForRetry: async () => {},
     logError: () => {},
   });
@@ -560,6 +587,7 @@ test("persistent orphan delete failure survives and a later stale reconciliation
       return job;
     },
     claimCleanupJob: async () => true,
+    claimOrphanDeletion: async () => true,
     isCurrentAsset: async () => false,
     deleteAsset: async () => {
       deleteAttempts += 1;
@@ -608,6 +636,7 @@ test("orphan reconciliation never deletes an asset that is now the successful cu
   }, {
     upsertCleanupJob: async (value) => ({ id: "cleanup-current", ...value, attempts: 0 }),
     claimCleanupJob: async () => true,
+    claimOrphanDeletion: async () => true,
     isCurrentAsset: async () => true,
     deleteAsset: async () => { deleted = true; },
     completeCleanupJob: async () => { completed = true; return true; },
@@ -632,6 +661,7 @@ test("a cleaner that loses the tombstone lease performs no blob deletion", async
   }, {
     upsertCleanupJob: async (value) => ({ id: "cleanup-claimed", ...value, attempts: 0 }),
     claimCleanupJob: async () => false,
+    claimOrphanDeletion: async () => false,
     isCurrentAsset: async () => false,
     deleteAsset: async () => { deleted = true; },
     completeCleanupJob: async () => true,
