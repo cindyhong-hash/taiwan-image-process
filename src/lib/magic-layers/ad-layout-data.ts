@@ -1,6 +1,7 @@
 import sharp from "sharp";
 
 type Rgb = { r: number; g: number; b: number };
+type NormalizedRect = { x: number; y: number; w: number; h: number };
 
 function parseColor(value: string, fallback: Rgb): Rgb {
   const match = value.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
@@ -45,4 +46,30 @@ export async function averageBackgroundColor(source: Buffer): Promise<string> {
   const stats = await sharp(source).stats();
   const [red, green, blue] = stats.channels;
   return `#${[red, green, blue].map((channel) => Math.round(channel.mean).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * Decide copy contrast from the real template text zone rather than the average
+ * of a whole scene. A panel is only required when neither safe dark copy nor
+ * safe white copy reaches the usual 4.5:1 contrast target.
+ */
+export async function resolveTextSafeTreatment(source: Buffer, zone: NormalizedRect, brandColor: string) {
+  const metadata = await sharp(source).metadata();
+  const width = metadata.width ?? 1;
+  const height = metadata.height ?? 1;
+  const left = Math.max(0, Math.min(width - 1, Math.round(zone.x * width)));
+  const top = Math.max(0, Math.min(height - 1, Math.round(zone.y * height)));
+  const cropWidth = Math.max(1, Math.min(width - left, Math.round(zone.w * width)));
+  const cropHeight = Math.max(1, Math.min(height - top, Math.round(zone.h * height)));
+  const crop = await sharp(source).extract({ left, top, width: cropWidth, height: cropHeight }).png().toBuffer();
+  const background = parseColor(await averageBackgroundColor(crop), { r: 248, g: 249, b: 252 });
+  const dark = { r: 36, g: 31, b: 71 };
+  const white = { r: 255, g: 255, b: 255 };
+  const darkContrast = contrast(dark, background);
+  const lightContrast = contrast(white, background);
+  const textColor = darkContrast >= lightContrast ? "#241f47" : "#ffffff";
+  const panelTreatment = Math.max(darkContrast, lightContrast) >= 4.5
+    ? "none"
+    : textColor === "#ffffff" ? "dark-panel" : "light-panel";
+  return { ...resolveTextTreatment(`#${[background.r, background.g, background.b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`, brandColor), textColor, panelTreatment };
 }

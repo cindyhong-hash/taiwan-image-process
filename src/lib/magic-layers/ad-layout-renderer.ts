@@ -34,7 +34,7 @@ function shapeLayer(id: string, name: string, zIndex: number, rect: Bbox, fill: 
   };
 }
 
-function textLayer(id: "text_title" | "text_sub", zIndex: number, text: string, rect: Bbox, color: string, fontWeight: number, align: "left" | "center"): LayerData {
+function textLayer(id: "text_title" | "text_sub", zIndex: number, text: string, rect: Bbox, color: string, fontWeight: number, align: "left" | "center" | "right"): LayerData {
   return {
     id, name: text.slice(0, 14) || "Text", type: "independent_text", semanticId: "text", instanceId: id, parentId: null,
     bbox: rect, mask: null, image: null, x: rect.x, y: rect.y, width: rect.w, height: rect.h, rotation: 0,

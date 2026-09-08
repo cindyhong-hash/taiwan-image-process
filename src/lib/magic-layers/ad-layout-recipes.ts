@@ -1,5 +1,6 @@
 import {
   resolveAdLayoutDesignSpecs,
+  type AdLayoutDirection,
   type AdLayoutPurpose,
 } from "./ad-layout-design-spec.ts";
 import { renderAdLayoutSpec } from "./ad-layout-renderer.ts";
@@ -19,7 +20,7 @@ export interface AdLayoutInput {
   subtitle?: string;
   brandColor?: string;
   textColor?: string;
-  textSafeTreatment?: "none" | "light-panel" | "dark-panel";
+  textSafeTreatment?: "none" | "light-panel" | "dark-panel" | Partial<Record<AdLayoutDirection, "none" | "light-panel" | "dark-panel">>;
   purpose?: AdLayoutPurpose;
   artDirection?: string;
   canvasWidth: number;

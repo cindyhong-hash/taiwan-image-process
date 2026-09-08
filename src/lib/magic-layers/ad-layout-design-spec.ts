@@ -9,7 +9,14 @@ export type NormalizedRect = { x: number; y: number; w: number; h: number };
 
 export interface AssetSelection { role: AdAssetRole; imageUrl: string; }
 export interface AdLayoutAssetPool { hero?: string; detail?: string; background?: string; benefit?: string; decoration?: string; }
-export interface AdLayoutTypographyInput { headline?: string; subtitle?: string; dark: string; light: string; accent: string; treatment?: TextSafeTreatment; }
+export interface AdLayoutTypographyInput {
+  headline?: string;
+  subtitle?: string;
+  dark: string;
+  light: string;
+  accent: string;
+  treatment?: TextSafeTreatment | Partial<Record<AdLayoutDirection, TextSafeTreatment>>;
+}
 export interface AdLayoutDesignInput {
   canvas: { width: number; height: number; ratio: string };
   assets: AdLayoutAssetPool;
@@ -72,7 +79,10 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
   return directions.map((direction) => {
     const template = templateFor(direction, input.purpose, input.canvas.ratio);
     const assets = assetPlan(direction, input.purpose, input.assets);
-    const useLightText = input.typography.treatment === "dark-panel";
+    const treatment = typeof input.typography.treatment === "string"
+      ? input.typography.treatment
+      : input.typography.treatment?.[direction] ?? "none";
+    const useLightText = treatment === "dark-panel";
     const color = useLightText ? input.typography.light : input.typography.dark;
     const spec: AdLayoutDesignSpec = {
       direction,
@@ -82,7 +92,7 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
       rationale: rationaleFor(direction, assets),
       canvas: input.canvas,
       assets,
-      textSafeArea: { zone: template.textSafeArea, treatment: input.typography.treatment ?? "none" },
+      textSafeArea: { zone: template.textSafeArea, treatment },
       typography: {
         headline: input.typography.headline,
         subtitle: input.typography.subtitle,
