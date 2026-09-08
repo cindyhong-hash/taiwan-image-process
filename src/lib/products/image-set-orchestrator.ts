@@ -224,12 +224,15 @@ const defaultOrphanCleanupDependencies: ImageSetOrphanCleanupDependencies = {
     if (claimed.count === 1) return "claimed";
     const current = await db.libraryImage.findUnique({
       where: { id: input.libraryImageId },
-      select: { status: true, generationLeaseId: true },
+      select: { status: true, generationLeaseId: true, imageUrl: true },
     });
     if (!current) return "safe_without_original_lease";
     // A replacement generation lease cannot complete the old lease's result;
     // a DONE row, however, may already own the URL and must block deletion.
     if (["PENDING", "GENERATING"].includes(current.status) && current.generationLeaseId !== input.generationLeaseId) {
+      return "safe_without_original_lease";
+    }
+    if (current.status === "DONE" && current.imageUrl !== input.assetUrl) {
       return "safe_without_original_lease";
     }
     return "blocked";

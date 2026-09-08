@@ -596,6 +596,30 @@ test("direct cleanup can remove an old URL after the original row is gone or rep
   assert.equal(deleted, 2);
 });
 
+test("direct cleanup removes the old URL when a replacement worker completed with a different URL", async () => {
+  let deleted = false;
+  const result = await cleanupImageSetOrphanAsset({
+    productId: "product-1",
+    libraryImageId: "row-replaced-done",
+    generationLeaseId: "lease-old",
+    assetUrl: "https://blob.example/old.png",
+  }, {
+    upsertCleanupJob: async () => { throw new Error("database unavailable"); },
+    claimCleanupJob: async () => false,
+    claimOrphanDeletion: async () => "safe_without_original_lease" as const,
+    isCurrentAsset: async () => false,
+    deleteAsset: async () => { deleted = true; },
+    completeCleanupJob: async () => true,
+    recordCleanupFailure: async () => {},
+    releaseCleanupJob: async () => true,
+    createCleanupLease: () => ({ leaseId: "cleaner-replaced-done", deadlineAt: 20_000 }),
+    waitForRetry: async () => {},
+    logError: () => {},
+  });
+  assert.deepEqual(result, { resolved: true, deleted: true });
+  assert.equal(deleted, true);
+});
+
 test("persistent orphan delete failure survives and a later stale reconciliation completes it", async () => {
   const orphan = {
     productId: "product-1",
