@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw, PenLine, Layers } from "lucide-react";
 import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, imageSetCompleteness, type Product } from "@/lib/productMeta";
 import { ImageSetModal } from "@/components/products/ImageSetModal";
-import { ACTIVITY_HANDOFF_KEY, ML_WIZARD_SEED_KEY } from "@/components/activities/RolePickerModal";
+import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
+import { AdLayoutModal } from "@/components/adcreation/AdLayoutModal";
 
 export default function ProductDetailPage({
   params,
@@ -19,7 +20,7 @@ export default function ProductDetailPage({
   const [recutting, setRecutting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [showSet, setShowSet] = useState(false);
-  const [composing, setComposing] = useState(false);
+  const [showAdLayout, setShowAdLayout] = useState(false);
 
   useEffect(() => {
     params.then(({ clientId, productId }) => { setClientId(clientId); setProductId(productId); });
@@ -91,34 +92,6 @@ export default function ProductDetailPage({
     router.push(`/clients/${clientId}/activities/new`);
   };
 
-  // [單元F-2] 用素材包排成廣告：情境背景當底、商品主體(去背)當主圖層 → compose → 自由排版編輯器。
-  const useForFreeLayout = async () => {
-    if (composing) return;
-    setComposing(true);
-    setNote("正在把素材排進畫布…（約需十幾秒）");
-    try {
-      const done = assets.filter((a) => a.status === "DONE" && a.imageUrl);
-      const background = done.find((a) => a.assetRole === "background")?.imageUrl;
-      const hero = product.heroImageUrl || done.find((a) => a.assetRole === "hero")?.imageUrl || product.rawImageUrls[0] || "";
-      const res = await fetch("/api/magic-layers/compose", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(background ? { backgroundUrl: background, fitMode: "contain" } : { backgroundPrompt: `${product.name} ${product.category ?? ""} 乾淨簡約的廣告背景，無產品無文字` }),
-          ratio: "4:5",
-          productImageUrls: hero ? [hero] : [],
-          texts: [],
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "排版建立失敗");
-      sessionStorage.setItem(ML_WIZARD_SEED_KEY, JSON.stringify({ layers: data.layers, docW: data.canvasWidth, docH: data.canvasHeight, clientId }));
-      router.push(`/clients/${clientId}/magic-layers/compose?seed=1`);
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : "排版建立失敗，請稍後再試");
-    } finally {
-      setComposing(false);
-    }
-  };
 
   return (
     <div className="max-w-4xl">
@@ -200,14 +173,21 @@ export default function ProductDetailPage({
               </button>
             )}
             <button
-              onClick={useForFreeLayout}
-              disabled={!hasBridgeImage || composing}
-              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => setShowAdLayout(true)}
+              disabled={!hasBridgeImage}
+              title="使用商品素材，自動建立可編輯的設計稿"
+              className="inline-flex items-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-5 py-3 text-sm font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {composing ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Layers className="h-[18px] w-[18px]" />}
-              {composing ? "帶入中…" : "帶入自由畫布"}
+              <Sparkles className="h-[18px] w-[18px]" /> AI 幫我排版
+            </button>
+            <button
+              onClick={() => router.push(`/clients/${clientId}/magic-layers/compose?blank=1`)}
+              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold"
+            >
+              <Layers className="h-[18px] w-[18px]" /> 開啟空白畫布
             </button>
           </div>
+          <p className="mt-2 text-xs text-gray-400">「AI 幫我排版」會用商品素材自動排成可編輯設計稿；「開啟空白畫布」則從零開始。</p>
           {note && <p className="mt-2 text-xs text-gray-400">{note}</p>}
 
           {/* [單元E] 資產完整度儀表 */}
@@ -268,6 +248,14 @@ export default function ProductDetailPage({
           productId={productId}
           onClose={() => setShowSet(false)}
           onFinished={load}
+        />
+      )}
+      {showAdLayout && (
+        <AdLayoutModal
+          clientId={clientId}
+          productId={productId}
+          productName={product.name}
+          onClose={() => setShowAdLayout(false)}
         />
       )}
     </div>

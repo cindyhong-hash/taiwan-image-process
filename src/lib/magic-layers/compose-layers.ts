@@ -87,6 +87,87 @@ async function cutoutLayer(id: string, type: "product" | "object", name: string,
   };
 }
 
+// ── AI 幫我排版：用商品素材包 + 用途，排成一張「~80% 完成」的可編輯設計稿 ──────────
+// 每個素材都是獨立圖層（背景/商品主體/裝飾/質地/文字/Logo），進編輯器後可拖拉/縮放/換素材。
+export interface AdLayoutInput {
+  backgroundUrl: string;          // 情境背景（呼叫端已 contain-fit 到畫布）
+  heroUrl?: string;               // 商品主體（透明 PNG）
+  decorationUrl?: string;         // 裝飾元素（透明 PNG）
+  textureUrl?: string;            // 質地細節
+  logoUrl?: string;
+  title?: string;
+  subtitle?: string;
+  brandColor?: string;            // 品牌主色（文字用）
+  purpose?: "product" | "benefit" | "scene" | "promo";
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
+export async function buildAdLayoutLayers(input: AdLayoutInput): Promise<LayerData[]> {
+  const W = input.canvasWidth, H = input.canvasHeight;
+  const purpose = input.purpose ?? "product";
+  const layers: LayerData[] = [];
+  let z = 0;
+
+  // 1) 背景（滿版）
+  let bgImage = input.backgroundUrl;
+  try { const b = await loadBuffer(input.backgroundUrl); bgImage = await saveBuffer(Buffer.from(b), "png", "ml-adbg-"); } catch { /* use as-is */ }
+  layers.push({
+    id: "layer_bg", type: "background", name: "Background",
+    semanticId: "background", instanceId: "background_1", parentId: null,
+    bbox: { x: 0, y: 0, w: W, h: H }, mask: null, image: bgImage,
+    x: 0, y: 0, width: W, height: H, rotation: 0,
+    zIndex: z++, confidence: 1, source: "generated", editable: true,
+    embeddedText: [], children: [], meta: {},
+  });
+
+  // 2) 質地細節（小塊點綴，左下角，墊在商品後面）
+  if (input.textureUrl) {
+    const box = { x: Math.round(W * 0.04), y: Math.round(H * 0.60), w: Math.round(W * 0.26), h: Math.round(H * 0.26) };
+    const l = await cutoutLayer("texture_1", "object", "Texture", z, input.textureUrl, box);
+    l.zIndex = z++; layers.push(l);
+  }
+
+  // 3) 商品主體（主角）：用途影響大小/位置
+  if (input.heroUrl) {
+    const heroBox = purpose === "scene"
+      ? { x: Math.round(W * 0.30), y: Math.round(H * 0.45), w: Math.round(W * 0.44), h: Math.round(H * 0.42) }
+      : purpose === "benefit"
+        ? { x: Math.round(W * 0.28), y: Math.round(H * 0.42), w: Math.round(W * 0.46), h: Math.round(H * 0.46) }
+        : { x: Math.round(W * 0.22), y: Math.round(H * 0.36), w: Math.round(W * 0.56), h: Math.round(H * 0.56) }; // product/promo：大、置中
+    const l = await cutoutLayer("product_1", "product", "商品主體", z, input.heroUrl, heroBox);
+    l.zIndex = z++; layers.push(l);
+  }
+
+  // 4) 裝飾元素（右上角點綴，前景）
+  if (input.decorationUrl) {
+    const box = { x: Math.round(W * 0.62), y: Math.round(H * 0.03), w: Math.round(W * 0.34), h: Math.round(H * 0.24) };
+    const l = await cutoutLayer("decoration_1", "object", "Decoration", z, input.decorationUrl, box);
+    l.zIndex = z++; layers.push(l);
+  }
+
+  // 5) 文字（標題/副標，左上；促銷用途字更大）
+  const titleH = Math.round(H * (purpose === "promo" ? 0.12 : 0.10));
+  const subH = Math.round(H * 0.06);
+  let ty = Math.round(H * 0.07);
+  if (input.title) {
+    layers.push(textLayer("text_title", z++, { text: input.title, color: input.brandColor || "#241f47", fontWeight: 800, align: "left" }, Math.round(W * 0.07), ty, Math.round(W * 0.7), titleH));
+    ty += titleH + Math.round(H * 0.015);
+  }
+  if (input.subtitle) {
+    layers.push(textLayer("text_sub", z++, { text: input.subtitle, color: input.brandColor || "#6b6785", fontWeight: 600, align: "left" }, Math.round(W * 0.07), ty, Math.round(W * 0.64), subH));
+  }
+
+  // 6) Logo（右下小）
+  if (input.logoUrl) {
+    const box = { x: Math.round(W * 0.72), y: Math.round(H * 0.88), w: Math.round(W * 0.24), h: Math.round(H * 0.09) };
+    const l = await cutoutLayer("logo_1", "object", "Logo", z, input.logoUrl, box);
+    l.zIndex = z++; layers.push(l);
+  }
+
+  return layers;
+}
+
 export async function buildCompositionLayers(input: ComposeInput): Promise<LayerData[]> {
   const W = input.canvasWidth, H = input.canvasHeight;
   const layers: LayerData[] = [];
