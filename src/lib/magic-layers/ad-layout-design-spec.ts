@@ -19,6 +19,7 @@ export interface AdLayoutDesignInput {
 }
 export interface AdLayoutDesignSpec {
   direction: AdLayoutDirection;
+  purpose: AdLayoutPurpose;
   templateId: string;
   artDirection: string;
   rationale: string[];
@@ -38,7 +39,8 @@ function assetPlan(direction: AdLayoutDirection, purpose: AdLayoutPurpose, asset
   const background = selected("background", assets.background);
   const product = selected("hero", assets.hero);
   const decoration = selected("decoration", assets.decoration);
-  const support = direction === "scene-led"
+  const shouldUseSupport = direction === "scene-led" || purpose === "benefit";
+  const support = shouldUseSupport
     ? selected(purpose === "benefit" && assets.benefit ? "benefit" : "detail", purpose === "benefit" && assets.benefit ? assets.benefit : assets.detail)
     : undefined;
   return { background, product, support, decorations: decoration ? [decoration] : [] };
@@ -62,10 +64,6 @@ export function validateAndRepairDesignSpec(spec: AdLayoutDesignSpec, available:
     assets.product = { role: "hero", imageUrl: available.hero };
     warnings.push("已補回商品主體，維持主視覺層級");
   }
-  if (assets.support?.role === "benefit" && spec.direction !== "scene-led") {
-    assets.support = undefined;
-    warnings.push("非情境版移除輔助視覺，避免與商品競爭");
-  }
   return { ...spec, assets, quality: { score: Math.max(0, 100 - warnings.length * 8), warnings } };
 }
 
@@ -78,6 +76,7 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
     const color = useLightText ? input.typography.light : input.typography.dark;
     const spec: AdLayoutDesignSpec = {
       direction,
+      purpose: input.purpose,
       templateId: template.id,
       artDirection: input.artDirection ?? "以品牌調性完成乾淨、清楚的產品社群設計",
       rationale: rationaleFor(direction, assets),

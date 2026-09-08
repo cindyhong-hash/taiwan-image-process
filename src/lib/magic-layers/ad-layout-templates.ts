@@ -67,6 +67,13 @@ export const AD_LAYOUT_TEMPLATES: readonly AdLayoutTemplate[] = [
 
 export function templateFor(direction: AdLayoutDirection, purpose: AdLayoutPurpose, ratio: string): AdLayoutTemplate {
   const candidates = AD_LAYOUT_TEMPLATES.filter((template) => template.direction === direction);
-  const seed = `${direction}:${purpose}:${ratio}`.split("").reduce((total, character) => total + character.charCodeAt(0), 0);
-  return candidates[seed % candidates.length]!;
+  const purposeOffset: Record<AdLayoutPurpose, number> = { product: 0, benefit: 1, scene: 0, promo: 1 };
+  const ratioOffset = ratio.startsWith("9:") ? 1 : 0;
+  return candidates[(purposeOffset[purpose] + ratioOffset) % candidates.length]!;
+}
+
+export function templateById(id: string): AdLayoutTemplate {
+  const template = AD_LAYOUT_TEMPLATES.find((candidate) => candidate.id === id);
+  if (!template) throw new Error(`Unknown ad-layout template: ${id}`);
+  return template;
 }

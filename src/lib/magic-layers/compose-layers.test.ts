@@ -27,13 +27,12 @@ test("creates three visually distinct product layout directions", async () => {
   assert.notDeepEqual(layer(options[1].layers, "text_title")?.bbox, layer(options[2].layers, "text_title")?.bbox);
 });
 
-test("keeps texture photographic and benefit visual as independent image layers", async () => {
+test("benefit purpose selects one supporting visual instead of stacking texture and benefit", async () => {
   const [option] = await buildAdLayoutCandidates({ ...input, purpose: "benefit" });
 
-  assert.equal(layer(option.layers, "texture_1")?.image, input.textureUrl);
-  assert.equal(layer(option.layers, "texture_1")?.type, "object");
   assert.equal(layer(option.layers, "benefit_1")?.image, input.benefitUrl);
   assert.equal(layer(option.layers, "benefit_1")?.type, "object");
+  assert.equal(layer(option.layers, "texture_1"), undefined);
 });
 
 test("moves hierarchy for each stated purpose instead of scaling one template", async () => {
