@@ -131,7 +131,8 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
       setCanvas({ width: data.canvasWidth, height: data.canvasHeight });
     } catch (e) {
       setError(e instanceof Error ? e.message : "產生設計稿失敗，請稍後再試");
-      setBusy(false);
+    } finally {
+      setBusy(false);   // 成功也要解除 busy，否則「使用這個方向進入編輯」會一直卡在「排版中…」disabled
     }
   };
 
