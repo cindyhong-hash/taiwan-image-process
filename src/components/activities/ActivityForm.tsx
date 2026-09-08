@@ -6,6 +6,7 @@ import { X, Loader2, Wand2, Pencil, Trash2, LayoutTemplate, SwatchBook, Mountain
 import { LibraryImagePickerModal } from "@/components/activities/LibraryImagePickerModal";
 import { InspireButton } from "@/components/activities/InspireButton";
 import { AssetUploadCards, FormSection } from "@/components/activities/formParts";
+import { ASSET_ROLE_LABELS } from "@/lib/productMeta";
 import { SlotPickerModal } from "@/components/library/SlotPickerModal";
 import { getColors, PALETTE_ROLES } from "@/types/library";
 import { readableText } from "@/components/library/ColorCards";
@@ -63,6 +64,9 @@ type Props = {
   onBaseModeChange?: (isBase: boolean) => void;
   /** [UX] 表單目前值變化時通知上層——切版型時上層要把共用欄位（主題/必放文字/產品圖）帶去多圖頁，唔可以淨靠初始值。 */
   onValuesChange?: (values: ActivityFormValues) => void;
+  /** [素材包→建立圖文] 從產品素材包帶入時顯示「已帶入素材包」面板（唯讀預覽）；商品主體已放進 productImageUrls。 */
+  productPack?: { role: string; url: string }[];
+  productName?: string;
 };
 
 // ── Upload helper ─────────────────────────────────────────────────────────────
@@ -83,6 +87,8 @@ export function ActivityForm({
   onSubmit,
   onBaseModeChange,
   onValuesChange,
+  productPack,
+  productName,
 }: Props) {
   const [values, setValues] = useState<ActivityFormValues>({
     requiredText:         initialValues?.requiredText         ?? "",
@@ -587,7 +593,26 @@ export function ActivityForm({
 
       {/* 底圖模式唔重新生圖 → 唔需要素材上傳/風格積木 */}
       {!isBaseMode && (
-      <FormSection step="02" title="加入素材" optional>
+      <FormSection step="02" title={productPack && productPack.length > 0 ? "使用商品素材" : "加入素材"} optional>
+        {productPack && productPack.length > 0 && (
+          <div className="mb-5 rounded-xl border border-[#ebe4f9] bg-[#f9f6ff] p-4">
+            <div className="flex items-center gap-2 text-sm font-bold text-gray-800">
+              <Sparkles className="h-4 w-4 text-violet-500" />
+              已帶入{productName ? `「${productName}」` : ""}素材包
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {productPack.map((a, i) => (
+                <a key={`${a.role}-${i}`} href={a.url} target="_blank" rel="noreferrer" title="點擊預覽原圖"
+                  className="block overflow-hidden rounded-lg border border-[#ebeff5] bg-white transition-shadow hover:shadow-sm">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={a.url} alt={ASSET_ROLE_LABELS[a.role] ?? a.role} loading="lazy" className="aspect-square w-full object-cover" />
+                  <div className="px-1 py-1 text-center text-[10px] leading-tight text-gray-500">{ASSET_ROLE_LABELS[a.role] ?? a.role}</div>
+                </a>
+              ))}
+            </div>
+            <p className="mt-2.5 text-xs leading-relaxed text-gray-500">「商品主體」已放進下方「產品圖片」給 AI 參考；情境背景／質地細節／賣點視覺／裝飾元素更適合到「自由排版」拼成完整廣告（下一步接入）。</p>
+          </div>
+        )}
         <AssetUploadCards
           productUrls={values.productImageUrls}
           refUrls={values.referenceImageUrls}

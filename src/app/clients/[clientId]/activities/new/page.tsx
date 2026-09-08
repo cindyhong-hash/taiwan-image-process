@@ -153,6 +153,8 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
       <ActivityForm clientId={clientId} onSubmit={handleSubmit}
         onBaseModeChange={setIsBaseMode}
         onValuesChange={captureValues}
+        productPack={initial.handoff?.assetPack}
+        productName={initial.handoff?.fromProduct?.name}
         initialValues={{
           ...(initial.ref ? { referenceImageUrls: [initial.ref] } : {}),
           ...(initial.base ? { baseImageUrl: initial.base } : {}),
