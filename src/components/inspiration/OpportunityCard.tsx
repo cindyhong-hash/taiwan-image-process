@@ -41,8 +41,8 @@ export function OpportunityCard({
       {opp.gapNote && <p className="mt-3 text-[11px] text-violet-600">· {opp.gapNote}</p>}
 
       {opp.suggestedAngle && (
-        <div className={`mt-3 flex gap-2 rounded-lg border px-3 py-2.5 ${meta.quoteClass}`}>
-          <Quote className={`h-4 w-4 shrink-0 ${meta.markClass}`} fill="currentColor" />
+        <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2.5 ${meta.quoteClass}`}>
+          <Quote className={`mt-0.5 h-4 w-4 shrink-0 ${meta.markClass}`} fill="currentColor" />
           <p className="text-xs italic leading-relaxed">{opp.suggestedAngle}</p>
         </div>
       )}
