@@ -67,6 +67,9 @@ type Props = {
   /** [素材包→建立圖文] 從產品素材包帶入時顯示「已帶入素材包」面板（唯讀預覽）；商品主體已放進 productImageUrls。 */
   productPack?: { role: string; url: string }[];
   productName?: string;
+  /** [素材包→建立圖文] AI 依商品 context 產的「建議畫面方向」與「強調選項」（非阻塞、當輔助）。 */
+  suggestedDirection?: string | null;
+  emphases?: string[];
 };
 
 // ── Upload helper ─────────────────────────────────────────────────────────────
@@ -89,6 +92,8 @@ export function ActivityForm({
   onValuesChange,
   productPack,
   productName,
+  suggestedDirection,
+  emphases,
 }: Props) {
   const [values, setValues] = useState<ActivityFormValues>({
     requiredText:         initialValues?.requiredText         ?? "",
@@ -434,6 +439,32 @@ export function ActivityForm({
 
       {/* ── 01 想做什麼？ ─────────────────────────────────────── */}
       <FormSection step="01" title="想做什麼？" required>
+
+        {/* [素材包→建立圖文] AI 建議方向 + 這次想強調（輔助，可套用/可忽略） */}
+        {(suggestedDirection || (emphases && emphases.length > 0)) && (
+          <div className="mb-4 rounded-xl border border-[#ebe4f9] bg-[#f9f6ff] p-4">
+            {suggestedDirection && (
+              <div>
+                <div className="flex items-center gap-1.5 text-sm font-bold text-gray-800"><Sparkles className="h-4 w-4 text-violet-500" />AI 建議這次方向</div>
+                <p className="mt-1.5 text-sm leading-relaxed text-gray-600">{suggestedDirection}</p>
+                <button type="button" onClick={() => imagePromptHistory.commit(suggestedDirection)}
+                  className="mt-2 inline-flex items-center gap-1 rounded-md border border-violet-300 bg-white px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-50">套用到畫面描述</button>
+              </div>
+            )}
+            {emphases && emphases.length > 0 && (
+              <div className={suggestedDirection ? "mt-3 border-t border-[#ebe4f9] pt-3" : ""}>
+                <div className="text-xs font-medium text-gray-500">這次想強調什麼？（點擊加入描述）</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {emphases.map((e) => (
+                    <button key={e} type="button"
+                      onClick={() => { const cur = values.imagePrompt; const next = cur.includes(e) ? cur : (cur.trim() ? `${cur.trim()}、${e}` : e); imagePromptHistory.commit(next); }}
+                      className="rounded-full border border-[#ebeff5] bg-white px-3 py-1 text-xs text-gray-600 transition-colors hover:border-violet-300 hover:text-violet-600">＋{e}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 畫面描述 + AI 按鈕 */}
         <div className="space-y-3">

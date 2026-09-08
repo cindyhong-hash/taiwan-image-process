@@ -61,6 +61,23 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
     params.then(({ clientId }) => setClientId(clientId));
   }, [params]);
 
+  // [素材包→建立圖文] 非阻塞：依商品 context 產「建議方向 + 強調選項」，回來後當創作輔助（不覆蓋使用者輸入）。
+  const [suggestedDirection, setSuggestedDirection] = useState<string | null>(null);
+  const [emphases, setEmphases] = useState<string[]>([]);
+  useEffect(() => {
+    const fp = initial.handoff?.fromProduct;
+    if (!fp || !clientId) return;
+    let ok = true;
+    fetch("/api/activities/creative-direction", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId, productId: fp.productId }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (ok && d) { setSuggestedDirection(typeof d.direction === "string" ? d.direction : null); setEmphases(Array.isArray(d.emphases) ? d.emphases : []); } })
+      .catch(() => { /* 輔助功能，失敗不影響建立流程 */ });
+    return () => { ok = false; };
+  }, [clientId, initial.handoff]);
+
   // [MULTI] 選版型：single 留在單圖頁；其餘導去多圖頁
   const handleLayout = (id: string) => {
     setShowLayoutPicker(false);
@@ -155,6 +172,8 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
         onValuesChange={captureValues}
         productPack={initial.handoff?.assetPack}
         productName={initial.handoff?.fromProduct?.name}
+        suggestedDirection={suggestedDirection}
+        emphases={emphases}
         initialValues={{
           ...(initial.ref ? { referenceImageUrls: [initial.ref] } : {}),
           ...(initial.base ? { baseImageUrl: initial.base } : {}),
