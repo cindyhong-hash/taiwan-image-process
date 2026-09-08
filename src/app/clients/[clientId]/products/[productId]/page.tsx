@@ -1,10 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw, PenLine } from "lucide-react";
+import { ArrowLeft, Sparkles, Trash2, Loader2, ImageOff, RefreshCw, PenLine, Layers } from "lucide-react";
 import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, imageSetCompleteness, type Product } from "@/lib/productMeta";
 import { ImageSetModal } from "@/components/products/ImageSetModal";
-import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
+import { ACTIVITY_HANDOFF_KEY, ML_WIZARD_SEED_KEY } from "@/components/activities/RolePickerModal";
 
 export default function ProductDetailPage({
   params,
@@ -19,6 +19,7 @@ export default function ProductDetailPage({
   const [recutting, setRecutting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [showSet, setShowSet] = useState(false);
+  const [composing, setComposing] = useState(false);
 
   useEffect(() => {
     params.then(({ clientId, productId }) => { setClientId(clientId); setProductId(productId); });
@@ -86,6 +87,35 @@ export default function ProductDetailPage({
       }));
     } catch { /* ignore */ }
     router.push(`/clients/${clientId}/activities/new`);
+  };
+
+  // [單元F-2] 用素材包排成廣告：情境背景當底、商品主體(去背)當主圖層 → compose → 自由排版編輯器。
+  const useForFreeLayout = async () => {
+    if (composing) return;
+    setComposing(true);
+    setNote("正在把素材排進畫布…（約需十幾秒）");
+    try {
+      const done = assets.filter((a) => a.status === "DONE" && a.imageUrl);
+      const background = done.find((a) => a.assetRole === "background")?.imageUrl;
+      const hero = product.heroImageUrl || done.find((a) => a.assetRole === "hero")?.imageUrl || product.rawImageUrls[0] || "";
+      const res = await fetch("/api/magic-layers/compose", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(background ? { backgroundUrl: background, fitMode: "contain" } : { backgroundPrompt: `${product.name} ${product.category ?? ""} 乾淨簡約的廣告背景，無產品無文字` }),
+          ratio: "4:5",
+          productImageUrls: hero ? [hero] : [],
+          texts: [],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "排版建立失敗");
+      sessionStorage.setItem(ML_WIZARD_SEED_KEY, JSON.stringify({ layers: data.layers, docW: data.canvasWidth, docH: data.canvasHeight, clientId }));
+      router.push(`/clients/${clientId}/magic-layers/compose?seed=1`);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "排版建立失敗，請稍後再試");
+    } finally {
+      setComposing(false);
+    }
   };
 
   return (
@@ -164,6 +194,14 @@ export default function ProductDetailPage({
               className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <PenLine className="h-[18px] w-[18px]" /> 使用這組素材建立圖文
+            </button>
+            <button
+              onClick={useForFreeLayout}
+              disabled={!hasBridgeImage || composing}
+              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {composing ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Layers className="h-[18px] w-[18px]" />}
+              {composing ? "排版中…" : "用素材包排成廣告"}
             </button>
           </div>
           {note && <p className="mt-2 text-xs text-gray-400">{note}</p>}
