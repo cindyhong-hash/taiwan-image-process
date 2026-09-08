@@ -28,18 +28,22 @@ export function OpportunityCard({
   const Icon = TYPE_ICON[opp.type];
 
   return (
-    <div className="flex flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
-      <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${meta.badgeClass}`}>
-        <Icon className="h-3 w-3" />
-        {meta.label}
-      </span>
+    <div className="flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+      {/* Header 區：徽章 + 標題 + 描述 + 類型備註。給一致 min-height，讓四張卡的引言框在同一水平線起始（描述長就自然換行，不截字）。 */}
+      <div className="min-h-[148px]">
+        <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${meta.badgeClass}`}>
+          <Icon className="h-3 w-3" />
+          {meta.label}
+        </span>
 
-      <h3 className="mt-2.5 text-[15px] font-semibold leading-snug text-gray-900">{opp.title}</h3>
-      <p className="mt-1.5 text-xs leading-relaxed text-gray-500">{opp.whyNow}</p>
+        <h3 className="mt-2.5 text-[15px] font-semibold leading-snug text-gray-900">{opp.title}</h3>
+        <p className="mt-1.5 text-xs leading-relaxed text-gray-500">{opp.whyNow}</p>
 
-      {opp.reuseNote && <p className="mt-3 text-[11px] text-emerald-600">· {opp.reuseNote}</p>}
-      {opp.gapNote && <p className="mt-3 text-[11px] text-violet-600">· {opp.gapNote}</p>}
+        {opp.reuseNote && <p className="mt-3 text-[11px] text-emerald-600">· {opp.reuseNote}</p>}
+        {opp.gapNote && <p className="mt-3 text-[11px] text-violet-600">· {opp.gapNote}</p>}
+      </div>
 
+      {/* Highlight 區：AI 建議切角，高度自然延伸；padding／圓角／字級／間距統一 */}
       {opp.suggestedAngle && (
         <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2.5 ${meta.quoteClass}`}>
           <Quote className={`mt-0.5 h-4 w-4 shrink-0 ${meta.markClass}`} fill="currentColor" />
@@ -47,6 +51,7 @@ export function OpportunityCard({
         </div>
       )}
 
+      {/* CTA 區：mt-auto 貼底，四張卡底部對齊 */}
       <div className="mt-auto flex items-center gap-1.5 pt-4">
         {opp.type === "reuse" && opp.reuseActivityId ? (
           <button
