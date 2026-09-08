@@ -206,8 +206,13 @@ const defaultOrphanCleanupDependencies: ImageSetOrphanCleanupDependencies = {
   claimOrphanDeletion: async (input) => (await db.libraryImage.updateMany({
     where: {
       id: input.libraryImageId,
-      status: { in: ["PENDING", "GENERATING"] },
-      generationLeaseId: input.generationLeaseId,
+      OR: [
+        { status: { in: ["PENDING", "GENERATING"] }, generationLeaseId: input.generationLeaseId },
+        // Stale reconciliation may already have safely cleared the old lease.
+        // FAILED + no lease still means no worker can adopt this URL; DONE,
+        // a replacement lease, and missing rows all fail closed.
+        { status: "FAILED", generationLeaseId: null },
+      ],
     },
     data: {
       status: "FAILED",
