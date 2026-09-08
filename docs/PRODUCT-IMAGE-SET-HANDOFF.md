@@ -63,3 +63,24 @@
 這次的 `20260907090000_add_product_image_set_leases`、`20260907140000_add_image_asset_cleanup_jobs`、`20260907160000_add_cleanup_job_leases` 已經用 `turso db shell` 套到 production，但沒有對應 `_prisma_migrations` 紀錄。以目前 Turso 的官方工作流，這**不影響 runtime**，也不需要硬補假紀錄；migration 檔案本身仍是 repo 的審計與部署清單。不要混用「手動套 SQL」和「對遠端 Turso 跑 `prisma migrate deploy`」。若未來要改成另一套由 Prisma 管理 production history 的流程，應先另做一次完整 baseline/對帳，再決定是否使用 `migrate resolve --applied`，不要直接對這三筆補紀錄。
 
 參考：[Prisma Turso schema changes](https://docs.prisma.io/docs/orm/v6/overview/databases/turso)、[Turso + Prisma migrations](https://docs.turso.tech/sdk/ts/orm/prisma)。
+
+---
+
+## 續作注意（2026-09-08，正式站上線後）
+
+正式站 `main` = `4907d02`，已含：產品套圖加固版 + 靈感中心 + 一批 UI + 登入 303 修正 + 續傳逃生口。舊分支（`quality` / `final-review` / `resume-recovery`）已刪。
+
+### A. 別踩雷
+1. **從 `main` 開分支**做後續工作，做完回 `main`；不要用已刪的舊分支當 base。
+2. **`src/proxy.ts` 的 303 redirect 不要改回 307**（登入 POST→303→cookie GET；改回會 405 全站鎖死。`src/proxy.test.ts` 有守）。
+3. **Turso 遷移**：本機 SQLite `migrate dev --create-only` 產檔 → 部署前 `turso db shell marketing-tool < migration.sql`；別對遠端 Turso 跑 `prisma migrate deploy`、別把 migration 塞進 build。
+4. **`SITE_PASSWORD`**：付費路由前置（production 沒設 → 503）；一設會**全站上密碼**。部署前置：套 Turso migration → 確認 SITE_PASSWORD → push `main`。
+5. **別 commit `public/uploads`**（dev symlink，會讓 Vercel build 失敗）。
+6. 測正式站用**乾淨網址** `taiwan-image-process-x5hn.vercel.app`，不要用帶雜湊的部署快照網址（舊版、會誤導）。
+7. 非產品區塊（inspiration / home / adcreation / activities / trend-signals）是另一手維護，要改先協調。
+
+### B. 值得優化的方向
+1. **生成可靠性**：曾觀察到 `GPT 多參考圖生成回應格式錯誤` → 掉到 fal 後 `Image-set absolute deadline reached`（270s，`generate.ts`）。強化 fallback：GPT 回格式錯誤時更快切走、別最後才撞 deadline；失敗要有清楚錯誤訊息。
+2. **失敗批次呈現**：批次沒生成完時，理想上把失敗的 role 標成 FAILED + 可單張重試，而不是整批當「進度不完整」。
+3. **成本保護缺口**：只有 3 個產品套圖 route 有 `protectPaidRoute`，**主生成路由 `/api/library/generate` 沒保護**。目前靠全站 `SITE_PASSWORD` 蓋住；若日後要「訪客免密碼瀏覽、只有 admin 能生成」，需把生成授權跟全站密碼解耦，並把 `/api/library/generate` 一起納入保護。
+4. **model-router / visual-profile 不變式**：見本文件第 1、2 節（改 `version` 會讓舊 profile 全失效；改 hash canonicalization 會讓大量產品重新分析）。
