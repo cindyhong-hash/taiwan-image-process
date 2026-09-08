@@ -3,6 +3,8 @@
 > V1 已完成並上線（base），這份給接手者（Codex）繼續把它做深。
 > 核心價值：把「商品素材包」自動排成一張 **~80% 完成、可編輯的 Canvas 設計稿**（真圖層，不是扁平圖），使用者再自由微調。這是「商品素材」與「自由排版」真正串成一條龍的關鍵差異化功能。
 
+> **V2 已完成（branch `feat/ai-layout-v2`，待 review / 部署）**：同一次設定會產生三個可選方向：`product-focus`（商品主視覺）、`editorial`（編輯留白感）、`scene-led`（情境氛圍感）。使用者先預覽、選一張，才把該選項的 `layers` 寫入既有 seed；seed 契約沒有改。V2 也會把背景以 full-bleed cover 輸出、帶入 `benefit` 圖層、依背景亮度選深／淺可讀文字色，並只把 `client.primaryColor` 用於促銷底板等 accent。
+
 整條產品流程：
 `產品 → AI 建立商品素材 → AI 幫我排版 → 可編輯設計稿 → 自由畫布微調 → 完成`
 
@@ -16,17 +18,17 @@
 
 **Intake 彈窗** `src/components/adcreation/AdLayoutModal.tsx`
 - 問極少：用途（`product`/`benefit`/`scene`/`promo`）、尺寸（`1:1`/`4:5`/`9:16`）、主要文字＋副標（選填）。
-- 送 `POST /api/magic-layers/ad-layout` → 拿到 `{ layers, canvasWidth, canvasHeight }` → 寫 `sessionStorage[ML_WIZARD_SEED_KEY]` → 導去 `/clients/{clientId}/magic-layers/compose?seed=1`（既有編輯器會讀 seed 載入圖層）。
+- 送 `POST /api/magic-layers/ad-layout` → 拿到 `{ options, canvasWidth, canvasHeight }`。每個 option 是不同擺位的真 `LayerData[]`，預覽後才選一張寫入 `sessionStorage[ML_WIZARD_SEED_KEY]` → 導去 `/clients/{clientId}/magic-layers/compose?seed=1`（既有編輯器會讀 seed 載入圖層）。
 
 **組版 API** `src/app/api/magic-layers/ad-layout/route.ts`（`maxDuration=120`）
 - 輸入：`{ clientId, productId, purpose?, ratio?, title?, subtitle? }`
 - 讀商品素材包：`db.product` + `assets(status=DONE)`，依 `assetRole` 取：`background`→情境背景、`hero`(或 `product.heroImageUrl`)→商品主體、`decoration`→裝飾、`detail`→質地；Logo 取 `client.logoUrls` 第一張。
-- 背景 `sharp` contain-fit 到畫布尺寸（無背景素材→白底）。
-- 呼叫 `buildAdLayoutLayers(...)` 回 `LayerData[]`。
+- 背景由 `ad-layout-data.ts` 用 `sharp` full-bleed cover 到畫布尺寸（無背景素材→淺底），避免白邊；讀 `client.primaryColor`，以背景平均亮度選可讀的深／淺文字色。
+- 呼叫 `buildAdLayoutCandidates(...)` 回三個 `LayerData[]` 選項；`benefit` 會以獨立可編輯圖層加入。舊的 `buildAdLayoutLayers(...)` 保留為相容包裝，回第一個候選版，不可拿它當 V2 route 的主入口。
 
-**組版引擎** `src/lib/magic-layers/compose-layers.ts` → `buildAdLayoutLayers(input: AdLayoutInput)`
-- 產出真 `LayerData[]`（重用同檔的私有 helper `cutoutLayer` / `textLayer`）：`background`(滿版) → `texture`(左下小塊) → `product`(商品主體，主角) → `decoration`(右上點綴) → `title`/`subtitle` 文字(左上) → `logo`(右下)。
-- `purpose` 目前只**輕微**影響商品主體大小/位置與標題字級。
+**組版引擎** `src/lib/magic-layers/ad-layout-recipes.ts` → `buildAdLayoutCandidates(input: AdLayoutInput)`
+- 產出三套真 `LayerData[]`；素材次序為 `background`（滿版）→ `benefit`（獨立氛圍／賣點圖層）→ `texture`（保持攝影質地，不去背）→ `product` → `decoration` → 文字 → Logo。
+- `purpose` 會實際改變主從層級：`benefit` 放大賣點、`scene` 讓背景主導、`promo` 加入 `promo_panel` 品牌色底板與白字。三個候選版型再各有不同的文字／商品／素材位置。
 
 **資料契約（沿用、別破壞）**
 - 素材角色 key：`hero｜detail｜background｜benefit｜decoration`（+ legacy `lifestyle｜texture｜ingredient`，見 `src/lib/products/image-set-roles.ts`、`src/lib/productMeta.ts`）。`hero` 是去背透明 PNG。

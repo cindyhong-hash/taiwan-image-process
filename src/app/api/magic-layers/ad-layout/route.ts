@@ -2,11 +2,12 @@
    POST /api/magic-layers/ad-layout
    AI 幫我排版：用商品素材包 + 用途，組成一張「~80% 完成」的可編輯設計稿（真 LayerData[]）。
    Body: { clientId, productId, purpose?, ratio?, title?, subtitle? }
-   Returns: { layers, canvasWidth, canvasHeight } | { error }
+   Returns: { options: AdLayoutOption[], canvasWidth, canvasHeight } | { error }
    ============================================================ */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { buildAdLayoutLayers, type AdLayoutInput } from "@/lib/magic-layers/compose-layers.ts";
+import { buildAdLayoutCandidates, type AdLayoutInput } from "@/lib/magic-layers/compose-layers.ts";
+import { averageBackgroundColor, prepareAdBackground, resolveTextTreatment } from "@/lib/magic-layers/ad-layout-data.ts";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 import sharp from "sharp";
 
@@ -38,36 +39,51 @@ export async function POST(request: Request) {
       select: { clientId: true, heroImageUrl: true, assets: { where: { status: "DONE" }, select: { assetRole: true, imageUrl: true } } },
     });
     if (!product || product.clientId !== clientId) return NextResponse.json({ error: "Product not found" }, { status: 404 });
-    const client = await db.client.findUnique({ where: { id: clientId }, select: { logoUrls: true } });
+    const client = await db.client.findUnique({ where: { id: clientId }, select: { logoUrls: true, primaryColor: true } });
 
     const byRole = (role: string) => product.assets.find((a) => a.assetRole === role && a.imageUrl)?.imageUrl || undefined;
     const rawBg = byRole("background");
     const heroUrl = product.heroImageUrl || byRole("hero") || undefined;
     const decorationUrl = byRole("decoration");
     const textureUrl = byRole("detail");
+    const benefitUrl = byRole("benefit");
     const logoUrl = firstString(client?.logoUrls);
 
     if (!rawBg && !heroUrl) return NextResponse.json({ error: "此產品尚未有可用的情境背景或商品主體素材" }, { status: 400 });
 
-    // 背景 contain-fit 到畫布尺寸（無背景素材時用白底，商品主體仍可排上去）。
+    // 以 full-bleed cover 準備背景，避免 contain 產生白邊／像貼上去的照片。
     let backgroundUrl: string;
+    let backgroundBuffer: Buffer;
     try {
-      const base = rawBg
-        ? await sharp(Buffer.from(await loadBuffer(rawBg))).resize(W, H, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 1 } })
-        : sharp({ create: { width: W, height: H, channels: 3, background: { r: 248, g: 249, b: 252 } } });
-      backgroundUrl = await saveBuffer(await base.png().toBuffer(), "png", "ml-adlayout-bg-");
+      const source = rawBg
+        ? Buffer.from(await loadBuffer(rawBg))
+        : await sharp({ create: { width: W, height: H, channels: 3, background: { r: 248, g: 249, b: 252 } } }).png().toBuffer();
+      backgroundBuffer = await prepareAdBackground(source, W, H);
+      backgroundUrl = await saveBuffer(backgroundBuffer, "png", "ml-adlayout-bg-");
     } catch {
       return NextResponse.json({ error: "背景處理失敗" }, { status: 500 });
     }
 
-    const layers = await buildAdLayoutLayers({
-      backgroundUrl, heroUrl, decorationUrl, textureUrl, logoUrl,
+    const textTreatment = resolveTextTreatment(
+      await averageBackgroundColor(backgroundBuffer),
+      client?.primaryColor || "#6d4aff",
+    );
+    const options = buildAdLayoutCandidates({
+      backgroundUrl, heroUrl, decorationUrl, textureUrl, benefitUrl, logoUrl,
       title: typeof body.title === "string" ? body.title.trim() || undefined : undefined,
       subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() || undefined : undefined,
+      brandColor: textTreatment.accentColor, textColor: textTreatment.textColor,
       purpose, canvasWidth: W, canvasHeight: H,
     });
 
-    return NextResponse.json({ layers, canvasWidth: W, canvasHeight: H });
+    return NextResponse.json({
+      options: options.map((option) => ({
+        ...option,
+        preview: { backgroundUrl, heroUrl, benefitUrl, decorationUrl, textColor: textTreatment.textColor, accentColor: textTreatment.accentColor, purpose },
+      })),
+      canvasWidth: W,
+      canvasHeight: H,
+    });
   } catch (err) {
     console.error("[magic-layers/ad-layout] failed:", err);
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
