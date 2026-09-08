@@ -60,3 +60,6 @@ prisma/dev.db.pre-merge-bak
 
 # packed material bundles (pack-materials.sh)
 dist/
+
+# ignore the dev-only symlink itself (not just its contents)
+public/uploads
