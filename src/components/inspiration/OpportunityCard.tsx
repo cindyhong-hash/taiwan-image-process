@@ -29,8 +29,8 @@ export function OpportunityCard({
 
   return (
     <div className="flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
-      {/* Header 區：徽章 + 標題 + 描述 + 類型備註。給一致 min-height，讓四張卡的引言框在同一水平線起始（描述長就自然換行，不截字）。 */}
-      <div className="min-h-[148px]">
+      {/* Header 區：徽章 + 標題 + 描述。給一致 min-height，讓四張卡的引言框在同一水平線起始（描述長就自然換行，不截字）。 */}
+      <div className="min-h-[100px]">
         <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${meta.badgeClass}`}>
           <Icon className="h-3 w-3" />
           {meta.label}
@@ -38,9 +38,6 @@ export function OpportunityCard({
 
         <h3 className="mt-2.5 text-[15px] font-semibold leading-snug text-gray-900">{opp.title}</h3>
         <p className="mt-1.5 text-xs leading-relaxed text-gray-500">{opp.whyNow}</p>
-
-        {opp.reuseNote && <p className="mt-3 text-[11px] text-emerald-600">· {opp.reuseNote}</p>}
-        {opp.gapNote && <p className="mt-3 text-[11px] text-violet-600">· {opp.gapNote}</p>}
       </div>
 
       {/* Highlight 區：AI 建議切角，高度自然延伸；padding／圓角／字級／間距統一 */}
