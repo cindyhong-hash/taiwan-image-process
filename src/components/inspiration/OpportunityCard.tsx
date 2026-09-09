@@ -19,16 +19,15 @@ export function OpportunityCard({
   onOpenAngles,
   onReuse,
   busy = false,
-  disabled = false,
 }: {
   opp: Opportunity;
   onUsePost: (opp: Opportunity) => void;
   onOpenAngles: (opp: Opportunity) => void;
   onReuse: (activityId: string) => void;
-  /** 這一張正在生成畫面描述（顯示轉圈）。 */
+  /** 只有「這一張」正在生成畫面描述時才為 true。
+   *  其他卡片完全不受影響（不轉圈、不變淡、不 disabled）——
+   *  重複點擊由 InspirationClient 的 briefingId 擋掉，不需要靠視覺鎖住。 */
   busy?: boolean;
-  /** 有「某一張」正在生成（其他張只鎖住，不要跟著轉）。 */
-  disabled?: boolean;
 }) {
   const meta = OPPORTUNITY_META[opp.type];
   const Icon = TYPE_ICON[opp.type];
@@ -85,8 +84,8 @@ export function OpportunityCard({
             <button
               type="button"
               onClick={() => onUsePost(opp)}
-              disabled={busy || disabled}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-60"
+              disabled={busy}
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
             >
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               {busy ? "準備中…" : "用這個做貼文"}

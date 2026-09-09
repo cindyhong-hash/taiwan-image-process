@@ -330,7 +330,6 @@ export function InspirationClient({ clientId }: { clientId: string }) {
                     onOpenAngles={setAngleOpp}
                     onReuse={handleReuse}
                     busy={briefingId === opp.id}
-                    disabled={!!briefingId}
                   />
                 ))}
               </div>
@@ -365,7 +364,6 @@ export function InspirationClient({ clientId }: { clientId: string }) {
                     rec={rec}
                     onUsePost={useRecommendation}
                     busy={briefingId === rec.id}
-                    disabled={!!briefingId}
                   />
                 ))}
               </div>
