@@ -43,6 +43,10 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   // 模式 A（統一主題）
   const [theme, setTheme] = useState("");
   const [mustText, setMustText] = useState("");
+  // 從靈感中心（或其他頁）帶進來的回程路徑；沒有就退回品牌首頁。
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  // 帶入後要不要自動幫他分鏡到「逐張設定」（靈感中心判斷這主題該做多張時才會設）。
+  const [pendingAutoSplit, setPendingAutoSplit] = useState(false);
   const [productUrls, setProductUrls] = useState<string[]>([]);
   const [refUrls, setRefUrls] = useState<string[]>([]);
   const [imageModel, setImageModel] = useState("google/gemini-3-pro-image-preview");
@@ -116,6 +120,8 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             if (h.requiredText) setMustText(h.requiredText);
             if (Array.isArray(h.productImageUrls) && h.productImageUrls.length) setProductUrls(h.productImageUrls);
             if (Array.isArray(h.referenceImageUrls) && h.referenceImageUrls.length) setRefUrls(h.referenceImageUrls);
+            if (typeof h.returnTo === "string" && h.returnTo.startsWith("/")) setReturnTo(h.returnTo);
+            if (h.autoSplit && h.imagePrompt) setPendingAutoSplit(true);
           }
         } catch { /* ignore */ }
       }
@@ -139,6 +145,49 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
     });
   };
   const { dialog: draftDialog } = useUnsavedGuard(draftDirty, saveDraft);
+
+  // 幫我拆解：把主題交給 AI 分鏡成 N 格 → 帶入各圖 → 切到模式 B
+  const splitToCells = async () => {
+    if (!theme.trim() || !layout) return;
+    setSplitting(true);
+    try {
+      const res = await fetch("/api/ai/storyboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ theme, count: layout.count }),
+      });
+      const data = await res.json();
+      if (Array.isArray(data.cells)) {
+        // 保留既有素材（若有），只覆寫描述與必放文字
+        setCells((prev) =>
+          data.cells.map((c: { description: string; mustText: string }, i: number) => ({
+            description: c.description ?? "",
+            mustText: c.mustText ?? "",
+            assetUrls: prev[i]?.assetUrls ?? [],
+          }))
+        );
+        setGenMode("perCell");
+        setVariantChoice("A");
+      } else {
+        alert(data.error ?? "拆解失敗，請稍後再試");
+      }
+    } catch {
+      alert("網路錯誤，請稍後再試");
+    } finally {
+      setSplitting(false);
+    }
+  };
+
+  // 從靈感中心帶入多圖主題時，自動跑一次分鏡 → 直接落在「自己逐張設定」。
+  // 不這樣做的話，使用者拿到的只是一段共用主題，還得自己再按一次「幫我拆解」。
+  useEffect(() => {
+    if (!pendingAutoSplit || !theme.trim() || !layout || splitting) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 一次性旗標：先關掉再觸發，避免分鏡重複跑
+    setPendingAutoSplit(false);
+    void splitToCells();
+    // splitToCells 只依賴 theme / layout，兩者都在條件裡檢查過了
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAutoSplit, theme, layout, splitting]);
 
   if (!clientId || !layout) return <div className="text-gray-400 p-8">載入中…</div>;
 
@@ -307,38 +356,6 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
     }
   };
 
-  // 幫我拆解：把主題交給 AI 分鏡成 N 格 → 帶入各圖 → 切到模式 B
-  const splitToCells = async () => {
-    if (!theme.trim() || !layout) return;
-    setSplitting(true);
-    try {
-      const res = await fetch("/api/ai/storyboard", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ theme, count: layout.count }),
-      });
-      const data = await res.json();
-      if (Array.isArray(data.cells)) {
-        // 保留既有素材（若有），只覆寫描述與必放文字
-        setCells((prev) =>
-          data.cells.map((c: { description: string; mustText: string }, i: number) => ({
-            description: c.description ?? "",
-            mustText: c.mustText ?? "",
-            assetUrls: prev[i]?.assetUrls ?? [],
-          }))
-        );
-        setGenMode("perCell");
-        setVariantChoice("A");
-      } else {
-        alert(data.error ?? "拆解失敗，請稍後再試");
-      }
-    } catch {
-      alert("網路錯誤，請稍後再試");
-    } finally {
-      setSplitting(false);
-    }
-  };
-
   // AI 反推提示詞：分析風格參考圖 → 內容直貼進主題 Prompt
   // opts.url / opts.prompt：由「揀完參考圖自動觸發」傳（state 未更新，直接用），手撳就讀 state（同單圖版 handleAnalyzeStyle 一致）。
   const analyzeRef = async (opts?: { url?: string; prompt?: string }) => {
@@ -443,7 +460,7 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {/* 編輯模式返去嗰個活動；新增模式（冇 editId）返去 client 主頁，同單圖新增頁一致做法 */}
-            <Link href={editId ? `/clients/${clientId}/activities/${editId}` : `/clients/${clientId}`} className="text-gray-400 hover:text-gray-700">
+            <Link href={editId ? `/clients/${clientId}/activities/${editId}` : (returnTo ?? `/clients/${clientId}`)} className="text-gray-400 hover:text-gray-700">
               <ChevronLeft className="h-5 w-5" />
             </Link>
             <h1 className="text-xl font-semibold">{editId ? "編輯活動（多圖）" : "新增活動（多圖）"}</h1>

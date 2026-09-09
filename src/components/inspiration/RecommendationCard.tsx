@@ -16,6 +16,9 @@ export function RecommendationCard({
 }) {
   const tag = TAG_META[rec.tag];
   const [imgError, setImgError] = useState(false);
+  // 張數優先於 format：AI 現在會直接給 1–5，format 只是舊欄位。
+  const multi = (rec.suggestedCount ?? (rec.suggestedFormat === "carousel" ? 2 : 1)) > 1;
+
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md">
       {/* Image preview（重用既有素材圖；沒有就 pastel 佔位） */}
@@ -43,9 +46,10 @@ export function RecommendationCard({
           </p>
         )}
 
+        {/* 明講會開幾張：點下去可能直接進多圖流程，先講清楚比較不會被嚇到。 */}
         <div className="mt-2 flex items-center gap-1 text-[11px] text-gray-400">
-          {rec.suggestedFormat === "carousel" ? <LayoutGrid className="h-3 w-3" /> : <Square className="h-3 w-3" />}
-          {rec.suggestedFormat === "carousel" ? "建議：Carousel" : "建議：單圖"}
+          {multi ? <LayoutGrid className="h-3 w-3" /> : <Square className="h-3 w-3" />}
+          {multi ? `建議：${rec.suggestedCount ?? 2} 張輪播` : "建議：單圖"}
         </div>
 
         <div className="mt-auto pt-3.5">

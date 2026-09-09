@@ -24,6 +24,9 @@ import {
   type Recommendation,
 } from "@/lib/inspiration/types";
 import { InspirationSearchBar } from "./InspirationSearchBar";
+
+/** 靈感中心的捲動位置（離開建立圖文流程回來時還原）。 */
+const SCROLL_KEY = "inspirationScrollY";
 import { OpportunityCard } from "./OpportunityCard";
 import { RecommendationCard } from "./RecommendationCard";
 import { AngleDrawer } from "./AngleDrawer";
@@ -92,11 +95,52 @@ export function InspirationClient({ clientId }: { clientId: string }) {
     fetchInspiration({ query, filter: tag });
   };
 
+  // 捲動位置：去建立圖文又放棄回來時，回到原本看到的那一批靈感的位置，
+  // 而不是被丟回頁面最上面重新找。離開時記、回來時還原一次就清掉。
+  // 只掛 pagehide（整頁離開）。不要在 unmount 時存：Next 換頁會先把捲軸歸零，
+  // 等到 cleanup 執行時 window.scrollY 已經是 0，存了也沒用。
+  useEffect(() => {
+    const save = () => {
+      try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); } catch { /* 無痕模式等 */ }
+    };
+    window.addEventListener("pagehide", save);
+    return () => window.removeEventListener("pagehide", save);
+  }, []);
+
+  useEffect(() => {
+    if (loading || !result) return;
+    // 這裡「讀了不馬上刪」：開發模式的 StrictMode 會把 effect 跑兩次
+    // （第一次排的計時器會被 cleanup 清掉），先刪掉 key 的話第二次就讀不到了。
+    // 改成最後一次嘗試之後才清。
+    let y: number | null = null;
+    try {
+      const raw = sessionStorage.getItem(SCROLL_KEY);
+      if (raw) y = Number(raw);
+    } catch { /* ignore */ }
+    if (y == null || !Number.isFinite(y) || y <= 0) {
+      try { sessionStorage.removeItem(SCROLL_KEY); } catch { /* ignore */ }
+      return;
+    }
+    // 卡片渲染完不代表頁面已經夠高——推薦區的圖還在載，捲過去會被夾成 0。
+    // 分幾次重試，直到真的捲到定位或放棄（約 1.5 秒）。
+    const target = y;
+    const delays = [0, 100, 250, 500, 900, 1400];
+    const timers = delays.map((d, i) =>
+      window.setTimeout(() => {
+        if (Math.abs(window.scrollY - target) > 4) window.scrollTo({ top: target, behavior: "auto" });
+        if (i === delays.length - 1) { try { sessionStorage.removeItem(SCROLL_KEY); } catch { /* ignore */ } }
+      }, d),
+    );
+    return () => timers.forEach(window.clearTimeout);
+  }, [loading, result]);
+
   // 再換一批：把已看過的標題丟進 avoid，後端會避開重複並略過快取
   const handleShuffle = () => fetchInspiration({ query, filter: filterTag, avoid: seenTitlesRef.current });
 
   // ── 用這個做貼文：opp / rec / angle → InspirationBrief → handoff → 導去既有流程 ──
   const goWithBrief = (brief: InspirationBrief) => {
+    // 導頁前先記位置（換頁後 scrollY 就歸零了，來不及）。
+    try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); } catch { /* ignore */ }
     const url = startPostFromBrief(brief);
     router.push(url);
   };

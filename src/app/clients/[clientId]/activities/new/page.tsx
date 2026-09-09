@@ -33,7 +33,7 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
   // 由素材 popup「帶入活動圖生成」跳過嚟：URL 存喺 sessionStorage（唔喺網址外露）。
   // 參考圖 → activityRefImage；活動圖底圖 → activityBaseImage。
   // 同步喺首次 render 讀取並清走，令 ActivityForm mount 時已有預填。
-  type Handoff = { clientId?: string; imagePrompt?: string; requiredText?: string; imageRatio?: string; variantCount?: 1 | 2 | 3; productImageUrls?: string[]; referenceImageUrls?: string[]; fromProduct?: { productId: string; name: string; description?: string; category?: string }; assetPack?: { role: string; url: string }[] };
+  type Handoff = { clientId?: string; imagePrompt?: string; requiredText?: string; imageRatio?: string; variantCount?: 1 | 2 | 3; productImageUrls?: string[]; referenceImageUrls?: string[]; returnTo?: string; fromProduct?: { productId: string; name: string; description?: string; category?: string }; assetPack?: { role: string; url: string }[] };
   const [initial] = useState<{ ref: string | null; base: string | null; prompt: string | null; handoff: Handoff | null }>(() => {
     if (typeof window === "undefined") return { ref: null, base: null, prompt: null, handoff: null };
     const ref = sessionStorage.getItem(ACTIVITY_REF_KEY);
@@ -91,6 +91,8 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
           requiredText: v.requiredText ?? "",
           productImageUrls: v.productImageUrls ?? [],
           referenceImageUrls: v.referenceImageUrls ?? [],
+          // 換版型只是中途轉場，回程目的地要跟著走，不然使用者放棄時會被丟回首頁。
+          ...(initial.handoff?.returnTo ? { returnTo: initial.handoff.returnTo } : {}),
         }));
       } catch { /* ignore */ }
       router.push(`/clients/${clientId}/activities/new/multi?layout=${id}`);
@@ -121,7 +123,9 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
       body: JSON.stringify({ ...latestValues.current, clientId, status: "DRAFT" }),
     });
   }, [clientId]);
-  const { dialog } = useUnsavedGuard(dirty, saveDraft);
+  const { dialog, guard } = useUnsavedGuard(dirty, saveDraft);
+  // 從靈感中心之類的頁面進來時，返回要回到原本那頁；沒有來源就退回品牌首頁。
+  const backHref = initial.handoff?.returnTo ?? `/clients/${clientId}`;
 
   if (!clientId) return null;
 
@@ -129,7 +133,7 @@ export default function NewActivityPage({ params }: { params: Promise<{ clientId
     <div className="max-w-3xl">
       {dialog}
       <div className="flex items-center gap-2 mb-8">
-        <button onClick={() => router.push(`/clients/${clientId}`)} className="text-gray-400 hover:text-gray-700">
+        <button onClick={() => guard(() => router.push(backHref))} className="text-gray-400 hover:text-gray-700">
           <ChevronLeft className="h-5 w-5" />
         </button>
         <h1 className="text-xl font-semibold flex-1">{initial.handoff?.fromProduct ? `使用「${initial.handoff.fromProduct.name}」建立圖文` : "新增活動"}</h1>

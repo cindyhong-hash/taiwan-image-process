@@ -42,6 +42,8 @@ export function composeImagePrompt(brief: InspirationBrief): string {
 export function startPostFromBrief(brief: InspirationBrief): string {
   // AI 產靈感時就寫好的畫面描述優先；沒有才退回欄位拼裝。
   const imagePrompt = brief.imagePrompt?.trim() || composeImagePrompt(brief);
+  // 張數優先看 AI 的建議；沒有才退回 suggestedFormat（carousel 當 2 張）。
+  const count = brief.suggestedCount ?? (brief.suggestedFormat === "carousel" ? 2 : 1);
   const productImageUrls = brief.recommendedProduct?.imageUrl
     ? [brief.recommendedProduct.imageUrl]
     : [];
@@ -60,6 +62,12 @@ export function startPostFromBrief(brief: InspirationBrief): string {
         imagePrompt,
         requiredText: brief.requiredText?.trim() ?? "",
         productImageUrls,
+        // 從哪裡進來的。表單頁的「返回」用這個，使用者放棄後才會回到靈感中心，
+        // 而不是被丟回首頁（他原本在看的那一批靈感就白找了）。
+        returnTo: typeof window !== "undefined" ? window.location.pathname + window.location.search : undefined,
+        // 多圖：AI 既然判斷這主題要拆成幾張，就順便幫他分鏡到「逐張設定」，
+        // 而不是只丟一段共用主題讓使用者自己按拆解。
+        ...(count > 1 ? { autoSplit: true } : {}),
       }),
     );
   } catch {
@@ -67,8 +75,6 @@ export function startPostFromBrief(brief: InspirationBrief): string {
   }
 
   const base = `/clients/${brief.clientId}/activities/new`;
-  // 張數優先看 AI 的建議；沒有才退回 suggestedFormat（carousel 當 2 張）。
-  const count = brief.suggestedCount ?? (brief.suggestedFormat === "carousel" ? 2 : 1);
   const layout = LAYOUT_BY_COUNT[count];
   return layout ? `${base}/multi?layout=${layout}` : base;
 }
