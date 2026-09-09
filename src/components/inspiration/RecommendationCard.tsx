@@ -21,11 +21,14 @@ export function RecommendationCard({
 
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md">
-      {/* Image preview（重用既有素材圖；沒有就 pastel 佔位） */}
-      <div className="relative aspect-[4/3] w-full bg-gradient-to-br from-violet-50 to-fuchsia-50">
+      {/* Image preview（重用既有素材圖；沒有就 pastel 佔位）
+          圖必須「絕對定位填滿」，不能只給 h-full：容器高度是靠 aspect-ratio 撐出來的，
+          正常流的圖用 h-full 解不出百分比高度會退回 auto，改用自己的比例把容器撐開
+          —— 產品套圖是 4096×4096，會把 4:3 的框硬撐成正方形，整排卡片高度就跑掉。 */}
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-gradient-to-br from-violet-50 to-fuchsia-50">
         {rec.imageUrl && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={rec.imageUrl} alt={rec.title} className="h-full w-full object-cover" onError={() => setImgError(true)} />
+          <img src={rec.imageUrl} alt={rec.title} className="absolute inset-0 h-full w-full object-cover" onError={() => setImgError(true)} />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <Sparkles className="h-7 w-7 text-violet-200" />

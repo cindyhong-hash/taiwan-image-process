@@ -148,6 +148,11 @@ export async function POST(request: Request) {
     if (hit && Date.now() - hit.at < INSPIRATION_TTL_MS) return NextResponse.json(hit.data);
   }
 
+  // 分段計時：這條路徑會跑多次 LLM 呼叫，出問題時要看得出慢在哪一段。
+  const t0 = Date.now();
+  const lap: Record<string, number> = {};
+  const mark = (k: string) => { lap[k] = Date.now() - t0; };
+
   const client = await db.client.findUnique({
     where: { id: clientId },
     include: {
@@ -162,6 +167,8 @@ export async function POST(request: Request) {
     },
   });
   if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
+
+  mark("db:client");
 
   // ── 產品：優先取 CampaignProduct，退回 library 產品圖 ───────────────────────────
   const productMap = new Map<string, Product>();
@@ -200,6 +207,7 @@ export async function POST(request: Request) {
     take: 12,
     select: { imageUrl: true },
   });
+  mark("db:pool");
   const imagePool = [...new Set([...products.map((p) => p.imageUrl), ...libPool.map((l) => l.imageUrl)].filter(Boolean))];
 
   // ── 品牌 context（重用 planner-context）────────────────────────────────────────
@@ -234,6 +242,8 @@ export async function POST(request: Request) {
     industry: client.industry ?? undefined,
     products: products.map((p) => p.label),
   });
+
+  mark("signals");
 
   // ── 過往內容（供 gap 分析 + 誠實 reuse）────────────────────────────────────────
   const recentPosts = client.activities
@@ -312,7 +322,9 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
 - suggestedCount：這個主題適合做幾張（1–5）。單一畫面講得完就給 1；
   需要步驟、比較、前後對照、清單才給 3–5，不要為了多而多。`;
 
+  mark("prompt");
   const parsed = extractJsonObject(await chatTextOpenRouter(prompt, 3000));
+  mark("llm:main");
   const rawOpps = Array.isArray(parsed?.opportunities) ? (parsed!.opportunities as Record<string, unknown>[]) : [];
   const rawRecs = Array.isArray(parsed?.recommendations) ? (parsed!.recommendations as Record<string, unknown>[]) : [];
 
@@ -406,5 +418,7 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
     },
   };
   if (!avoid.length) INSPIRATION_CACHE.set(cacheKey, { at: Date.now(), data: result });
+  mark("total");
+  console.log(`[inspiration] ${Object.entries(lap).map(([k, v]) => `${k}=${v}ms`).join(" ")}`);
   return NextResponse.json(result);
 }
