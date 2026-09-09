@@ -10,6 +10,7 @@
  * 已接：重要日期(真實) + Mock + Threads(RapidAPI，有 RAPIDAPI_KEY 才啟用)。
  */
 import { chatTextOpenRouter } from "@/lib/openrouter";
+import { PROMO_FIXED, TAIWAN_SEASONAL, mothersDay, blackFriday, dayDiff, taipeiToday } from "../calendar/tw-calendar.ts";
 
 export type TrendSignalKind = "event" | "keyword" | "hashtag" | "season";
 
@@ -293,36 +294,6 @@ const instagramProvider: TrendSignalProvider = {
    這裡用固定日期 + 距今天數算權重，越近分數越高。
    農曆檔期（春節、中秋）逐年變動，仍交給 TAIWAN_SEASONAL 用月份處理。 */
 
-/** 固定國曆日期的檔期。[月, 日, 名稱] */
-const PROMO_FIXED: [number, number, string][] = [
-  [1, 1, "元旦跨年檔"],
-  [3, 8, "38 女王節"],
-  [5, 1, "五一連假檔"],
-  [5, 20, "520 告白日"],
-  [6, 18, "618 年中慶"],
-  [7, 7, "77 購物節"],
-  [8, 8, "88 節／父親節檔"],
-  [9, 9, "99 購物節"],
-  [10, 10, "雙十連假檔"],
-  [11, 11, "雙 11 購物節"],
-  [12, 12, "雙 12 購物節"],
-  [12, 25, "耶誕檔"],
-];
-
-/** 母親節：5 月第二個星期日。 */
-function mothersDay(year: number): Date {
-  const d = new Date(Date.UTC(year, 4, 1));
-  const firstSun = (7 - d.getUTCDay()) % 7;
-  return new Date(Date.UTC(year, 4, 1 + firstSun + 7));
-}
-
-/** 黑色星期五：11 月第四個星期四的隔天。 */
-function blackFriday(year: number): Date {
-  const d = new Date(Date.UTC(year, 10, 1));
-  const firstThu = (4 - d.getUTCDay() + 7) % 7;
-  return new Date(Date.UTC(year, 10, 1 + firstThu + 21 + 1));
-}
-
 /** 依距今天數給分：越近越該現在做。超過 45 天就先不吵。 */
 function proximityScore(days: number): number | null {
   if (days < -3) return null;          // 已經過了 3 天以上
@@ -334,15 +305,12 @@ function proximityScore(days: number): number | null {
   return null;
 }
 
-const dayDiff = (from: Date, to: Date) => Math.round((to.getTime() - from.getTime()) / 86400_000);
-
 /** 檔期 provider：不需要任何 API key。只吐「45 天內」的檔期，並在 label 帶上倒數。 */
 const promoCalendarProvider: TrendSignalProvider = {
   name: "promo",
   async fetch() {
     // 以台北時間的「今天」為基準（UTC+8），避免跨日時算錯一天。
-    const nowTpe = new Date(Date.now() + 8 * 3600_000);
-    const today = new Date(Date.UTC(nowTpe.getUTCFullYear(), nowTpe.getUTCMonth(), nowTpe.getUTCDate()));
+    const today = taipeiToday();
     const year = today.getUTCFullYear();
 
     const candidates: { date: Date; name: string }[] = [];
@@ -387,25 +355,6 @@ const promoCalendarProvider: TrendSignalProvider = {
 
     return out.sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 4);
   },
-};
-
-/**
- * 台灣季節／節慶靜態資料（無外部 API）。key = 月份(1–12)，每項 {label, kind, score}。
- * 供靈感中心「季節時事 / 節日行銷」機會使用；importantDate（使用者輸入）之外的常青脈絡。
- */
-const TAIWAN_SEASONAL: Record<number, { label: string; kind: TrendSignalKind; score: number }[]> = {
-  1: [{ label: "新年新氣象", kind: "season", score: 0.7 }, { label: "尾牙／年終", kind: "event", score: 0.65 }, { label: "農曆春節前採買", kind: "event", score: 0.75 }],
-  2: [{ label: "農曆新年", kind: "event", score: 0.8 }, { label: "情人節", kind: "event", score: 0.75 }, { label: "開工開學收心", kind: "season", score: 0.6 }],
-  3: [{ label: "初春換季", kind: "season", score: 0.7 }, { label: "白色情人節", kind: "event", score: 0.6 }, { label: "婦女節", kind: "event", score: 0.55 }],
-  4: [{ label: "春季賞花踏青", kind: "season", score: 0.65 }, { label: "清明連假", kind: "event", score: 0.6 }, { label: "兒童節", kind: "event", score: 0.55 }],
-  5: [{ label: "母親節", kind: "event", score: 0.8 }, { label: "初夏防曬季開始", kind: "season", score: 0.7 }, { label: "梅雨潮濕護理", kind: "season", score: 0.55 }],
-  6: [{ label: "夏季消暑", kind: "season", score: 0.7 }, { label: "端午連假", kind: "event", score: 0.65 }, { label: "畢業季", kind: "event", score: 0.6 }],
-  7: [{ label: "盛夏戶外／泳裝季", kind: "season", score: 0.72 }, { label: "暑假出遊", kind: "season", score: 0.68 }, { label: "夏日除毛需求高峰", kind: "season", score: 0.7 }],
-  8: [{ label: "七夕情人節", kind: "event", score: 0.72 }, { label: "父親節", kind: "event", score: 0.68 }, { label: "開學前準備", kind: "season", score: 0.65 }],
-  9: [{ label: "入秋換季保養", kind: "season", score: 0.75 }, { label: "開學季", kind: "event", score: 0.68 }, { label: "9/9 購物節", kind: "event", score: 0.6 }, { label: "中秋節", kind: "event", score: 0.7 }],
-  10: [{ label: "秋季乾燥肌護理", kind: "season", score: 0.7 }, { label: "雙十連假", kind: "event", score: 0.6 }, { label: "萬聖節", kind: "event", score: 0.6 }],
-  11: [{ label: "雙11購物節", kind: "event", score: 0.82 }, { label: "換季保暖", kind: "season", score: 0.68 }, { label: "感恩節／黑五", kind: "event", score: 0.65 }],
-  12: [{ label: "耶誕節", kind: "event", score: 0.78 }, { label: "雙12購物節", kind: "event", score: 0.72 }, { label: "年末回顧／跨年", kind: "season", score: 0.7 }, { label: "冬季乾燥護理", kind: "season", score: 0.62 }],
 };
 
 /** 季節／節慶 provider：依 ctx.month 給當月常青季節脈絡（不需任何 API key）。 */
