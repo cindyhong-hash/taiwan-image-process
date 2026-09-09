@@ -27,6 +27,10 @@ const HIDE_ON = [
 
 type NotiItem = { id: string; title: string; time: string; href?: string };
 
+/** 記住「這個品牌的導覽跑過了」。以品牌為單位：第①步就是「先設定品牌規範」，
+ *  對每個新品牌都值得再提醒一次。 */
+const tourSeenKey = (clientId: string) => `tourSeen:${clientId}`;
+
 function timeAgo(iso?: string): string {
   if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
@@ -67,6 +71,30 @@ export function TopHeader() {
       .catch(() => { if (ok) setNotis([]); });
     return () => { ok = false; };
   }, [clientId]);
+
+  // 首次進入某個品牌的首頁時自動跑一次導覽。
+  // 原本只能從右上「?」→「這個頁面怎麼用？」進入，第一次用的人根本不會去點問號，
+  // 等於這個工具沒有 onboarding。
+  // 只在「品牌首頁」自動開：導覽有兩步指向首頁專屬錨點（快速生成／開始創作），
+  // 在別頁自動開會有兩步找不到目標。
+  useEffect(() => {
+    if (!clientId) return;
+    if (!/^\/clients\/[^/]+\/?$/.test(pathname)) return;
+    let seen = true;
+    try { seen = localStorage.getItem(tourSeenKey(clientId)) === "1"; } catch { /* 無痕模式：當作看過，不打擾 */ }
+    if (seen) return;
+    // 等首頁的錨點掛上再開，否則前兩步會找不到目標而置中顯示。
+    const t = window.setTimeout(() => {
+      if (document.querySelector('[data-tour="home-create"]')) setTour(true);
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [clientId, pathname]);
+
+  // 看完或略過都算看過 —— 使用者按了「略過」還一直跳出來會更煩。
+  const closeTour = () => {
+    setTour(false);
+    if (clientId) { try { localStorage.setItem(tourSeenKey(clientId), "1"); } catch { /* ignore */ } }
+  };
 
   if (HIDE_ON.some((re) => re.test(pathname))) return null;
 
@@ -131,7 +159,7 @@ export function TopHeader() {
         )}
       </div>
 
-      {tour && <GuidedTour steps={TOUR_STEPS} onClose={() => setTour(false)} />}
+      {tour && <GuidedTour steps={TOUR_STEPS} onClose={closeTour} />}
     </header>
   );
 }
