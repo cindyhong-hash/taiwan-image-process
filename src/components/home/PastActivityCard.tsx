@@ -1,4 +1,6 @@
-import { History, RotateCw } from "lucide-react";
+"use client";
+import { useState } from "react";
+import { History, RotateCw, ImageOff } from "lucide-react";
 
 export type PastActivityItem = {
   thumb?: string;
@@ -32,10 +34,7 @@ export function PastActivityCard({ items }: { items: PastActivityItem[] }) {
               onClick={it.onReuse}
               className="group flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-violet-50/60"
             >
-              <div className="shrink-0 overflow-hidden rounded-lg bg-gray-100" style={{ height: 52, width: 52 }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {it.thumb && <img src={it.thumb} alt="" className="h-full w-full object-cover" />}
-              </div>
+              <Thumb src={it.thumb} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm text-gray-800">{it.title}</div>
                 <div className="truncate text-xs text-gray-400">{it.reason ?? it.dateStr}</div>
@@ -46,6 +45,23 @@ export function PastActivityCard({ items }: { items: PastActivityItem[] }) {
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** 縮圖：載不到就顯示佔位，不要留破圖 icon。
+ *  舊活動的成品圖有可能已經不存在（例如早期存在 /uploads/ 的檔案），
+ *  而這張卡刻意挑「比較舊」的內容，撞到的機率比別處高。 */
+function Thumb({ src }: { src?: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100" style={{ height: 52, width: 52 }}>
+      {src && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="h-full w-full object-cover" onError={() => setFailed(true)} />
+      ) : (
+        <ImageOff className="h-4 w-4 text-gray-300" />
       )}
     </div>
   );
