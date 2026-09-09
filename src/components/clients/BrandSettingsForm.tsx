@@ -206,13 +206,21 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
 
         <div className="space-y-1">
           <Label>品牌簡介<span className="text-xs text-gray-400 font-normal ml-1">（選填）</span></Label>
+          {/* placeholder 一定要有「例：」前綴。這一格原本寫「專注於女性保養與生活美學的
+              品牌」，在同表單八個 placeholder 裡是唯一沒有前綴的，讀起來像一句已填好的
+              品牌定位句 —— 標籤又寫「（選填）」，兩個訊號都在說「這格不用管」，
+              結果三個品牌的簡介全是空的。 */}
           <textarea
             value={values.description}
             onChange={(e) => setValues((v) => ({ ...v, description: e.target.value }))}
-            placeholder="專注於女性保養與生活美學的品牌"
+            placeholder="例：專注於女性保養與生活美學的品牌，主打溫和不刺激"
             rows={3}
             className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200"
           />
+          {!values.description.trim() && (
+            // 把因果講出來：使用者不知道這格空著會讓 AI 少掉最重要的品牌背景。
+            <p className="text-xs text-violet-600">填了簡介，AI 的文案與靈感會明顯更貼近你的品牌</p>
+          )}
         </div>
       </Card>
 

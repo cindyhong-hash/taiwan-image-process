@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Settings, Plug, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import { BrandSettingsForm, type BrandFormValues } from "@/components/clients/BrandSettingsForm";
 import { AiLearnedCard } from "@/components/home/AiLearnedCard";
+import { brandCompleteness } from "@/lib/brandCompleteness";
 
 type SettingsTab = "settings" | "linking";
 
@@ -14,6 +15,9 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // 「AI 已學習」的素材張數要跟首頁同定義（素材庫圖片數），
+  // 原本這頁改用 pastPostImageUrls，導致同一張卡兩頁顯示 19 張 / 5 張。
+  const [assetCount, setAssetCount] = useState(0);
   const [saveError, setSaveError] = useState(false);
   const [deleteError, setDeleteError] = useState(false);
   const router = useRouter();
@@ -24,6 +28,10 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
       .then((r) => { if (!r.ok) throw new Error("client fetch failed"); return r.json(); })
       .then(setClient)
       .catch(() => setLoadError(true));
+    fetch(`/api/library/gallery?clientId=${cid}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setAssetCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => setAssetCount(0));
   }, []);
 
   useEffect(() => {
@@ -80,19 +88,16 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
     return <div className="text-gray-400">載入中...</div>;
   }
 
-  // AI 已學習側卡：以已填欄位數估算品牌辨識完成度
-  const assetCount = client.pastPostImageUrls?.length ?? 0;
-  const learnedFields = [
-    !!client.name,
-    !!client.description,
-    !!client.industry,
-    !!client.primaryColor,
-    (client.logoUrls?.length ?? 0) > 0,
-    (client.toneLabels?.length ?? 0) > 0,
-    (client.fonts?.length ?? 0) > 0,
-    assetCount > 0,
-  ];
-  const percent = Math.round((learnedFields.filter(Boolean).length / learnedFields.length) * 100);
+  // AI 已學習側卡：與首頁共用 brandCompleteness()，兩頁數字才會一致。
+  const { percent, missing } = brandCompleteness({
+    description: client.description,
+    primaryColor: client.primaryColor,
+    toneLabels: client.toneLabels,
+    taboos: client.taboos,
+    logoUrls: client.logoUrls,
+    pastPostUrls: client.pastPostImageUrls,
+    assetCount,
+  });
 
   return (
     <div>
@@ -126,7 +131,7 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
               <BrandSettingsForm initialValues={client} onSubmit={handleSubmit} submitLabel="更新品牌設定" />
             </div>
             <div className="hidden lg:block w-[300px] shrink-0 sticky top-6">
-              <AiLearnedCard assetCount={assetCount} percent={percent} />
+              <AiLearnedCard assetCount={assetCount} percent={percent} missing={missing} />
             </div>
           </div>
 
