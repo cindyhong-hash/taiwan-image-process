@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { Button } from "@/components/ui/button";
 import { X, Loader2, Wand2, Pencil, Trash2, LayoutTemplate, SwatchBook, Mountain, Image as ImageIcon, Lock, RefreshCw, RotateCcw, RotateCw, Sparkles, ChevronDown } from "lucide-react";
@@ -118,6 +118,12 @@ export function ActivityForm({
   // 底圖模式唔重新生圖，靠「必放文字」先夠料生成文案（跟 GenerateAssetForm/
   // PromptComposer 嗰套「鎖住呢個場景嘅核心輸入」做法一致）。
   const canSubmit = isBaseMode ? !!values.requiredText.trim() : !!values.imagePrompt.trim();
+  // 送出鈕刻意「永遠可按」：用 disabled 把原因藏起來，使用者只會看到按了沒反應
+  // （必填欄位在頁面最上面，按鈕在最下面，中間隔著好幾個選填區塊）。
+  // 改成按下去就捲到缺的欄位、focus 並標紅，讓系統把它知道的事講出來。
+  const [missingField, setMissingField] = useState(false);
+  // 兩種模式的必填欄位不同：一般模式＝畫面描述（textarea）、底圖模式＝必放文字（input）。
+  const requiredFieldRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
 
   const [uploadingProduct, setUploadingProduct] = useState(false);
   const [uploadingRef,     setUploadingRef]     = useState(false);
@@ -357,6 +363,15 @@ export function ActivityForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmit) {
+      setMissingField(true);
+      const el = requiredFieldRef.current;
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      // 等捲動開始再 focus，否則瀏覽器會直接跳過去、看不到捲動過程。
+      window.setTimeout(() => el?.focus(), 300);
+      return;
+    }
+    setMissingField(false);
     setLoading(true);
     // 積木標籤已經即時寫入 values.imagePrompt（見 applyBlock），直接送。
     try { await onSubmit(values); } finally { setLoading(false); }
@@ -544,12 +559,16 @@ export function ActivityForm({
           </div>
           <div className="relative">
             <textarea
+              ref={isBaseMode ? undefined : (requiredFieldRef as React.Ref<HTMLTextAreaElement>)}
               value={values.imagePrompt}
-              onChange={(e) => set("imagePrompt", e.target.value)}
+              onChange={(e) => { set("imagePrompt", e.target.value); if (missingField) setMissingField(false); }}
               rows={4}
               maxLength={500}
               placeholder="例：精緻女生在辦公室，側臉仰頭噴霧，大片窗光，質感時尚"
-              className="w-full bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-4 py-3 pb-7 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+              aria-invalid={missingField && !isBaseMode}
+              className={`w-full bg-white border-[1.5px] rounded-lg px-4 py-3 pb-7 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground ${
+                missingField && !isBaseMode ? "border-red-400 bg-red-50/40" : "border-[#ebeff5]"
+              }`}
             />
             <span className="pointer-events-none absolute bottom-2.5 right-3 text-[11px] text-gray-400">{values.imagePrompt.length}/500</span>
           </div>
@@ -611,11 +630,15 @@ export function ActivityForm({
           <div className="relative">
             <input
               type="text"
+              ref={isBaseMode ? (requiredFieldRef as React.Ref<HTMLInputElement>) : undefined}
               value={values.requiredText}
-              onChange={(e) => set("requiredText", e.target.value)}
+              onChange={(e) => { set("requiredText", e.target.value); if (missingField) setMissingField(false); }}
               maxLength={200}
               placeholder="例：精緻女孩必帶✨ / 夏日清涼控油，一噴搞定"
-              className="w-full h-11 bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-4 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+              aria-invalid={missingField && isBaseMode}
+              className={`w-full h-11 bg-white border-[1.5px] rounded-lg px-4 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground ${
+                missingField && isBaseMode ? "border-red-400 bg-red-50/40" : "border-[#ebeff5]"
+              }`}
             />
             <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 right-3 text-[11px] text-gray-400">{values.requiredText.length}/200</span>
           </div>
@@ -816,12 +839,17 @@ export function ActivityForm({
           （max-w-3xl 個 div，冇自己嘅左右 padding）啱啱好對齊，唔會偏咗。 ── */}
       {/* AI 開始生成：置中大圓角按鈕（Figma step3-creation-form-v2）*/}
       <div className="flex flex-col items-center pt-2">
-        <Button type="submit" disabled={loading || !canSubmit}
+        <Button type="submit" disabled={loading}
           className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-16 py-4 text-base font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-50">
           {loading
             ? <><Loader2 className="h-5 w-5 animate-spin" />處理中…</>
             : <><Sparkles className="h-[18px] w-[18px]" />{isBaseMode ? "建立活動（用此底圖生成文案）" : submitLabel}</>}
         </Button>
+        {missingField && (
+          <p className="mt-2 text-xs text-red-500">
+            {isBaseMode ? "請先填寫「必放文字」" : "請先填寫上方的「畫面描述 Prompt」"}
+          </p>
+        )}
       </div>
 
       {showLibPicker && (
