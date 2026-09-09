@@ -1,10 +1,12 @@
 import type { LayerData } from "./types.ts";
+import type { AdLayoutAssessmentMetadata } from "./ad-layout-vision-policy.ts";
 
 export type AdLayoutOption = {
   id: string;
   label: string;
   description: string;
   layers: LayerData[];
+  assessment?: AdLayoutAssessmentMetadata;
   preview?: {
     backgroundUrl: string;
     heroUrl?: string;

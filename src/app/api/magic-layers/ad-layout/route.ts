@@ -10,6 +10,8 @@ import { buildAdLayoutCandidates, type AdLayoutCandidateId, type AdLayoutInput }
 import { createAdLayoutContext } from "@/lib/magic-layers/ad-layout-context.ts";
 import { createCreativeBrief, selectDesignRecipe } from "@/lib/magic-layers/ad-layout-creative-brief.ts";
 import { analyzeDesignGaps, planRecipeAssets } from "@/lib/magic-layers/ad-layout-gap-analysis.ts";
+import { assessAdLayoutVisualKit } from "@/lib/magic-layers/ad-layout-vision.ts";
+import { applyAdLayoutVisionPolicy } from "@/lib/magic-layers/ad-layout-vision-policy.ts";
 import { prepareAdBackground, resolveTextSafeTreatment } from "@/lib/magic-layers/ad-layout-data.ts";
 import { templateFor } from "@/lib/magic-layers/ad-layout-templates.ts";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
@@ -46,14 +48,17 @@ export async function POST(request: Request) {
     });
 
     const context = createAdLayoutContext({ product, client, assets: product.assets });
-    const rawBg = context.inventory.byRole.background?.imageUrl;
-    const heroUrl = context.inventory.byRole.hero?.imageUrl;
-    const decorationUrl = context.inventory.byRole.decoration?.imageUrl;
-    const textureUrl = context.inventory.byRole.detail?.imageUrl;
-    const benefitUrl = context.inventory.byRole.benefit?.imageUrl;
-    const logoUrl = context.inventory.logo?.imageUrl;
+    if (!context.inventory.byRole.hero?.imageUrl) return NextResponse.json({ error: "此產品尚未有商品主體，請先完成去背商品素材再建立設計稿" }, { status: 400 });
 
-    if (!heroUrl) return NextResponse.json({ error: "此產品尚未有商品主體，請先完成去背商品素材再建立設計稿" }, { status: 400 });
+    const assessment = await assessAdLayoutVisualKit(context);
+    const assessed = applyAdLayoutVisionPolicy(context, assessment);
+    const safeContext = assessed.context;
+    const rawBg = safeContext.inventory.byRole.background?.imageUrl;
+    const heroUrl = safeContext.inventory.byRole.hero?.imageUrl;
+    const decorationUrl = safeContext.inventory.byRole.decoration?.imageUrl;
+    const textureUrl = safeContext.inventory.byRole.detail?.imageUrl;
+    const benefitUrl = safeContext.inventory.byRole.benefit?.imageUrl;
+    const logoUrl = safeContext.inventory.logo?.imageUrl;
 
     // 以 full-bleed cover 準備背景，避免 contain 產生白邊／像貼上去的照片。
     let backgroundUrl: string;
@@ -78,22 +83,22 @@ export async function POST(request: Request) {
       }
     }
 
-    const accentColor = context.brand.primaryColor;
+    const accentColor = safeContext.brand.primaryColor;
     const directions: AdLayoutCandidateId[] = ["product-focus", "editorial", "scene-led"];
     const textSafeTreatment = Object.fromEntries(await Promise.all(directions.map(async (direction) => {
       const template = templateFor(direction, purpose, ratio);
       const treatment = await resolveTextSafeTreatment(backgroundBuffer, template.zones.safePanel, accentColor);
       return [direction, treatment.panelTreatment] as const;
     })));
-    const tones = context.brand.tones.slice(0, 3);
-    const palette = context.brand.palette.slice(0, 3);
+    const tones = safeContext.brand.tones.slice(0, 3);
+    const palette = safeContext.brand.palette.slice(0, 3);
     const artDirection = [
-      context.brand.description || context.brand.industry,
+      safeContext.brand.description || safeContext.brand.industry,
       tones.length ? tones.join("、") : undefined,
-      context.product.description || context.product.category,
+      safeContext.product.description || safeContext.product.category,
       palette.length ? `色彩：${palette.join("、")}` : undefined,
     ].filter(Boolean).join("；") || `以「${product.name}」完成乾淨清楚的品牌產品設計`;
-    const brief = createCreativeBrief(context, {
+    const brief = createCreativeBrief(safeContext, {
       purpose,
       ratio,
       title: typeof body.title === "string" ? body.title : undefined,
@@ -107,7 +112,8 @@ export async function POST(request: Request) {
       title: typeof body.title === "string" ? body.title.trim() || undefined : undefined,
       subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() || undefined : undefined,
       brandColor: accentColor, textColor: "#241f47", textSafeTreatment, artDirection,
-      purpose, ratio, heroAspectRatio, planning: { brief, recipe, assetPlan, gapPlan }, canvasWidth: W, canvasHeight: H,
+      purpose, ratio, heroAspectRatio, planning: { brief, recipe, assetPlan, gapPlan }, compositionAdvice: assessed.advice,
+      assessment: { source: assessed.advice.source, warnings: assessed.advice.warnings }, canvasWidth: W, canvasHeight: H,
     });
 
     return NextResponse.json({

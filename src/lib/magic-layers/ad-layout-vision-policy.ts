@@ -16,6 +16,8 @@ export type AdLayoutCompositionAdvice = {
   warnings: string[];
 };
 
+export type AdLayoutAssessmentMetadata = Pick<AdLayoutCompositionAdvice, "source" | "warnings">;
+
 export type AssessedAdLayoutContext = {
   context: AdLayoutContext;
   advice: AdLayoutCompositionAdvice;

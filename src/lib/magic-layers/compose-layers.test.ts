@@ -52,3 +52,16 @@ test("uses the requested named ratio when selecting a responsive template", asyn
 
   assert.notDeepEqual(layer(portrait.layers, "product_1")?.bbox, layer(feed.layers, "product_1")?.bbox);
 });
+
+test("keeps deterministic candidates and only exposes safe fallback provenance", async () => {
+  const candidates = await buildAdLayoutCandidates({
+    ...input,
+    purpose: "product",
+    compositionAdvice: { source: "fallback", sceneGrounding: "floating", warnings: ["素材視覺判讀不可用"] },
+    assessment: { source: "fallback", warnings: ["素材視覺判讀不可用"] },
+  });
+
+  assert.equal(candidates.length, 3);
+  assert.ok(candidates.every((candidate) => candidate.layers.some((item) => item.id === "product_1")));
+  assert.deepEqual(candidates[0]?.assessment, { source: "fallback", warnings: ["素材視覺判讀不可用"] });
+});

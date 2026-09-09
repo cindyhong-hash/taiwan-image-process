@@ -7,6 +7,7 @@ import { renderAdLayoutSpec } from "./ad-layout-renderer.ts";
 import type { LayerData } from "./types.ts";
 import type { CreativeBrief, DesignRecipe } from "./ad-layout-creative-brief.ts";
 import type { AdLayoutAssetPlan, GapPlanEntry } from "./ad-layout-gap-analysis.ts";
+import type { AdLayoutAssessmentMetadata, AdLayoutCompositionAdvice } from "./ad-layout-vision-policy.ts";
 
 export type { AdLayoutPurpose } from "./ad-layout-design-spec.ts";
 export type AdLayoutCandidateId = "product-focus" | "editorial" | "scene-led";
@@ -28,6 +29,8 @@ export interface AdLayoutInput {
   artDirection?: string;
   heroAspectRatio?: number;
   planning?: { brief: CreativeBrief; recipe: DesignRecipe; assetPlan: AdLayoutAssetPlan; gapPlan: GapPlanEntry[] };
+  compositionAdvice?: AdLayoutCompositionAdvice;
+  assessment?: AdLayoutAssessmentMetadata;
   canvasWidth: number;
   canvasHeight: number;
 }
@@ -37,6 +40,7 @@ export interface AdLayoutCandidate {
   label: string;
   description: string;
   layers: LayerData[];
+  assessment?: AdLayoutAssessmentMetadata;
 }
 
 const LABELS: Record<AdLayoutCandidateId, Pick<AdLayoutCandidate, "label" | "description">> = {
@@ -59,6 +63,7 @@ export function buildAdLayoutCandidates(input: AdLayoutInput): AdLayoutCandidate
     artDirection: input.artDirection,
     productAspectRatio: input.heroAspectRatio,
     planning: input.planning,
+    compositionAdvice: input.compositionAdvice,
     typography: {
       headline: input.title,
       subtitle: input.subtitle,
@@ -73,5 +78,6 @@ export function buildAdLayoutCandidates(input: AdLayoutInput): AdLayoutCandidate
     id: spec.direction,
     ...LABELS[spec.direction],
     layers: renderAdLayoutSpec(spec, { logoUrl: input.logoUrl }),
+    ...(input.assessment ? { assessment: { source: input.assessment.source, warnings: [...input.assessment.warnings] } } : {}),
   }));
 }
