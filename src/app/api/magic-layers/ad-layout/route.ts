@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { buildAdLayoutCandidates, type AdLayoutCandidateId, type AdLayoutInput } from "@/lib/magic-layers/compose-layers.ts";
+import { createAdLayoutContext } from "@/lib/magic-layers/ad-layout-context.ts";
 import { prepareAdBackground, resolveTextSafeTreatment } from "@/lib/magic-layers/ad-layout-data.ts";
 import { templateFor } from "@/lib/magic-layers/ad-layout-templates.ts";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
@@ -17,20 +18,6 @@ export const maxDuration = 120;
 const RATIO_SIZE: Record<string, [number, number]> = {
   "1:1": [1024, 1024], "4:5": [1024, 1280], "9:16": [720, 1280], "16:9": [1280, 720],
 };
-
-function firstString(value: unknown): string | undefined {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (Array.isArray(value)) { const s = value.find((v) => typeof v === "string" && v.trim()); return typeof s === "string" ? s : undefined; }
-  try { const p = JSON.parse(String(value ?? "")); return Array.isArray(p) ? (p.find((v) => typeof v === "string") as string | undefined) : undefined; } catch { return undefined; }
-}
-
-function stringList(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
-  try {
-    const parsed = JSON.parse(String(value ?? "[]"));
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()) : [];
-  } catch { return []; }
-}
 
 export async function POST(request: Request) {
   try {
@@ -56,13 +43,13 @@ export async function POST(request: Request) {
       select: { name: true, description: true, industry: true, logoUrls: true, primaryColor: true, secondaryColor: true, toneLabels: true, paletteColors: true, fonts: true },
     });
 
-    const byRole = (role: string) => product.assets.find((a) => a.assetRole === role && a.imageUrl)?.imageUrl || undefined;
-    const rawBg = byRole("background");
-    const heroUrl = product.heroImageUrl || byRole("hero") || undefined;
-    const decorationUrl = byRole("decoration");
-    const textureUrl = byRole("detail");
-    const benefitUrl = byRole("benefit");
-    const logoUrl = firstString(client?.logoUrls);
+    const context = createAdLayoutContext({ product, client, assets: product.assets });
+    const rawBg = context.inventory.byRole.background?.imageUrl;
+    const heroUrl = context.inventory.byRole.hero?.imageUrl;
+    const decorationUrl = context.inventory.byRole.decoration?.imageUrl;
+    const textureUrl = context.inventory.byRole.detail?.imageUrl;
+    const benefitUrl = context.inventory.byRole.benefit?.imageUrl;
+    const logoUrl = context.inventory.logo?.imageUrl;
 
     if (!rawBg && !heroUrl) return NextResponse.json({ error: "此產品尚未有可用的情境背景或商品主體素材" }, { status: 400 });
 
@@ -79,19 +66,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "背景處理失敗" }, { status: 500 });
     }
 
-    const accentColor = product.primaryColorOverride || client?.primaryColor || "#6d4aff";
+    const accentColor = context.brand.primaryColor;
     const directions: AdLayoutCandidateId[] = ["product-focus", "editorial", "scene-led"];
     const textSafeTreatment = Object.fromEntries(await Promise.all(directions.map(async (direction) => {
       const template = templateFor(direction, purpose, ratio);
       const treatment = await resolveTextSafeTreatment(backgroundBuffer, template.zones.safePanel, accentColor);
       return [direction, treatment.panelTreatment] as const;
     })));
-    const tones = stringList(client?.toneLabels).slice(0, 3);
-    const palette = stringList(client?.paletteColors).slice(0, 3);
+    const tones = context.brand.tones.slice(0, 3);
+    const palette = context.brand.palette.slice(0, 3);
     const artDirection = [
-      client?.description || client?.industry,
+      context.brand.description || context.brand.industry,
       tones.length ? tones.join("、") : undefined,
-      product.description || product.category,
+      context.product.description || context.product.category,
       palette.length ? `色彩：${palette.join("、")}` : undefined,
     ].filter(Boolean).join("；") || `以「${product.name}」完成乾淨清楚的品牌產品設計`;
     const options = buildAdLayoutCandidates({
