@@ -7,6 +7,8 @@
 
 > **Design Foundation P1 已完成（branch `feat/ai-design-foundation-p1`，疊在 P0 上）**：route 先將產品、品牌與新舊 asset roles 正規化成 visual-kit context，再建立 Creative Brief、Design Recipe、direction-aware asset plan 和 deterministic gap plan。商品主體與 logo 明確標為 identity-critical；hero 按原始長寬比 contain 進 template。品質檢查會驗證 hero、素材數量、direction support、文字 treatment 與比例；Modal 預覽則直接讀 renderer 產出的 layer bounds。
 
+> **Vision Safety P2-A 已完成（branch `feat/ai-layout-vision-safety-p2`，疊在 P1 上）**：在背景處理與 brief 前，route 會把 hero 加上至多四張既有非 identity 素材縮至 768px，以私有 data URI 交給 OpenRouter 做一次可失敗的視覺安全判讀。高信心且角色不符、含第二個商品、文字／Logo 或不適合的完整 composition 的素材會被省略；hero／Logo 絕不會被移除。provider、storage、逾時或格式失敗一律保留原素材並走 P1 deterministic fallback。模型只能建議既有的 text-safe category 與是否有可用場景表面，不能提供座標、URL、template ID、顏色或 effect。
+
 整條產品流程：
 `產品 → AI 建立商品素材 → AI 幫我排版 → 可編輯設計稿 → 自由畫布微調 → 完成`
 
@@ -37,6 +39,8 @@
 - `src/lib/magic-layers/ad-layout-context.ts`：唯一負責將資料庫資產 role（含 legacy alias）、品牌資料與 visual profile 正規化成 product visual-kit context。
 - `src/lib/magic-layers/ad-layout-creative-brief.ts`、`ad-layout-gap-analysis.ts`：建立目的／品牌／文案的 Creative Brief，挑選 recipe，並將缺口映射到既有可編輯 shape，而不是重新生圖。
 - `src/lib/magic-layers/ad-layout-quality.ts`：純規則檢查，render 前保護 hero、support budget、裝飾 budget、文字 treatment 和商品比例。
+- `src/lib/magic-layers/ad-layout-vision.ts`：一次、可注入測試的 OpenRouter visual-kit assessment。只送既有 hero／background／detail／benefit／decoration 的縮圖；所有失敗回傳 named fallback，不會讓設計 API 失敗。
+- `src/lib/magic-layers/ad-layout-vision-policy.ts`：唯一可將 vision 結果轉成素材省略與 composition advice 的純規則層；`0.7` 以下一律不刪素材。它不會也不能改寫 identity assets。
 - 素材規則：商品主視覺／編輯留白預設只用背景、hero、最多一個裝飾；情境版最多一個 support（`detail` 或 `benefit`）；賣點用途可選 `benefit`，但不會與 `detail` 疊用。
 
 **資料契約（沿用、別破壞）**
@@ -49,9 +53,9 @@
 
 ## 二、下一階段（P2 以上，不要破壞 P0/P1）
 
-1. **Vision art direction**：可用 OpenRouter vision 讀候選素材縮圖與過往貼文，回傳受限 JSON（template／素材角色／safe area／文案）。它不得回 raw x/y；P1 validator 必須驗證並永遠保留 deterministic fallback。
-2. **資產安全辨識**：舊 background/detail 可能仍含完整商品。P0 已靠少用素材降低風險；P1 才用 vision 判定並排除競爭商品。
-3. **更細緻的背景處理**：目前是安全底板；若要漸層面板或圖片模糊，需要先擴充 Editor 的 shape/image effect 契約，再讓 renderer 使用，不能直接 flatten 全圖。
+1. **歷史設計參考**：若要讓 vision 讀過往貼文，先定義可讀的「已核准、同品牌、同用途」資料來源與隱私範圍；P2-A 不讀任何歷史貼文，也沒有 persistent cache。
+2. **更細緻的背景處理**：目前是安全底板；若要漸層面板或圖片模糊，需要先擴充 Editor 的 shape/image effect 契約，再讓 renderer 使用，不能直接 flatten 全圖。
+3. **Graphic / Icon system**：benefit icon、badge、callout 必須先有可編輯 primitives 與 semantic icon library；不可讓 vision 或文字模型傳入任意圖層座標。
 4. **自動文案**：使用者未填文字時，可重用既有 `POST /api/activities/creative-direction` 的方向，但仍要保留空字層／無文案的安全 fallback。
 
 ---
