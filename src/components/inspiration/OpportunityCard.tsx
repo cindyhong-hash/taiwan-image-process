@@ -3,7 +3,7 @@
  * 內容機會卡（第六節）。四型共用：正在升溫 / 近期值得準備 / 你可以重新利用 / 品牌內容缺口。
  * 重點順序：Type → Title → Why Now → Suggested Angle → CTA。
  */
-import { TrendingUp, CalendarClock, RefreshCw, PieChart, Sparkles, ArrowRight, Quote } from "lucide-react";
+import { TrendingUp, CalendarClock, RefreshCw, PieChart, Sparkles, ArrowRight, Quote, Radar } from "lucide-react";
 import { OPPORTUNITY_META, type Opportunity, type OpportunityType } from "@/lib/inspiration/types";
 
 const TYPE_ICON: Record<OpportunityType, typeof TrendingUp> = {
@@ -33,7 +33,7 @@ export function OpportunityCard({
       <div className="min-h-[100px]">
         <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${meta.badgeClass}`}>
           <Icon className="h-3 w-3" />
-          {meta.label}
+          {opp.typeLabel ?? meta.label}
         </span>
 
         <h3 className="mt-2.5 text-[15px] font-semibold leading-snug text-gray-900">{opp.title}</h3>
@@ -48,8 +48,17 @@ export function OpportunityCard({
         </div>
       )}
 
-      {/* CTA 區：mt-auto 貼底，四張卡底部對齊 */}
-      <div className="mt-auto flex items-center gap-1.5 pt-4">
+      {/* 底部區：來源標示 + CTA 一起 mt-auto 貼底，四張卡底部對齊 */}
+      <div className="mt-auto">
+        {/* 這張卡憑什麼資料來的。外部訊號來源會失效（額度用盡／訂閱到期）而系統設計成不阻斷，
+            沒有這行使用者分不出「真的有熱度」和「只是當季常青題」。 */}
+        {opp.sourceLabel && (
+          <p className="flex items-center gap-1 pt-3 text-[11px] leading-none text-gray-400">
+            <Radar className="h-3 w-3 shrink-0" />
+            來源：{opp.sourceLabel}
+          </p>
+        )}
+        <div className="flex items-center gap-1.5 pt-3">
         {opp.type === "reuse" && opp.reuseActivityId ? (
           <button
             type="button"
@@ -76,6 +85,7 @@ export function OpportunityCard({
             </button>
           </>
         )}
+        </div>
       </div>
     </div>
   );

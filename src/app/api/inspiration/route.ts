@@ -110,6 +110,7 @@ function buildReuseOpportunity(
     cta: "查看去年內容",
     reuseActivityId: pick.id,
     reuseNote,
+    sourceLabel: `你 ${ym} 的活動`,
     tag: "brand",
   };
 }
@@ -286,6 +287,21 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
   const rawOpps = Array.isArray(parsed?.opportunities) ? (parsed!.opportunities as Record<string, unknown>[]) : [];
   const rawRecs = Array.isArray(parsed?.recommendations) ? (parsed!.recommendations as Record<string, unknown>[]) : [];
 
+  // 每張卡的資料來源（給使用者看的一句話）。刻意描述「實際拿到什麼」而非「理論上會用什麼」。
+  const monthLabel = `台灣 ${now.getUTCMonth() + 1} 月季節脈絡`;
+  const sourceLabelFor = (type: Opportunity["type"]): string | undefined => {
+    if (type === "trend") {
+      return liveSignals.length ? `IG 近三個月討論（${liveSignals.length} 個訊號）` : monthLabel;
+    }
+    if (type === "upcoming") {
+      return importantDates.length ? `你設定的重要日期 + ${monthLabel}` : monthLabel;
+    }
+    if (type === "gap") {
+      return recentPosts.length ? `你最近 ${recentPosts.length} 篇貼文分析` : undefined;
+    }
+    return undefined;
+  };
+
   const aiOpps: Opportunity[] = rawOpps
     .filter((o) => o && (o.type === "trend" || o.type === "upcoming" || o.type === "gap") && o.title)
     .map((o, i) => ({
@@ -300,6 +316,9 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
       suggestedFormat: cleanFormat(o.suggestedFormat),
       cta: o.type === "trend" ? "AI 怎麼切入" : o.type === "upcoming" ? "產生促銷靈感" : "查看建議題目",
       gapNote: o.gapNote ? String(o.gapNote) : undefined,
+      sourceLabel: sourceLabelFor(o.type as Opportunity["type"]),
+      // 沒有真實社群訊號時，這張卡的內容其實來自寫死的季節表——不能再叫「正在升溫」。
+      typeLabel: o.type === "trend" && !liveSignals.length ? "當季主題" : undefined,
     }));
 
   const reuse = buildReuseOpportunity(client.activities as { id: string; theme: string; createdAt: Date; layoutId: string | null; status: string }[], avoid);
