@@ -71,7 +71,7 @@ Return strict JSON only:
   "background": { "textSafeArea": "left-top|right-top|left-center|bottom|unknown", "placementSurface": "counter|shelf|platform|table|none|unknown", "confidence": 0.9 }
 }
 
-For background, productVisible means any complete product/package visible in the environment. completeSceneVisible means a complete standalone scene rather than an independent texture/overlay. Omit unavailable roles from assets.`;
+For background, productVisible means any complete product/package visible in the environment. A clean environmental background (for example an empty bathroom or tabletop) is valid and is NOT a completeSceneVisible conflict. completeSceneVisible means a finished multi-subject composition or advertising scene that is unsuitable as an independently composable asset. Omit unavailable roles from assets.`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

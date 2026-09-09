@@ -37,6 +37,15 @@ test("omits a trusted legacy background containing a product before planning", (
   assert.match(result.advice.warnings[0] ?? "", /背景/);
 });
 
+test("omits a trusted asset that is visibly unsuitable for its declared role", () => {
+  const result = applyAdLayoutVisionPolicy(context, vision({
+    decoration: { ...safe, safeForDeclaredRole: false, reason: "這是產品示意卡，不是獨立裝飾" },
+  }));
+
+  assert.equal(result.context.inventory.byRole.decoration, undefined);
+  assert.match(result.omitted[0]?.reason ?? "", /裝飾元素/);
+});
+
 test("keeps uncertain material and always keeps identity-critical hero and logo", () => {
   const result = applyAdLayoutVisionPolicy(context, vision({
     detail: { ...safe, safeForDeclaredRole: false, productVisible: true, confidence: 0.4 },

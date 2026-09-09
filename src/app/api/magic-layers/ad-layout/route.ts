@@ -13,7 +13,7 @@ import { analyzeDesignGaps, planRecipeAssets } from "@/lib/magic-layers/ad-layou
 import { assessAdLayoutVisualKit } from "@/lib/magic-layers/ad-layout-vision.ts";
 import { applyAdLayoutVisionPolicy } from "@/lib/magic-layers/ad-layout-vision-policy.ts";
 import { prepareAdBackground, resolveTextSafeTreatment } from "@/lib/magic-layers/ad-layout-data.ts";
-import { templateFor } from "@/lib/magic-layers/ad-layout-templates.ts";
+import { templateForAdvice } from "@/lib/magic-layers/ad-layout-templates.ts";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 import sharp from "sharp";
 
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     const accentColor = safeContext.brand.primaryColor;
     const directions: AdLayoutCandidateId[] = ["product-focus", "editorial", "scene-led"];
     const textSafeTreatment = Object.fromEntries(await Promise.all(directions.map(async (direction) => {
-      const template = templateFor(direction, purpose, ratio);
+      const template = templateForAdvice(direction, purpose, ratio, assessed.advice.preferredTextSafeArea);
       const treatment = await resolveTextSafeTreatment(backgroundBuffer, template.zones.safePanel, accentColor);
       return [direction, treatment.panelTreatment] as const;
     })));

@@ -155,7 +155,7 @@ Expected: FAIL because the policy module does not exist.
 
 - [ ] **Step 3: Implement `MIN_TRUSTED_CONFIDENCE = 0.7` and omission rules**
 
-Only omit for a `vision` source with confidence at least `0.7`. Never omit hero or logo. Use these exact rules:
+Only omit for a `vision` source with confidence at least `0.7`. Never omit hero or logo. A high-confidence `safeForDeclaredRole: false` is enough to omit; otherwise use these visible-conflict rules:
 
 ```ts
 function mustOmit(role: AssessedVisualRole, asset: AssetSafety): boolean {

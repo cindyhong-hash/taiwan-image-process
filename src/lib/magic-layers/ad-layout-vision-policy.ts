@@ -25,6 +25,7 @@ export type AssessedAdLayoutContext = {
 };
 
 function mustOmit(role: AssessedVisualRole, asset: AssetSafety): boolean {
+  if (!asset.safeForDeclaredRole) return true;
   if (role === "background") return asset.productVisible || asset.textOrLogoVisible || asset.completeSceneVisible;
   if (role === "detail") return asset.productVisible || asset.completeSceneVisible;
   if (role === "benefit") return asset.productVisible || asset.completeSceneVisible;
