@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, ImagePlus, X, ChevronDown, ChevronLeft, Sparkles, LayoutGrid, Pencil, Trash2 } from "lucide-react";
@@ -47,6 +47,8 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   const [returnTo, setReturnTo] = useState<string | null>(null);
   // 帶入後要不要自動幫他分鏡到「逐張設定」（靈感中心判斷這主題該做多張時才會設）。
   const [pendingAutoSplit, setPendingAutoSplit] = useState(false);
+  const [missingField, setMissingField] = useState(false);
+  const themeRef = useRef<HTMLTextAreaElement | null>(null);
   const [productUrls, setProductUrls] = useState<string[]>([]);
   const [refUrls, setRefUrls] = useState<string[]>([]);
   const [imageModel, setImageModel] = useState("google/gemini-3-pro-image-preview");
@@ -389,6 +391,14 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   };
 
   const handleSubmit = async () => {
+    if (!canSubmit) {
+      setMissingField(true);
+      const el = themeRef.current;
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => el?.focus(), 300);
+      return;
+    }
+    setMissingField(false);
     setSaving(true);
     try {
       const mappedPrompt = genMode === "unified" ? theme : (cells[0]?.description ?? "");
@@ -451,6 +461,9 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
   const canSubmit = genMode === "unified"
     ? theme.trim().length > 0
     : cells.length > 0 && cells.every((c) => c.description.trim().length > 0 || c.assetUrls.length > 0);
+  // 送出鈕永遠可按：用 disabled 藏住原因，使用者只會看到按了沒反應。
+  // 按下去若沒填，捲到欄位、focus、標紅（與單圖表單一致）。
+  const missingHint = genMode === "unified" ? "請先填寫「畫面描述 Prompt」" : "每一格都需要畫面描述或素材";
 
   return (
     <div className="max-w-3xl space-y-8 pb-4">
@@ -570,12 +583,16 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
             </div>
             <div className="relative">
               <textarea
+                ref={themeRef}
                 value={theme}
-                onChange={(e) => setTheme(e.target.value)}
+                onChange={(e) => { setTheme(e.target.value); if (missingField) setMissingField(false); }}
                 rows={4}
                 maxLength={500}
                 placeholder="例：日系文青風的夏季芒果冰新品上市，整體色彩明亮、有清涼消暑感。"
-                className="w-full bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-4 py-3 pb-7 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-invalid={missingField}
+                className={`w-full bg-white border-[1.5px] rounded-lg px-4 py-3 pb-7 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring ${
+                  missingField ? "border-red-400 bg-red-50/40" : "border-[#ebeff5]"
+                }`}
               />
               <span className="pointer-events-none absolute bottom-2.5 right-3 text-[11px] text-gray-400">{theme.length}/500</span>
             </div>
@@ -833,12 +850,13 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
 
       {/* AI 開始生成：置中大圓角按鈕（Figma v2）*/}
       <div className="flex flex-col items-center pt-2">
-        <Button type="button" onClick={handleSubmit} disabled={saving || !canSubmit}
+        <Button type="button" onClick={handleSubmit} disabled={saving}
           className="inline-flex h-auto items-center justify-center gap-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white px-16 py-4 text-base font-bold shadow-[0_8px_8px_rgba(124,58,237,0.15)] disabled:opacity-50">
           {saving
             ? <><Loader2 className="h-5 w-5 animate-spin" />處理中…</>
             : <><Sparkles className="h-[18px] w-[18px]" />{editId ? (hasLayouts ? "儲存並重新生成" : "儲存並生成") : "AI 開始生成"}</>}
         </Button>
+        {missingField && <p className="mt-2 text-xs text-red-500">{missingHint}</p>}
       </div>
 
       {showPicker && (
