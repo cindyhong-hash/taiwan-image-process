@@ -27,6 +27,8 @@ type GalleryAsset = {
 type Client = {
   id: string;
   name: string;
+  /** 品牌簡介：完成度要算它（文案與靈感最依賴的欄位）。 */
+  description?: string | null;
   primaryColor?: string;
   secondaryColor?: string | null;
   paletteColors?: unknown;
@@ -103,7 +105,8 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
   }
 
   const assetCount = assets.length;
-  const { percent } = brandCompleteness({
+  const { percent, missing } = brandCompleteness({
+    description: client.description,
     primaryColor: client.primaryColor,
     toneLabels: client.toneLabels,
     taboos: client.taboos,
@@ -213,7 +216,7 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
           toneLabels={client.toneLabels}
           taboos={client.taboos}
         />
-        <AiLearnedCard assetCount={assetCount} percent={percent} />
+        <AiLearnedCard assetCount={assetCount} percent={percent} missing={missing} />
         <PastActivityCard items={pastItems} />
       </div>
     </div>
