@@ -41,6 +41,8 @@ function itemType(it: GalleryItem): TypeKey {
     if (g === "person") return "person";
     if (g === "illustration") return "illustration";
     if (g === "reference") return "reference";
+    // 背景生成不帶 genType，由 API 補成 "scene"；漏掉它會被當成產品成圖。
+    if (g === "scene" || g === "background" || g === "material") return "background";
   } catch { /* ignore */ }
   return "product";
 }

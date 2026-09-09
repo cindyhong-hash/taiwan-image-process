@@ -404,14 +404,20 @@ function isSeriesTemplate(item: GalleryItem): boolean {
   try { return JSON.parse(item.paramsJson ?? "{}").mode === "paste-template"; } catch { return false; }
 }
 
-/** Generated tiles split by genType: person / illustration / reference(=參考圖,活動成品) / 其餘=product。 */
-function generatedKind(item: GalleryItem): "person" | "illustration" | "product" | "uploaded" | null {
+/** Generated tiles split by genType: person / illustration / reference(=參考圖,活動成品) /
+ *  scene(=背景) / 其餘=product。
+ *  注意 "scene"：背景生成走的是預設場景模型，前端不帶 genType，
+ *  由 /api/library/generate 補成 "scene"（見該檔 paramsJson 寫入處）。
+ *  這裡漏了它就會 fall through 成 product —— 背景圖被標成「產品成圖」，
+ *  而且「背景」篩選永遠是 0。 */
+function generatedKind(item: GalleryItem): "person" | "illustration" | "product" | "uploaded" | "material" | null {
   if (item.kind !== "generated") return null;
   try {
     const g = JSON.parse(item.paramsJson ?? "{}").genType;
     if (g === "person") return "person";
     if (g === "illustration") return "illustration";
     if (g === "reference") return "uploaded"; // 活動圖儲存 = 參考圖（wireframe ⑦）
+    if (g === "scene" || g === "background" || g === "material") return "material";
     return "product";
   } catch { return "product"; }
 }
@@ -427,7 +433,7 @@ function tileFilterKey(item: GalleryItem): GalleryFilter {
 function matchesGalleryFilter(item: GalleryItem, f: GalleryFilter): boolean {
   if (f === "ALL") return true;
   if (f === "uploaded") return item.kind === "uploaded" || generatedKind(item) === "uploaded";
-  if (f === "material") return item.kind === "material";
+  if (f === "material") return item.kind === "material" || generatedKind(item) === "material";
   return generatedKind(item) === f; // person | illustration | product
 }
 
