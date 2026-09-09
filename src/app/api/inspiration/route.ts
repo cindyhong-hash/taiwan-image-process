@@ -175,8 +175,20 @@ export async function POST(request: Request) {
 
   mark("db:client");
 
-  // ── 產品：優先取 CampaignProduct，退回 library 產品圖 ───────────────────────────
+  // ── 產品：Product 實體 → CampaignProduct → library 產品圖 ─────────────────────
+  // Product 是「真正的產品」（有正式名稱與去背主視覺），優先用它。
+  // 先前只讀 CampaignProduct，而那張表的 label 可能是使用者隨手打的「產品」，
+  // 拿去給 AI 挑等於沒有產品可挑。
   const productMap = new Map<string, Product>();
+  const realProducts = await db.product.findMany({
+    where: { clientId },
+    orderBy: { createdAt: "desc" },
+    take: 8,
+    select: { name: true, heroImageUrl: true },
+  });
+  for (const rp of realProducts) {
+    if (rp.name && !productMap.has(rp.name)) productMap.set(rp.name, { label: rp.name, imageUrl: rp.heroImageUrl ?? "" });
+  }
   for (const plan of client.marketingPlans) {
     for (const c of plan.campaigns) {
       for (const p of c.products) {
