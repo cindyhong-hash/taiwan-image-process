@@ -698,7 +698,9 @@ export default function NewMultiActivityPage({ params }: { params: Promise<{ cli
                     <textarea
                       value={cell.description}
                       onChange={(e) => updateCell(i, { description: e.target.value })}
-                      rows={2}
+                      // AI 分鏡出來的描述約 55-60 字，在這個欄寬要 4 行才放得下；
+                      // 原本 rows=2 一定會出現捲軸，得邊捲邊讀。
+                      rows={5}
                       placeholder="描述這一格的畫面…"
                       className="w-full bg-white border-[1.5px] border-[#ebeff5] rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                     />
