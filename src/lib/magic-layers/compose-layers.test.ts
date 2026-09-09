@@ -27,13 +27,12 @@ test("creates three visually distinct product layout directions", async () => {
   assert.notDeepEqual(layer(options[1].layers, "text_title")?.bbox, layer(options[2].layers, "text_title")?.bbox);
 });
 
-test("keeps texture photographic and benefit visual as independent image layers", async () => {
+test("benefit purpose selects one supporting visual instead of stacking texture and benefit", async () => {
   const [option] = await buildAdLayoutCandidates({ ...input, purpose: "benefit" });
 
-  assert.equal(layer(option.layers, "texture_1")?.image, input.textureUrl);
-  assert.equal(layer(option.layers, "texture_1")?.type, "object");
   assert.equal(layer(option.layers, "benefit_1")?.image, input.benefitUrl);
   assert.equal(layer(option.layers, "benefit_1")?.type, "object");
+  assert.equal(layer(option.layers, "texture_1"), undefined);
 });
 
 test("moves hierarchy for each stated purpose instead of scaling one template", async () => {
@@ -45,4 +44,24 @@ test("moves hierarchy for each stated purpose instead of scaling one template", 
   assert.notDeepEqual(layer(product.layers, "product_1")?.bbox, layer(benefit.layers, "product_1")?.bbox);
   assert.notDeepEqual(layer(benefit.layers, "benefit_1")?.bbox, layer(scene.layers, "benefit_1")?.bbox);
   assert.ok(promo.layers.some((item) => item.id === "promo_panel"));
+});
+
+test("uses the requested named ratio when selecting a responsive template", async () => {
+  const [portrait] = await buildAdLayoutCandidates({ ...input, purpose: "product", ratio: "9:16" });
+  const [feed] = await buildAdLayoutCandidates({ ...input, purpose: "product", ratio: "4:5" });
+
+  assert.notDeepEqual(layer(portrait.layers, "product_1")?.bbox, layer(feed.layers, "product_1")?.bbox);
+});
+
+test("keeps deterministic candidates and only exposes safe fallback provenance", async () => {
+  const candidates = await buildAdLayoutCandidates({
+    ...input,
+    purpose: "product",
+    compositionAdvice: { source: "fallback", sceneGrounding: "floating", warnings: ["素材視覺判讀不可用"] },
+    assessment: { source: "fallback", warnings: ["素材視覺判讀不可用"] },
+  });
+
+  assert.equal(candidates.length, 3);
+  assert.ok(candidates.every((candidate) => candidate.layers.some((item) => item.id === "product_1")));
+  assert.deepEqual(candidates[0]?.assessment, { source: "fallback", warnings: ["素材視覺判讀不可用"] });
 });
