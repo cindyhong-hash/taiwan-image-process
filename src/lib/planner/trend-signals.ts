@@ -436,8 +436,22 @@ export function getTrendProviders(): TrendSignalProvider[] {
 
 const normLabel = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
+// 同一個品牌的訊號在「同一瞬間」被要兩次時（靈感中心把機會卡／推薦卡拆成兩個並行請求），
+// 不能各抓一次 —— RapidAPI 是有月額度的，那等於白白燒兩倍。
+// 用 in-flight promise 讓第二個請求直接等第一個的結果。
+const SIGNALS_INFLIGHT = new Map<string, Promise<TrendSignal[]>>();
+
 /** 合併所有 provider、去重（先 id 後正規化 label）、依 score 由高到低排序。單一 provider 失敗 → 略過不炸。 */
 export async function collectTrendSignals(ctx: TrendSignalContext): Promise<TrendSignal[]> {
+  const key = `${ctx.clientId}|${ctx.year}-${ctx.month}`;
+  const inflight = SIGNALS_INFLIGHT.get(key);
+  if (inflight) return inflight;
+  const run = collectTrendSignalsUncached(ctx).finally(() => SIGNALS_INFLIGHT.delete(key));
+  SIGNALS_INFLIGHT.set(key, run);
+  return run;
+}
+
+async function collectTrendSignalsUncached(ctx: TrendSignalContext): Promise<TrendSignal[]> {
   const providers = getTrendProviders();
   const results = await Promise.all(providers.map((p) => p.fetch(ctx).catch(() => [] as TrendSignal[])));
   // 每個 provider 拿到幾筆——外部來源掛掉時只會回空陣列（設計上不阻斷），

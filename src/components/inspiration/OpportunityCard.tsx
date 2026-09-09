@@ -3,7 +3,7 @@
  * 內容機會卡（第六節）。四型共用：正在升溫 / 近期值得準備 / 你可以重新利用 / 品牌內容缺口。
  * 重點順序：Type → Title → Why Now → Suggested Angle → CTA。
  */
-import { TrendingUp, CalendarClock, RefreshCw, PieChart, Sparkles, ArrowRight, Quote, Radar } from "lucide-react";
+import { TrendingUp, CalendarClock, RefreshCw, PieChart, Sparkles, ArrowRight, Quote, Radar, Loader2 } from "lucide-react";
 import { OPPORTUNITY_META, type Opportunity, type OpportunityType } from "@/lib/inspiration/types";
 
 const TYPE_ICON: Record<OpportunityType, typeof TrendingUp> = {
@@ -18,11 +18,14 @@ export function OpportunityCard({
   onUsePost,
   onOpenAngles,
   onReuse,
+  busy = false,
 }: {
   opp: Opportunity;
   onUsePost: (opp: Opportunity) => void;
   onOpenAngles: (opp: Opportunity) => void;
   onReuse: (activityId: string) => void;
+  /** 正在為某一則即時生成畫面描述；期間鎖住按鈕避免重複點。 */
+  busy?: boolean;
 }) {
   const meta = OPPORTUNITY_META[opp.type];
   const Icon = TYPE_ICON[opp.type];
@@ -79,9 +82,11 @@ export function OpportunityCard({
             <button
               type="button"
               onClick={() => onUsePost(opp)}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
+              disabled={busy}
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-60"
             >
-              <Sparkles className="h-3.5 w-3.5" /> 用這個做貼文
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {busy ? "準備中…" : "用這個做貼文"}
             </button>
           </>
         )}

@@ -46,41 +46,58 @@ export function InspirationClient({ clientId }: { clientId: string }) {
   const [query, setQuery] = useState("");
   const [activeChip, setActiveChip] = useState("熱門話題");
   const [filterTag, setFilterTag] = useState<InspirationTag | "">("");
-  const [loading, setLoading] = useState(true);
+  // 機會卡與推薦卡各自的 loading：兩段是並行請求，哪段先回就先渲染，
+  // 不要讓比較慢的推薦卡（8 則）拖住比較快的機會卡（3 則）。
+  const [loading, setLoading] = useState(true);          // 機會卡
+  const [loadingRecs, setLoadingRecs] = useState(true);  // 推薦卡
   const [result, setResult] = useState<InspirationResult | null>(null);
+  const [recs, setRecs] = useState<Recommendation[] | null>(null);
+  // 點「用這個做貼文」後要即時生成畫面描述，這段期間鎖住按鈕避免重複點。
+  const [briefing, setBriefing] = useState(false);
   const [angleOpp, setAngleOpp] = useState<Opportunity | null>(null);
   // 「再換一批」：累積已看過的標題，送進 API 的 avoid（後端會避開這些，且不吃 10 分鐘快取）。
   const seenTitlesRef = useRef<string[]>([]);
 
+  const remember = useCallback((titles: (string | undefined)[]) => {
+    seenTitlesRef.current = [...new Set([...seenTitlesRef.current, ...titles].filter(Boolean) as string[])].slice(-40);
+  }, []);
+
   const fetchInspiration = useCallback(
-    async (opts: { query?: string; filter?: InspirationTag | ""; avoid?: string[] }) => {
-      setLoading(true);
-      try {
-        const res = await fetch("/api/inspiration", {
+    (opts: { query?: string; filter?: InspirationTag | ""; avoid?: string[] }) => {
+      const payload = {
+        clientId,
+        query: opts.query ?? "",
+        filter: opts.filter || "all",
+        ...(opts.avoid?.length ? { avoid: opts.avoid } : {}),
+      };
+      const call = (part: "opportunities" | "recommendations") =>
+        fetch("/api/inspiration", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clientId,
-            query: opts.query ?? "",
-            filter: opts.filter || "all",
-            ...(opts.avoid?.length ? { avoid: opts.avoid } : {}),
-          }),
-        });
-        const data = (await res.json()) as InspirationResult;
-        setResult(data);
-        // 記住這批標題，下次「再換一批」才不會給重複的
-        seenTitlesRef.current = [...new Set([
-          ...seenTitlesRef.current,
-          ...(data.opportunities ?? []).map((o) => o.title),
-          ...(data.recommendations ?? []).map((r) => r.title),
-        ].filter(Boolean))].slice(-40);
-      } catch {
-        setResult({ opportunities: [], recommendations: [], meta: { hasBrand: false, hasProduct: false, signalCount: 0, needBrandSetup: false, needProduct: false } });
-      } finally {
-        setLoading(false);
-      }
+          body: JSON.stringify({ ...payload, part }),
+        }).then((r) => r.json() as Promise<InspirationResult>);
+
+      setLoading(true);
+      setLoadingRecs(true);
+
+      // 兩段並行、各自結束各自的 loading。機會卡（3 則）通常比推薦卡（8 則）早很多回來。
+      call("opportunities")
+        .then((data) => {
+          setResult(data);
+          remember((data.opportunities ?? []).map((o) => o.title));
+        })
+        .catch(() => setResult({ opportunities: [], recommendations: [], meta: { hasBrand: false, hasProduct: false, signalCount: 0, needBrandSetup: false, needProduct: false } }))
+        .finally(() => setLoading(false));
+
+      call("recommendations")
+        .then((data) => {
+          setRecs(data.recommendations ?? []);
+          remember((data.recommendations ?? []).map((r) => r.title));
+        })
+        .catch(() => setRecs([]))
+        .finally(() => setLoadingRecs(false));
     },
-    [clientId],
+    [clientId, remember],
   );
 
   useEffect(() => {
@@ -145,8 +162,39 @@ export function InspirationClient({ clientId }: { clientId: string }) {
     router.push(url);
   };
 
+  /**
+   * 點下去才生成畫面描述與必放文字（約 2 秒）。
+   * 這些欄位不再由 /api/inspiration 批量預先產出 —— 11 則裡使用者最多只會點一則，
+   * 先幫全部寫好等於白算 10 則，那是首屏慢的主因。
+   * 失敗就直接帶原本的 brief 進去（handoff 會退回欄位拼裝法），不擋住使用者。
+   */
+  const goWithFreshBrief = async (brief: InspirationBrief) => {
+    if (briefing) return;
+    setBriefing(true);
+    try {
+      const res = await fetch("/api/inspiration/brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          topic: brief.topic,
+          copyDirection: brief.copyDirection,
+          visualDirection: brief.visualDirection,
+          trendContext: brief.trendContext,
+          productLabel: brief.recommendedProduct?.label,
+        }),
+      });
+      if (res.ok) {
+        const d = (await res.json()) as { imagePrompt?: string; requiredText?: string };
+        goWithBrief({ ...brief, imagePrompt: d.imagePrompt, requiredText: d.requiredText });
+        return;
+      }
+    } catch { /* 落到下面的退路 */ }
+    goWithBrief(brief);
+  };
+
   const useOpportunity = (opp: Opportunity) =>
-    goWithBrief({
+    goWithFreshBrief({
       sourceType: "inspiration",
       clientId,
       topic: opp.title,
@@ -155,13 +203,11 @@ export function InspirationClient({ clientId }: { clientId: string }) {
       recommendedProduct: opp.recommendedProduct ?? null,
       copyDirection: opp.suggestedAngle,
       trendContext: opp.whyNow,
-      imagePrompt: opp.imagePrompt,
-      requiredText: opp.requiredText,
       suggestedCount: opp.suggestedCount,
     });
 
   const useRecommendation = (rec: Recommendation) =>
-    goWithBrief({
+    goWithFreshBrief({
       sourceType: "inspiration",
       clientId,
       topic: rec.title,
@@ -171,14 +217,12 @@ export function InspirationClient({ clientId }: { clientId: string }) {
       copyDirection: rec.copyDirection,
       visualDirection: rec.visualDirection,
       trendContext: rec.trendContext,
-      imagePrompt: rec.imagePrompt,
-      requiredText: rec.requiredText,
       suggestedCount: rec.suggestedCount,
     });
 
   const useAngle = (opp: Opportunity, angle: ContentAngle) => {
     setAngleOpp(null);
-    goWithBrief({
+    void goWithFreshBrief({
       sourceType: "inspiration",
       clientId,
       topic: angle.title,
@@ -218,7 +262,7 @@ export function InspirationClient({ clientId }: { clientId: string }) {
   const opportunities = [...(result?.opportunities ?? [])].sort(
     (a, b) => (OPP_ORDER[a.type] ?? 9) - (OPP_ORDER[b.type] ?? 9),
   );
-  const recommendations = result?.recommendations ?? [];
+  const recommendations = recs ?? [];
   const meta = result?.meta;
 
   return (
@@ -284,6 +328,7 @@ export function InspirationClient({ clientId }: { clientId: string }) {
                     onUsePost={useOpportunity}
                     onOpenAngles={setAngleOpp}
                     onReuse={handleReuse}
+                    busy={briefing}
                   />
                 ))}
               </div>
@@ -295,13 +340,29 @@ export function InspirationClient({ clientId }: { clientId: string }) {
             <h2 className="text-lg font-semibold text-gray-900">為你推薦的靈感</h2>
             <p className="mt-1 text-sm text-gray-500">綜合近期話題、品牌相關性與可製作性，精選適合你的內容題目。</p>
 
-            {recommendations.length > 0 ? (
+            {loadingRecs ? (
+              // 推薦卡比機會卡慢（8 則 vs 3 則），先出等高骨架佔位，版面不會跳。
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="animate-pulse overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+                    <div className="aspect-[4/3] w-full bg-gray-100" />
+                    <div className="space-y-2 p-3.5">
+                      <div className="h-4 w-3/4 rounded bg-gray-100" />
+                      <div className="h-3 w-full rounded bg-gray-100" />
+                      <div className="h-3 w-2/3 rounded bg-gray-100" />
+                      <div className="mt-3 h-8 w-full rounded-lg bg-gray-100" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : recommendations.length > 0 ? (
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {recommendations.map((rec) => (
                   <RecommendationCard
                     key={rec.id}
                     rec={rec}
                     onUsePost={useRecommendation}
+                    busy={briefing}
                   />
                 ))}
               </div>

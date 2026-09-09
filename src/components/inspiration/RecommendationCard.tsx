@@ -4,15 +4,18 @@
  * Format Suggestion + Action（✨ 用這個做貼文）。
  */
 import { useState } from "react";
-import { Sparkles, LayoutGrid, Square } from "lucide-react";
+import { Sparkles, LayoutGrid, Square, Loader2 } from "lucide-react";
 import { TAG_META, type Recommendation } from "@/lib/inspiration/types";
 
 export function RecommendationCard({
   rec,
   onUsePost,
+  busy = false,
 }: {
   rec: Recommendation;
   onUsePost: (rec: Recommendation) => void;
+  /** 正在為某一則即時生成畫面描述；期間鎖住按鈕避免重複點。 */
+  busy?: boolean;
 }) {
   const tag = TAG_META[rec.tag];
   const [imgError, setImgError] = useState(false);
@@ -59,9 +62,11 @@ export function RecommendationCard({
           <button
             type="button"
             onClick={() => onUsePost(rec)}
-            className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
+            disabled={busy}
+            className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-60"
           >
-            <Sparkles className="h-3.5 w-3.5" /> 用這個做貼文
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {busy ? "準備中…" : "用這個做貼文"}
           </button>
         </div>
       </div>

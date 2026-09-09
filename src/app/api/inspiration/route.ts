@@ -30,8 +30,8 @@ export const maxDuration = 60;
 type CacheEntry = { at: number; data: InspirationResult };
 const INSPIRATION_CACHE = new Map<string, CacheEntry>();
 const INSPIRATION_TTL_MS = 10 * 60 * 1000;
-const inspirationCacheKey = (clientId: string, month: number, filter: string, query: string) =>
-  `${clientId}|${month}|${filter || "all"}|${query.trim().toLowerCase()}`;
+const inspirationCacheKey = (clientId: string, month: number, filter: string, query: string, part: string) =>
+  `${clientId}|${month}|${filter || "all"}|${query.trim().toLowerCase()}|${part}`;
 
 type Product = { label: string; imageUrl: string };
 
@@ -139,10 +139,15 @@ export async function POST(request: Request) {
   const query = String(body.query ?? "").trim();
   const filter = typeof body.filter === "string" ? body.filter : "";
   const avoid: string[] = Array.isArray(body.avoid) ? body.avoid.map(String) : [];
+  // part：前端把「機會卡」與「推薦卡」拆成兩個並行請求，哪段先回就先渲染。
+  // 不帶 part 就兩段都產（保留給其他呼叫端 / 直接打 API 的情境）。
+  const part = body.part === "opportunities" || body.part === "recommendations" ? body.part : "all";
+  const wantOpps = part !== "recommendations";
+  const wantRecs = part !== "opportunities";
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
   const cacheMonth = new Date().getUTCMonth() + 1;
-  const cacheKey = inspirationCacheKey(clientId, cacheMonth, filter, query);
+  const cacheKey = inspirationCacheKey(clientId, cacheMonth, filter, query, part);
   if (!avoid.length) {
     const hit = INSPIRATION_CACHE.get(cacheKey);
     if (hit && Date.now() - hit.at < INSPIRATION_TTL_MS) return NextResponse.json(hit.data);
@@ -284,7 +289,7 @@ export async function POST(request: Request) {
     products.length ? `，主要產品：${products.map((p) => p.label).join("、")}` : ""
   }。`;
 
-  const prompt = `你是這個品牌的專屬社群內容策略師。根據以下資訊，判斷「這個品牌現在最值得做什麼內容」。
+  const promptBase = `你是這個品牌的專屬社群內容策略師。根據以下資訊，判斷「這個品牌現在最值得做什麼內容」。
 ${brandAnchor}
 品牌與產品事實：${JSON.stringify(plannerContext)}
 ${productLine}
@@ -301,32 +306,46 @@ ${avoid.length ? `避免重複這些（已看過）：${JSON.stringify(avoid)}` 
 - 其他：不得從品牌名猜測產品；不得杜撰未提供的產品/功能/族群；產品資訊不足時只給「品牌理念／該產業知識／該產業生活風格／互動」內容，仍要扣品牌定位。
 標題要口語、平台原生、一看想點（最多 1 個 emoji）。
 
+`;
+
+  // suggestedCount 留在批量產出裡（只有一個數字，成本可忽略，而卡片要靠它顯示「建議：N 張輪播」）。
+  // imagePrompt / requiredText 則移到點擊時才生成 —— 見 /api/inspiration/brief。
+  // 原本 11 則每則都先寫好 40–80 字畫面描述，但使用者最多只會點其中一則，
+  // 其餘 10 則全是白算的，實測讓這支 API 慢了一倍以上。
+  const countRule = `suggestedCount：這個主題適合做幾張（1–5）。單一畫面講得完就給 1；需要步驟、比較、前後對照、清單才給 3–5，不要為了多而多。`;
+
+  const oppPrompt = `${promptBase}
 只回傳 JSON 物件，格式：
 {
  "opportunities":[
-   {"type":"trend","title":"...","whyNow":"為何現在（一句）","brandFit":0到100整數,"recommendedProductLabel":"清單內的label或空字串","suggestedAngle":"一句切角","tag":"seasonal|holiday|product|knowledge|lifestyle|engagement|brand","suggestedFormat":"single|carousel","imagePrompt":"...","requiredText":"...","suggestedCount":1到5},
-   {"type":"upcoming","title":"...","whyNow":"...","brandFit":0到100,"recommendedProductLabel":"","suggestedAngle":"...","tag":"...","suggestedFormat":"...","imagePrompt":"...","requiredText":"...","suggestedCount":1到5},
-   {"type":"gap","title":"...","whyNow":"根據上面貼文主題指出缺口，例：最近偏產品介紹，建議補知識型","brandFit":0到100,"recommendedProductLabel":"","suggestedAngle":"建議的下一篇題目","tag":"knowledge","suggestedFormat":"single","gapNote":"一句缺口說明","imagePrompt":"...","requiredText":"...","suggestedCount":1到5}
- ],
- "recommendations":[
-   {"title":"具體貼文標題","description":"1-2句內容說明（要看得出和品牌/產品的關聯）","tag":"seasonal|holiday|product|knowledge|lifestyle|engagement|brand","brandRelevance":0到100整數（這則和本品牌的相關程度，跟品牌無關者請給低分）,"brandConnection":"一句說明這則如何連到本品牌的產品或定位","recommendedProductLabel":"清單內label或空","suggestedFormat":"single|carousel","copyDirection":"文案方向一句","visualDirection":"畫面方向一句","trendContext":"扣哪個趨勢/節點","imagePrompt":"...","requiredText":"...","suggestedCount":1到5}
+   {"type":"trend","title":"...","whyNow":"為何現在（一句）","brandFit":0到100整數,"recommendedProductLabel":"清單內的label或空字串","suggestedAngle":"一句切角","tag":"seasonal|holiday|product|knowledge|lifestyle|engagement|brand","suggestedFormat":"single|carousel","suggestedCount":1到5},
+   {"type":"upcoming","title":"...","whyNow":"...","brandFit":0到100,"recommendedProductLabel":"","suggestedAngle":"...","tag":"...","suggestedFormat":"...","suggestedCount":1到5},
+   {"type":"gap","title":"...","whyNow":"根據上面貼文主題指出缺口，例：最近偏產品介紹，建議補知識型","brandFit":0到100,"recommendedProductLabel":"","suggestedAngle":"建議的下一篇題目","tag":"knowledge","suggestedFormat":"single","gapNote":"一句缺口說明","suggestedCount":1到5}
  ]
 }
-opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反映和本品牌的相關度。recommendations 給 6–8 則，全部都要和本品牌高度相關（brandRelevance 盡量 ≥ 70）。
+trend、upcoming、gap 各一則（共 3 則），brandFit 反映和本品牌的相關度。
+${countRule}`;
 
-每一則都必須另外給這三個欄位（使用者會直接拿去生圖，所以要「可以直接用」，不是提示）：
-- imagePrompt：一段用日常語言寫的「畫面」描述，講清楚場景、主體、光線氛圍、構圖，40–80 字。
-  只描述看得見的東西。不要寫文案方向、不要寫行銷目的、不要用「【】」標籤、不要重複標題。
-- requiredText：建議直接印在圖上的短標語，最多 20 字。
-  這會強制文字出現在成品上，所以「沒有好句子就給空字串」——寧可留空讓使用者自己填。
-- suggestedCount：這個主題適合做幾張（1–5）。單一畫面講得完就給 1；
-  需要步驟、比較、前後對照、清單才給 3–5，不要為了多而多。`;
+  const recPrompt = `${promptBase}
+只回傳 JSON 物件，格式：
+{
+ "recommendations":[
+   {"title":"具體貼文標題","description":"1-2句內容說明（要看得出和品牌/產品的關聯）","tag":"seasonal|holiday|product|knowledge|lifestyle|engagement|brand","brandRelevance":0到100整數（這則和本品牌的相關程度，跟品牌無關者請給低分）,"brandConnection":"一句說明這則如何連到本品牌的產品或定位","recommendedProductLabel":"清單內label或空","suggestedFormat":"single|carousel","copyDirection":"文案方向一句","visualDirection":"畫面方向一句","trendContext":"扣哪個趨勢/節點","suggestedCount":1到5}
+ ]
+}
+給 6–8 則，全部都要和本品牌高度相關（brandRelevance 盡量 ≥ 70）。
+${countRule}`;
 
   mark("prompt");
-  const parsed = extractJsonObject(await chatTextOpenRouter(prompt, 3000));
+  // 兩段各自呼叫並「並行」跑：拆開後每次輸出量小很多，牆鐘時間變成兩者的最大值而非總和。
+  // 前端也會分別打這兩段，機會卡先回就先渲染，不必等推薦卡。
+  const [oppParsed, recParsed] = await Promise.all([
+    wantOpps ? chatTextOpenRouter(oppPrompt, 1200).then(extractJsonObject) : Promise.resolve(null),
+    wantRecs ? chatTextOpenRouter(recPrompt, 2000).then(extractJsonObject) : Promise.resolve(null),
+  ]);
   mark("llm:main");
-  const rawOpps = Array.isArray(parsed?.opportunities) ? (parsed!.opportunities as Record<string, unknown>[]) : [];
-  const rawRecs = Array.isArray(parsed?.recommendations) ? (parsed!.recommendations as Record<string, unknown>[]) : [];
+  const rawOpps = Array.isArray(oppParsed?.opportunities) ? (oppParsed!.opportunities as Record<string, unknown>[]) : [];
+  const rawRecs = Array.isArray(recParsed?.recommendations) ? (recParsed!.recommendations as Record<string, unknown>[]) : [];
 
   // 每張卡的資料來源（給使用者看的一句話）。刻意描述「實際拿到什麼」而非「理論上會用什麼」。
   const monthLabel = `台灣 ${now.getUTCMonth() + 1} 月季節脈絡`;
