@@ -10,6 +10,7 @@ import { RecentWorks } from "@/components/home/RecentWorks";
 import { BrandMemoryPanel } from "@/components/home/BrandMemoryPanel";
 import { AiLearnedCard } from "@/components/home/AiLearnedCard";
 import { PastActivityCard, type PastActivityItem } from "@/components/home/PastActivityCard";
+import { pickReuseOpportunities } from "@/lib/home/reuse-picker";
 import { TodayInspirationCard } from "@/components/inspiration/TodayInspirationCard";
 import { brandCompleteness } from "@/lib/brandCompleteness";
 import { buildQuickActivityPayload, classifyQuickCreate, type QuickCreateInput } from "@/lib/home/quick-create";
@@ -51,6 +52,8 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
   const router = useRouter();
   const [client, setClient] = useState<Client | null>(null);
   const [assets, setAssets] = useState<GalleryAsset[]>([]);
+  // 只為了「內容再利用機會」的產品相關性評分（判斷舊內容是否提到現在有在推的產品）。
+  const [productNames, setProductNames] = useState<string[]>([]);
   const [clientId, setClientId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [quickCreating, setQuickCreating] = useState(false);
@@ -67,6 +70,10 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setAssets(Array.isArray(data) ? data : []))
       .catch(() => setAssets([]));
+    fetch(`/api/products?clientId=${cid}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setProductNames(Array.isArray(data) ? data.map((p: { name?: string }) => p.name ?? "").filter(Boolean) : []))
+      .catch(() => setProductNames([]));
   }, []);
 
   useEffect(() => {
@@ -171,15 +178,23 @@ export default function DashboardPage({ params }: { params: Promise<{ clientId: 
     }
   };
 
-  const pastItems: PastActivityItem[] = (client.activities ?? [])
-    .filter((a) => a.status === "DONE" && a.layoutId !== "magic-layers")
-    .slice(0, 3)
-    .map((a) => ({
-      thumb: a.generatedLayouts?.find((l) => l.isSelected)?.imageUrl ?? a.generatedLayouts?.[0]?.imageUrl,
-      title: a.theme,
-      dateStr: new Date(a.createdAt).toLocaleDateString("zh-TW"),
-      onReuse: () => handleReuse(a.id),
-    }));
+  // 內容再利用機會：依「時間／季節性／產品相關性／內容缺口／主題時效／重複程度」
+  // 評分挑出最值得翻新的舊內容（規則見 src/lib/home/reuse-picker.ts）。
+  // 刻意不用「最新三篇」——那和下方「最近作品」是同一批資料，等於列兩次。
+  const reusePicks = pickReuseOpportunities(client.activities ?? [], {
+    productNames,
+  });
+  const byId = new Map((client.activities ?? []).map((a) => [a.id, a]));
+  const pastItems: PastActivityItem[] = reusePicks.map((r) => {
+    const a = byId.get(r.activity.id);
+    return {
+      thumb: a?.generatedLayouts?.find((l) => l.isSelected)?.imageUrl ?? a?.generatedLayouts?.[0]?.imageUrl,
+      title: r.activity.theme,
+      dateStr: new Date(r.activity.createdAt).toLocaleDateString("zh-TW"),
+      reason: r.reason,
+      onReuse: () => handleReuse(r.activity.id),
+    };
+  });
 
   return (
     <div className="flex gap-6">
