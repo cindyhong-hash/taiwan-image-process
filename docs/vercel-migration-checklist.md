@@ -19,20 +19,56 @@
 
 ---
 
-## 環境變數（14 個）
+## 環境變數
 
-### 🟢 直接複製舊值即可（外部服務金鑰／設定，與哪個 Vercel 無關）
-- [ ] `OPENROUTER_API_KEY` — 靈感中心／文案／產品視覺分析主力 LLM
-- [ ] `OPENROUTER_VISION_MODEL` — 視覺分析模型名（Production-only）
-- [ ] `OPENROUTER_TEXT_MODEL` — 文字模型名（Production-only）
-- [ ] `ANTHROPIC_API_KEY` — Claude
-- [ ] `OPENAI_API_KEY` — OpenAI（部分功能）
-- [ ] `FAL_KEY` — 去背／產品合成／生圖（fal.ai）
-- [ ] `HF_TOKEN` — HuggingFace 後備生圖
-- [ ] `HF_IMAGE_MODEL` — HF 模型名
-- [ ] `POLLINATIONS_TOKEN` — Pollinations 後備
-- [ ] `RAPIDAPI_KEY` — 靈感中心 Threads 趨勢來源（Production-only；沒設會自動跳過，不影響）
-- [ ] `GEN_PROVIDER` — 生成 provider 切換（inapp / n8n）
+> 以下清單由掃描程式碼（`grep process.env.*` 全掃 src/scripts/prisma）產生，非憑記憶。
+> 最後更新：2026-09-09（main a23ba30）
+
+### 🔵 必填 — 沒設就會壞
+- [ ] `OPENROUTER_API_KEY` — 所有文字與視覺 AI（靈感中心／文案／產品視覺分析）
+- [ ] `FAL_KEY` — 生圖／去背／產品套圖（fal.ai）
+- [ ] `SITE_PASSWORD` — 網站密碼閘
+
+  ⚠️ **最容易漏的一條**。production 沒設會直接回 **503「付費功能尚未完成安全設定」**
+  整站不能用（`src/lib/site-gate.ts` 的 fail-closed 設計，是故意的）。
+  上次上線就是漏了這個。
+
+### 🟢 功能性 — 沒設不會壞，但功能會靜默降級
+- [ ] `RAPIDAPI_KEY_IG2` — 靈感中心「正在升溫」的 IG 真實貼文訊號
+  （instagram-scraper-stable-api）。沒設的話機會卡自動降級成「當季主題」，
+  來源顯示「台灣 N 月季節脈絡」——功能正常但沒有真實熱度。
+- [ ] `RAPIDAPI_KEY_IG` — IG 舊來源，只在 IG2 沒設時才用到
+- [ ] `RAPIDAPI_KEY` — Threads 趨勢；**訂閱已失效、provider 已下架**，可不設
+
+### ⚪ 模型覆寫 — 全都有程式預設值，通常不用設
+只有要換模型時才設。預設值：
+
+| 變數 | 預設 |
+|---|---|
+| `OPENROUTER_TEXT_MODEL` | `openai/gpt-4o-mini` |
+| `OPENROUTER_VISION_MODEL` | `openai/gpt-5.4-nano` |
+| `OPENROUTER_IMAGE_MODEL` | `openai/gpt-5.4-image-2` |
+| `OPENROUTER_IMAGE_MODEL_FALLBACK` | `openai/gpt-5-image-mini` |
+| `FAL_FLUX2_MODEL` | `fal-ai/flux-2-pro` |
+| `FAL_FLUX2_EDIT_MODEL` | `fal-ai/flux-2-pro/edit` |
+| `FAL_RECRAFT_MODEL` | `fal-ai/recraft/v3/text-to-image` |
+| `FAL_NANO_T2I_MODEL` | `fal-ai/nano-banana` |
+| `FAL_EDIT_MODEL` | `fal-ai/nano-banana/edit` |
+| `FAL_QWEN_EDIT_MODEL` | `fal-ai/qwen-image-edit-plus` |
+| `FAL_SEEDREAM_EDIT_MODEL` | `fal-ai/bytedance/seedream/v4.5/edit` |
+| `FAL_REMBG_MODEL` | `fal-ai/birefnet` |
+| `FAL_SAM2_MODEL` | `fal-ai/sam2/image` |
+| `FAL_UPSCALE_MODEL` | `fal-ai/clarity-upscaler` |
+| `HF_IMAGE_MODEL` | `black-forest-labs/FLUX.1-schnell` |
+
+### ⚫ 目前沒在用 — 新專案可以不設
+`GEN_PROVIDER`（inapp/n8n 切換）、`N8N_WEBHOOK_URL`、`HF_TOKEN`、
+`OPENAI_API_KEY`（已改走 OpenRouter）、`POLLINATIONS_TOKEN`、
+`TREND_SIGNALS_MOCK`（開發用假訊號）、`FONTCONFIG_FILE`、
+`FORCE_VT` / `ML_MASK_PRIMARY`（Magic Layers 內部調校旗標）
+
+> 舊版本這份清單列的 `ANTHROPIC_API_KEY` 已經不用了——視覺分析改走 OpenRouter，
+> 搬過去是白設。
 
 ### 🟡 資料庫（Turso）— 看要不要換
 - [ ] `DATABASE_URL`
@@ -59,7 +95,9 @@ vercel env pull .env.old.local        # 一次拉出所有值
 vercel env add OPENROUTER_API_KEY production
 # ...其餘照做，注意 scope（Production / Preview）
 ```
-外部金鑰（OpenRouter / FAL / RapidAPI / Anthropic / OpenAI / HF / Pollinations）也可從各服務後台重新複製。
+外部金鑰（OpenRouter / fal.ai / RapidAPI）也可從各服務後台重新複製。
+
+⚠️ Vercel 加完環境變數要**重新部署一次**才會生效。
 
 ---
 
@@ -67,7 +105,7 @@ vercel env add OPENROUTER_API_KEY production
 - [ ] Git：連結 GitHub repo，production 分支＝`main`
 - [ ] Region：`hnd1`（東京）— 已寫在 `vercel.json`，自動套
 - [ ] Framework：Next.js（自動偵測）
-- [ ] 環境變數 scope 照舊：多數 Production+Preview；`RAPIDAPI_KEY` / `BLOB_READ_WRITE_TOKEN` / `DATABASE_AUTH_TOKEN` / 兩個 `OPENROUTER_*_MODEL` 為 Production-only（或全設 Production+Preview 省事）
+- [ ] 環境變數 scope：全設 Production + Preview 最省事。若要分，`BLOB_READ_WRITE_TOKEN` / `DATABASE_AUTH_TOKEN` / `SITE_PASSWORD` 至少要有 Production
 - [ ] 自訂網域（如有）重新綁定
 
 ---
@@ -84,4 +122,6 @@ vercel env add OPENROUTER_API_KEY production
 - [ ] 素材庫圖片、過往貼文圖顯示正常（Blob 沿用的話應正常）
 - [ ] 建立圖文（單圖／多圖）能生成
 - [ ] 產品套圖：建立產品 → 去背 → AI 建立商品套圖能跑（需 FAL_KEY / OPENROUTER）
-- [ ] 靈感中心：能載入推薦（需 OPENROUTER_API_KEY；Threads 需 RAPIDAPI_KEY）
+- [ ] 靈感中心：能載入推薦（需 `OPENROUTER_API_KEY`）
+- [ ] 靈感中心「正在升溫」那張卡，來源要顯示「IG 近期討論（N 個訊號）」；
+      若顯示「台灣 N 月季節脈絡」代表 `RAPIDAPI_KEY_IG2` 沒吃到（漏設或沒重新部署）
