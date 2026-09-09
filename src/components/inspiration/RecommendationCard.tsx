@@ -11,11 +11,14 @@ export function RecommendationCard({
   rec,
   onUsePost,
   busy = false,
+  disabled = false,
 }: {
   rec: Recommendation;
   onUsePost: (rec: Recommendation) => void;
-  /** 正在為某一則即時生成畫面描述；期間鎖住按鈕避免重複點。 */
+  /** 這一張正在生成畫面描述（顯示轉圈）。 */
   busy?: boolean;
+  /** 有「某一張」正在生成（其他張只鎖住，不要跟著轉）。 */
+  disabled?: boolean;
 }) {
   const tag = TAG_META[rec.tag];
   const [imgError, setImgError] = useState(false);
@@ -62,7 +65,7 @@ export function RecommendationCard({
           <button
             type="button"
             onClick={() => onUsePost(rec)}
-            disabled={busy}
+            disabled={busy || disabled}
             className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-60"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}

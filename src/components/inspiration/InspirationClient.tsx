@@ -52,8 +52,9 @@ export function InspirationClient({ clientId }: { clientId: string }) {
   const [loadingRecs, setLoadingRecs] = useState(true);  // 推薦卡
   const [result, setResult] = useState<InspirationResult | null>(null);
   const [recs, setRecs] = useState<Recommendation[] | null>(null);
-  // 點「用這個做貼文」後要即時生成畫面描述，這段期間鎖住按鈕避免重複點。
-  const [briefing, setBriefing] = useState(false);
+  // 點「用這個做貼文」後要即時生成畫面描述。記「哪一張」在準備，
+  // 不能只記一個布林值 —— 那會讓所有卡片一起轉，看不出是哪張在動。
+  const [briefingId, setBriefingId] = useState<string | null>(null);
   const [angleOpp, setAngleOpp] = useState<Opportunity | null>(null);
   // 「再換一批」：累積已看過的標題，送進 API 的 avoid（後端會避開這些，且不吃 10 分鐘快取）。
   const seenTitlesRef = useRef<string[]>([]);
@@ -168,9 +169,9 @@ export function InspirationClient({ clientId }: { clientId: string }) {
    * 先幫全部寫好等於白算 10 則，那是首屏慢的主因。
    * 失敗就直接帶原本的 brief 進去（handoff 會退回欄位拼裝法），不擋住使用者。
    */
-  const goWithFreshBrief = async (brief: InspirationBrief) => {
-    if (briefing) return;
-    setBriefing(true);
+  const goWithFreshBrief = async (cardId: string, brief: InspirationBrief) => {
+    if (briefingId) return;
+    setBriefingId(cardId);
     try {
       const res = await fetch("/api/inspiration/brief", {
         method: "POST",
@@ -194,7 +195,7 @@ export function InspirationClient({ clientId }: { clientId: string }) {
   };
 
   const useOpportunity = (opp: Opportunity) =>
-    goWithFreshBrief({
+    goWithFreshBrief(opp.id, {
       sourceType: "inspiration",
       clientId,
       topic: opp.title,
@@ -207,7 +208,7 @@ export function InspirationClient({ clientId }: { clientId: string }) {
     });
 
   const useRecommendation = (rec: Recommendation) =>
-    goWithFreshBrief({
+    goWithFreshBrief(rec.id, {
       sourceType: "inspiration",
       clientId,
       topic: rec.title,
@@ -222,7 +223,7 @@ export function InspirationClient({ clientId }: { clientId: string }) {
 
   const useAngle = (opp: Opportunity, angle: ContentAngle) => {
     setAngleOpp(null);
-    void goWithFreshBrief({
+    void goWithFreshBrief(opp.id, {
       sourceType: "inspiration",
       clientId,
       topic: angle.title,
@@ -328,7 +329,8 @@ export function InspirationClient({ clientId }: { clientId: string }) {
                     onUsePost={useOpportunity}
                     onOpenAngles={setAngleOpp}
                     onReuse={handleReuse}
-                    busy={briefing}
+                    busy={briefingId === opp.id}
+                    disabled={!!briefingId}
                   />
                 ))}
               </div>
@@ -362,7 +364,8 @@ export function InspirationClient({ clientId }: { clientId: string }) {
                     key={rec.id}
                     rec={rec}
                     onUsePost={useRecommendation}
-                    busy={briefing}
+                    busy={briefingId === rec.id}
+                    disabled={!!briefingId}
                   />
                 ))}
               </div>
