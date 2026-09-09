@@ -12,7 +12,20 @@ import {
 } from "@/components/activities/RolePickerModal";
 import type { InspirationBrief } from "./types";
 
-/** 把 brief 的各欄位組成既有表單的「畫面描述 Prompt」（imagePrompt）。 */
+/**
+ * 決定要用哪個多圖版型。id 取自 MULTI_LAYOUTS（src/types/multiLayout.ts）。
+ * 每個張數挑一個最通用的版型當預設，使用者進去還是能自己換。
+ */
+const LAYOUT_BY_COUNT: Record<number, string> = {
+  2: "carousel-2",
+  3: "three-h-top",
+  4: "four-grid",
+  5: "five-top2-bottom3",
+};
+
+/** 把 brief 的各欄位組成既有表單的「畫面描述 Prompt」（imagePrompt）。
+ *  只在 AI 沒給 imagePrompt 時才用：這個拼裝法會把文案方向／趨勢背景塞進
+ *  「畫面描述」欄位，型別其實對不上，是不得已的退路。 */
 export function composeImagePrompt(brief: InspirationBrief): string {
   const lines: string[] = [brief.topic.trim()];
   if (brief.copyDirection?.trim()) lines.push(`【文案方向】${brief.copyDirection.trim()}`);
@@ -27,7 +40,8 @@ export function composeImagePrompt(brief: InspirationBrief): string {
  * 注意：先清掉其他單張帶入 key，避免與 handoff 衝突。
  */
 export function startPostFromBrief(brief: InspirationBrief): string {
-  const imagePrompt = composeImagePrompt(brief);
+  // AI 產靈感時就寫好的畫面描述優先；沒有才退回欄位拼裝。
+  const imagePrompt = brief.imagePrompt?.trim() || composeImagePrompt(brief);
   const productImageUrls = brief.recommendedProduct?.imageUrl
     ? [brief.recommendedProduct.imageUrl]
     : [];
@@ -37,13 +51,14 @@ export function startPostFromBrief(brief: InspirationBrief): string {
     sessionStorage.removeItem(ACTIVITY_BASE_KEY);
     sessionStorage.removeItem(ACTIVITY_IMAGE_PROMPT_KEY);
     // 既有 Handoff 型別：{ clientId, imagePrompt, requiredText, imageRatio?, variantCount?, productImageUrls?, referenceImageUrls? }
-    // single 讀 imagePrompt / multi 讀成 theme；requiredText 留空（靈感不強制必放文字）。
+    // single 讀 imagePrompt / multi 讀成 theme。
+    // requiredText 會強制文字印在成品上，所以只有 AI 真的給了好句子才帶（沒把握就留空）。
     sessionStorage.setItem(
       ACTIVITY_HANDOFF_KEY,
       JSON.stringify({
         clientId: brief.clientId,
         imagePrompt,
-        requiredText: "",
+        requiredText: brief.requiredText?.trim() ?? "",
         productImageUrls,
       }),
     );
@@ -52,5 +67,8 @@ export function startPostFromBrief(brief: InspirationBrief): string {
   }
 
   const base = `/clients/${brief.clientId}/activities/new`;
-  return brief.suggestedFormat === "carousel" ? `${base}/multi?layout=carousel-2` : base;
+  // 張數優先看 AI 的建議；沒有才退回 suggestedFormat（carousel 當 2 張）。
+  const count = brief.suggestedCount ?? (brief.suggestedFormat === "carousel" ? 2 : 1);
+  const layout = LAYOUT_BY_COUNT[count];
+  return layout ? `${base}/multi?layout=${layout}` : base;
 }

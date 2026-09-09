@@ -111,6 +111,9 @@ export function InspirationClient({ clientId }: { clientId: string }) {
       recommendedProduct: opp.recommendedProduct ?? null,
       copyDirection: opp.suggestedAngle,
       trendContext: opp.whyNow,
+      imagePrompt: opp.imagePrompt,
+      requiredText: opp.requiredText,
+      suggestedCount: opp.suggestedCount,
     });
 
   const useRecommendation = (rec: Recommendation) =>
@@ -124,6 +127,9 @@ export function InspirationClient({ clientId }: { clientId: string }) {
       copyDirection: rec.copyDirection,
       visualDirection: rec.visualDirection,
       trendContext: rec.trendContext,
+      imagePrompt: rec.imagePrompt,
+      requiredText: rec.requiredText,
+      suggestedCount: rec.suggestedCount,
     });
 
   const useAngle = (opp: Opportunity, angle: ContentAngle) => {
@@ -137,6 +143,8 @@ export function InspirationClient({ clientId }: { clientId: string }) {
       recommendedProduct: opp.recommendedProduct ?? null,
       copyDirection: angle.copyDirection,
       trendContext: opp.whyNow,
+      // 換了切角，畫面就不一樣了——不沿用原機會的 imagePrompt，讓它退回拼裝法。
+      suggestedCount: opp.suggestedCount,
     });
   };
 

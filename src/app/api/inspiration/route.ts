@@ -60,6 +60,21 @@ function extractJsonObject(text: string | null): Record<string, unknown> | null 
 const cleanTag = (raw: unknown): InspirationTag =>
   INSPIRATION_TAGS.includes(String(raw) as InspirationTag) ? (String(raw) as InspirationTag) : "brand";
 const cleanFormat = (raw: unknown): "single" | "carousel" => (raw === "carousel" ? "carousel" : "single");
+/** 張數夾在 1–5（對應 MULTI_LAYOUTS 實際有的版型）；給不出合理值就不帶，讓表單用預設。 */
+const cleanCount = (raw: unknown): number | undefined => {
+  const n = Math.round(Number(raw));
+  return Number.isFinite(n) && n >= 1 && n <= 5 ? n : undefined;
+};
+/** 必放文字：限長，過長或空白就當作沒有（強制上圖的文字，寧缺勿濫）。 */
+const cleanRequiredText = (raw: unknown): string | undefined => {
+  const t = String(raw ?? "").trim();
+  return t && t.length <= 20 ? t : undefined;
+};
+/** 畫面描述：擋掉模型偷懶回標籤格式或太短的情況，退回原本的拼裝法。 */
+const cleanImagePrompt = (raw: unknown): string | undefined => {
+  const t = String(raw ?? "").trim();
+  return t.length >= 10 && !t.includes("【") ? t : undefined;
+};
 const clampFit = (raw: unknown): number | undefined => {
   const n = Number(raw);
   return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : undefined;
@@ -69,6 +84,9 @@ const clampFit = (raw: unknown): number | undefined => {
 function resolveProduct(label: unknown, products: Product[]): RecommendedProduct | null {
   const s = String(label ?? "").trim();
   if (!s) return null;
+  // 素材庫退路會拿 prompt/subject 前 20 字當 label，可能就是字面上的「產品」。
+  // 這種泛稱帶進表單只會變成「【帶入產品】產品」這種雜訊。
+  if (/^(產品|商品|product)\s*\d*$/i.test(s)) return null;
   const hit = products.find((p) => p.label.trim().toLowerCase() === s.toLowerCase());
   if (hit) return { label: hit.label, imageUrl: hit.imageUrl };
   // 沒對到真實產品：只保留名稱（不帶圖），且必須是模型從清單挑的才留，否則丟棄
@@ -273,15 +291,23 @@ ${avoid.length ? `避免重複這些（已看過）：${JSON.stringify(avoid)}` 
 只回傳 JSON 物件，格式：
 {
  "opportunities":[
-   {"type":"trend","title":"...","whyNow":"為何現在（一句）","brandFit":0到100整數,"recommendedProductLabel":"清單內的label或空字串","suggestedAngle":"一句切角","tag":"seasonal|holiday|product|knowledge|lifestyle|engagement|brand","suggestedFormat":"single|carousel"},
-   {"type":"upcoming","title":"...","whyNow":"...","brandFit":0到100,"recommendedProductLabel":"","suggestedAngle":"...","tag":"...","suggestedFormat":"..."},
-   {"type":"gap","title":"...","whyNow":"根據上面貼文主題指出缺口，例：最近偏產品介紹，建議補知識型","brandFit":0到100,"recommendedProductLabel":"","suggestedAngle":"建議的下一篇題目","tag":"knowledge","suggestedFormat":"single","gapNote":"一句缺口說明"}
+   {"type":"trend","title":"...","whyNow":"為何現在（一句）","brandFit":0到100整數,"recommendedProductLabel":"清單內的label或空字串","suggestedAngle":"一句切角","tag":"seasonal|holiday|product|knowledge|lifestyle|engagement|brand","suggestedFormat":"single|carousel","imagePrompt":"...","requiredText":"...","suggestedCount":1到5},
+   {"type":"upcoming","title":"...","whyNow":"...","brandFit":0到100,"recommendedProductLabel":"","suggestedAngle":"...","tag":"...","suggestedFormat":"...","imagePrompt":"...","requiredText":"...","suggestedCount":1到5},
+   {"type":"gap","title":"...","whyNow":"根據上面貼文主題指出缺口，例：最近偏產品介紹，建議補知識型","brandFit":0到100,"recommendedProductLabel":"","suggestedAngle":"建議的下一篇題目","tag":"knowledge","suggestedFormat":"single","gapNote":"一句缺口說明","imagePrompt":"...","requiredText":"...","suggestedCount":1到5}
  ],
  "recommendations":[
-   {"title":"具體貼文標題","description":"1-2句內容說明（要看得出和品牌/產品的關聯）","tag":"seasonal|holiday|product|knowledge|lifestyle|engagement|brand","brandRelevance":0到100整數（這則和本品牌的相關程度，跟品牌無關者請給低分）,"brandConnection":"一句說明這則如何連到本品牌的產品或定位","recommendedProductLabel":"清單內label或空","suggestedFormat":"single|carousel","copyDirection":"文案方向一句","visualDirection":"畫面方向一句","trendContext":"扣哪個趨勢/節點"}
+   {"title":"具體貼文標題","description":"1-2句內容說明（要看得出和品牌/產品的關聯）","tag":"seasonal|holiday|product|knowledge|lifestyle|engagement|brand","brandRelevance":0到100整數（這則和本品牌的相關程度，跟品牌無關者請給低分）,"brandConnection":"一句說明這則如何連到本品牌的產品或定位","recommendedProductLabel":"清單內label或空","suggestedFormat":"single|carousel","copyDirection":"文案方向一句","visualDirection":"畫面方向一句","trendContext":"扣哪個趨勢/節點","imagePrompt":"...","requiredText":"...","suggestedCount":1到5}
  ]
 }
-opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反映和本品牌的相關度。recommendations 給 6–8 則，全部都要和本品牌高度相關（brandRelevance 盡量 ≥ 70）。`;
+opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反映和本品牌的相關度。recommendations 給 6–8 則，全部都要和本品牌高度相關（brandRelevance 盡量 ≥ 70）。
+
+每一則都必須另外給這三個欄位（使用者會直接拿去生圖，所以要「可以直接用」，不是提示）：
+- imagePrompt：一段用日常語言寫的「畫面」描述，講清楚場景、主體、光線氛圍、構圖，40–80 字。
+  只描述看得見的東西。不要寫文案方向、不要寫行銷目的、不要用「【】」標籤、不要重複標題。
+- requiredText：建議直接印在圖上的短標語，最多 20 字。
+  這會強制文字出現在成品上，所以「沒有好句子就給空字串」——寧可留空讓使用者自己填。
+- suggestedCount：這個主題適合做幾張（1–5）。單一畫面講得完就給 1；
+  需要步驟、比較、前後對照、清單才給 3–5，不要為了多而多。`;
 
   const parsed = extractJsonObject(await chatTextOpenRouter(prompt, 3000));
   const rawOpps = Array.isArray(parsed?.opportunities) ? (parsed!.opportunities as Record<string, unknown>[]) : [];
@@ -316,6 +342,9 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
       suggestedFormat: cleanFormat(o.suggestedFormat),
       cta: o.type === "trend" ? "AI 怎麼切入" : o.type === "upcoming" ? "產生促銷靈感" : "查看建議題目",
       gapNote: o.gapNote ? String(o.gapNote) : undefined,
+      imagePrompt: cleanImagePrompt(o.imagePrompt),
+      requiredText: cleanRequiredText(o.requiredText),
+      suggestedCount: cleanCount(o.suggestedCount),
       sourceLabel: sourceLabelFor(o.type as Opportunity["type"]),
       // 沒有真實社群訊號時，這張卡的內容其實來自寫死的季節表——不能再叫「正在升溫」。
       typeLabel: o.type === "trend" && !liveSignals.length ? "當季主題" : undefined,
@@ -355,6 +384,9 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
         copyDirection: r.copyDirection ? String(r.copyDirection) : undefined,
         visualDirection: r.visualDirection ? String(r.visualDirection) : undefined,
         trendContext: r.trendContext ? String(r.trendContext) : undefined,
+        imagePrompt: cleanImagePrompt(r.imagePrompt),
+        requiredText: cleanRequiredText(r.requiredText),
+        suggestedCount: cleanCount(r.suggestedCount),
       };
     });
 

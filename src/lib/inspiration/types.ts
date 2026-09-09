@@ -54,6 +54,13 @@ export type Opportunity = {
   sourceLabel?: string;
   /** 覆寫徽章文字。用於誠實降級：沒有真實社群訊號時，trend 卡不該叫「正在升溫」。 */
   typeLabel?: string;
+  /** 可直接送進「畫面描述 Prompt」的日常語言描述（場景／主體／氛圍）。
+   *  刻意跟 suggestedAngle（文案方向）分開：那個欄位要的是畫面，不是文案。 */
+  imagePrompt?: string;
+  /** 建議的「必放文字」短標語。AI 沒把握就留空——塞一句不夠好的標語比空著更糟。 */
+  requiredText?: string;
+  /** 這個主題適合做幾張（1–5）。對應到 MULTI_LAYOUTS 的版型。 */
+  suggestedCount?: number;
 };
 
 /** 一則「為你推薦的靈感」卡（第七節）。 */
@@ -71,6 +78,12 @@ export type Recommendation = {
   visualDirection?: string;
   /** 趨勢／來源背景（帶入 brief）。 */
   trendContext?: string;
+  /** 可直接送進「畫面描述 Prompt」的日常語言描述。 */
+  imagePrompt?: string;
+  /** 建議的「必放文字」短標語，沒把握就留空。 */
+  requiredText?: string;
+  /** 這個主題適合做幾張（1–5）。 */
+  suggestedCount?: number;
 };
 
 /** 一個 Topic 展開的多種切角（第九節）。 */
@@ -109,6 +122,12 @@ export type InspirationBrief = {
   trendContext?: string;
   /** 若這是「再次使用」舊活動，帶原活動 id。 */
   reuseActivityId?: string;
+  /** 直接填進「畫面描述 Prompt」。缺這個才退回用其他欄位拼裝。 */
+  imagePrompt?: string;
+  /** 直接填進「必放文字」。 */
+  requiredText?: string;
+  /** 決定要導到哪個版型（1 張走單圖頁，2–5 張走多圖頁）。 */
+  suggestedCount?: number;
 };
 
 export const TAG_META: Record<InspirationTag, { label: string; color: string }> = {
