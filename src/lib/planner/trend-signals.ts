@@ -286,6 +286,109 @@ const instagramProvider: TrendSignalProvider = {
   },
 };
 
+/* ── 電商檔期行事曆 ────────────────────────────────────────────────────────────
+   為什麼要跟 TAIWAN_SEASONAL 分開：那張表只有「月份」，沒有「日期」，
+   所以系統不知道 9/9 是今天、雙 11 還有幾天。電商最在意的就是檔期倒數，
+   「還有 5 天」和「還有 60 天」該做的內容完全不同。
+   這裡用固定日期 + 距今天數算權重，越近分數越高。
+   農曆檔期（春節、中秋）逐年變動，仍交給 TAIWAN_SEASONAL 用月份處理。 */
+
+/** 固定國曆日期的檔期。[月, 日, 名稱] */
+const PROMO_FIXED: [number, number, string][] = [
+  [1, 1, "元旦跨年檔"],
+  [3, 8, "38 女王節"],
+  [5, 1, "五一連假檔"],
+  [5, 20, "520 告白日"],
+  [6, 18, "618 年中慶"],
+  [7, 7, "77 購物節"],
+  [8, 8, "88 節／父親節檔"],
+  [9, 9, "99 購物節"],
+  [10, 10, "雙十連假檔"],
+  [11, 11, "雙 11 購物節"],
+  [12, 12, "雙 12 購物節"],
+  [12, 25, "耶誕檔"],
+];
+
+/** 母親節：5 月第二個星期日。 */
+function mothersDay(year: number): Date {
+  const d = new Date(Date.UTC(year, 4, 1));
+  const firstSun = (7 - d.getUTCDay()) % 7;
+  return new Date(Date.UTC(year, 4, 1 + firstSun + 7));
+}
+
+/** 黑色星期五：11 月第四個星期四的隔天。 */
+function blackFriday(year: number): Date {
+  const d = new Date(Date.UTC(year, 10, 1));
+  const firstThu = (4 - d.getUTCDay() + 7) % 7;
+  return new Date(Date.UTC(year, 10, 1 + firstThu + 21 + 1));
+}
+
+/** 依距今天數給分：越近越該現在做。超過 45 天就先不吵。 */
+function proximityScore(days: number): number | null {
+  if (days < -3) return null;          // 已經過了 3 天以上
+  if (days <= 0) return 0.95;          // 今天（或剛開始）
+  if (days <= 7) return 0.92;
+  if (days <= 14) return 0.86;
+  if (days <= 30) return 0.76;
+  if (days <= 45) return 0.66;
+  return null;
+}
+
+const dayDiff = (from: Date, to: Date) => Math.round((to.getTime() - from.getTime()) / 86400_000);
+
+/** 檔期 provider：不需要任何 API key。只吐「45 天內」的檔期，並在 label 帶上倒數。 */
+const promoCalendarProvider: TrendSignalProvider = {
+  name: "promo",
+  async fetch() {
+    // 以台北時間的「今天」為基準（UTC+8），避免跨日時算錯一天。
+    const nowTpe = new Date(Date.now() + 8 * 3600_000);
+    const today = new Date(Date.UTC(nowTpe.getUTCFullYear(), nowTpe.getUTCMonth(), nowTpe.getUTCDate()));
+    const year = today.getUTCFullYear();
+
+    const candidates: { date: Date; name: string }[] = [];
+    // 今年與明年都放進來，跨年時（例如 12 月看 1/1）才不會漏。
+    for (const y of [year, year + 1]) {
+      for (const [m, d, name] of PROMO_FIXED) candidates.push({ date: new Date(Date.UTC(y, m - 1, d)), name });
+      candidates.push({ date: mothersDay(y), name: "母親節檔" });
+      candidates.push({ date: blackFriday(y), name: "黑色星期五" });
+    }
+
+    const out: TrendSignal[] = [];
+    for (const c of candidates) {
+      const days = dayDiff(today, c.date);
+      const score = proximityScore(days);
+      if (score == null) continue;
+      const when = days <= 0 ? "就是今天" : `還有 ${days} 天`;
+      out.push({
+        id: `promo:${c.date.toISOString().slice(0, 10)}`,
+        source: "promo",
+        kind: "event",
+        label: `${c.name}（${when}）`,
+        score,
+        meta: { date: c.date.toISOString().slice(0, 10), daysUntil: days },
+        fetchedAt: nowIso(),
+      });
+    }
+
+    // 百貨／品牌週年慶是一段期間（9/15–11/15），不是單一天。
+    const annivStart = new Date(Date.UTC(year, 8, 15));
+    const annivEnd = new Date(Date.UTC(year, 10, 15));
+    if (today >= annivStart && today <= annivEnd) {
+      out.push({
+        id: `promo:anniversary:${year}`,
+        source: "promo",
+        kind: "event",
+        label: "週年慶檔期進行中",
+        score: 0.8,
+        meta: { from: "09-15", to: "11-15" },
+        fetchedAt: nowIso(),
+      });
+    }
+
+    return out.sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 4);
+  },
+};
+
 /**
  * 台灣季節／節慶靜態資料（無外部 API）。key = 月份(1–12)，每項 {label, kind, score}。
  * 供靈感中心「季節時事 / 節日行銷」機會使用；importantDate（使用者輸入）之外的常青脈絡。
@@ -328,7 +431,7 @@ const seasonalProvider: TrendSignalProvider = {
  *  留著只會每次多打一次必失敗的請求。程式碼保留，之後重新訂閱把它加回這個陣列即可。 */
 export function getTrendProviders(): TrendSignalProvider[] {
   const hasIgKey = Boolean(process.env.RAPIDAPI_KEY_IG2 || process.env.RAPIDAPI_KEY_IG || process.env.RAPIDAPI_KEY);
-  return [importantDateProvider, seasonalProvider, mockProvider, ...(hasIgKey ? [instagramProvider] : [])];
+  return [importantDateProvider, promoCalendarProvider, seasonalProvider, mockProvider, ...(hasIgKey ? [instagramProvider] : [])];
 }
 
 const normLabel = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");

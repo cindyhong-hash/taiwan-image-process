@@ -250,11 +250,14 @@ export async function POST(request: Request) {
     : "目前沒有可用產品資料：不得杜撰任何具體產品；只給品牌／知識／生活風格／互動型內容。";
   // 訊號帶上 source，讓 trend 卡優先用真實社群訊號（instagram），而不是寫死的季節表。
   const liveSignals = signals.filter((s) => s.source === "instagram");
+  // 電商檔期（99、雙 11、黑五、週年慶…）已按距今天數排好序，最前面就是最近的。
+  const promoSignals = signals.filter((s) => s.source === "promo");
   const signalLine = signals.length
     ? `近期外部趨勢訊號（僅供參考，不得杜撰未列出的訊號）：${JSON.stringify(signals.map((s) => ({ label: s.label, kind: s.kind, score: s.score, source: s.source })))}
 - source="instagram"＝從 IG 近三個月熱門貼文萃取的「真實近期討論」；source="seasonal"＝台灣當月常青季節脈絡（不是即時熱度）；source="important-date"＝品牌自己填的重要日期。
 - type="trend"（正在升溫）這一則${liveSignals.length ? "必須選自 source=\"instagram\" 的訊號，並在 whyNow 說明它正在被討論" : "本次沒有 instagram 訊號，請改用季節脈絡，且 whyNow 不得宣稱『正在熱議／討論度上升』這類假的即時熱度"}。
-- type="upcoming"（近期值得準備）優先用 source="important-date" 或 source="seasonal" 的節點。`
+- source="promo"＝電商促銷檔期，label 已經帶了倒數（例：「99 購物節（就是今天）」「雙 11 購物節（還有 63 天）」）。
+- type="upcoming"（近期值得準備）${promoSignals.length ? `這一則必須做最近的那個檔期：「${promoSignals[0].label}」。標題與 whyNow 要明確扣住這個檔期（是促購、預熱還是最後倒數，看倒數天數決定），不要換成一般的季節保養題。` : "優先用 source=\"important-date\" 或 source=\"seasonal\" 的節點。"}`
     : "（本次沒有外部趨勢訊號）";
   const postsLine = recentPosts.length
     ? `品牌最近的貼文主題（拿來判斷內容缺口 gap；請推斷它們偏向哪些類型，找出偏少的類型）：${JSON.stringify(recentPosts.map((p) => p.theme))}`
@@ -320,6 +323,7 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
       return liveSignals.length ? `IG 近期討論（${liveSignals.length} 個訊號）` : monthLabel;
     }
     if (type === "upcoming") {
+      if (promoSignals.length) return `電商檔期：${promoSignals[0].label}`;
       return importantDates.length ? `你設定的重要日期 + ${monthLabel}` : monthLabel;
     }
     if (type === "gap") {
