@@ -8,6 +8,17 @@ function box(rect: NormalizedRect, width: number, height: number): Bbox {
   return { x: Math.round(rect.x * width), y: Math.round(rect.y * height), w: Math.round(rect.w * width), h: Math.round(rect.h * height) };
 }
 
+function fitAspectWithin(container: Bbox, aspectRatio: number | undefined): Bbox {
+  if (!aspectRatio || !Number.isFinite(aspectRatio) || aspectRatio <= 0) return container;
+  const containerAspect = container.w / container.h;
+  if (aspectRatio >= containerAspect) {
+    const height = Math.round(container.w / aspectRatio);
+    return { x: container.x, y: Math.round(container.y + (container.h - height) / 2), w: container.w, h: height };
+  }
+  const width = Math.round(container.h * aspectRatio);
+  return { x: Math.round(container.x + (container.w - width) / 2), y: container.y, w: width, h: container.h };
+}
+
 function imageLayer(
   id: string,
   name: string,
@@ -64,7 +75,7 @@ export function renderAdLayoutSpec(spec: AdLayoutDesignSpec, options: AdLayoutRe
     layers.push(imageLayer(id, label, zIndex++, spec.assets.support.imageUrl, box(template.zones.support, width, height), "object", "object", 0.82));
   }
   if (spec.assets.product && spec.productTreatment?.shadow === "soft-ellipse") {
-    const product = box(template.zones.hero, width, height);
+    const product = fitAspectWithin(box(template.zones.hero, width, height), spec.productTreatment.aspectRatio);
     const shadow: Bbox = {
       x: Math.round(product.x + product.w * 0.15), y: Math.round(product.y + product.h * 0.82),
       w: Math.round(product.w * 0.7), h: Math.max(12, Math.round(product.h * 0.10)),
@@ -72,7 +83,8 @@ export function renderAdLayoutSpec(spec: AdLayoutDesignSpec, options: AdLayoutRe
     layers.push(shapeLayer("product_shadow", "商品柔和投影", zIndex++, shadow, "#24364a", 0.16, "ellipse"));
   }
   if (spec.assets.product) {
-    layers.push(imageLayer("product_1", "商品主體", zIndex++, spec.assets.product.imageUrl, box(template.zones.hero, width, height), "product", "product"));
+    const product = fitAspectWithin(box(template.zones.hero, width, height), spec.productTreatment?.aspectRatio);
+    layers.push(imageLayer("product_1", "商品主體", zIndex++, spec.assets.product.imageUrl, product, "product", "product"));
   }
   spec.assets.decorations.forEach((decoration, index) => {
     layers.push(imageLayer(`decoration_${index + 1}`, "裝飾元素", zIndex++, decoration.imageUrl, box(template.zones.decoration, width, height), "decoration", "decoration", 0.72));

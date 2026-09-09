@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     const product = await db.product.findUnique({
       where: { id: productId },
       select: {
-        clientId: true, name: true, description: true, category: true, visualProfileJson: true, heroImageUrl: true, primaryColorOverride: true,
+        id: true, clientId: true, name: true, description: true, category: true, visualProfileJson: true, heroImageUrl: true, primaryColorOverride: true,
         assets: { where: { status: "DONE" }, select: { assetRole: true, imageUrl: true } },
       },
     });
@@ -66,6 +66,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "背景處理失敗" }, { status: 500 });
     }
 
+    let heroAspectRatio: number | undefined;
+    if (heroUrl) {
+      try {
+        const metadata = await sharp(Buffer.from(await loadBuffer(heroUrl))).metadata();
+        if (metadata.width && metadata.height) heroAspectRatio = metadata.width / metadata.height;
+      } catch {
+        // The renderer safely falls back to its template zone when metadata cannot be read.
+      }
+    }
+
     const accentColor = context.brand.primaryColor;
     const directions: AdLayoutCandidateId[] = ["product-focus", "editorial", "scene-led"];
     const textSafeTreatment = Object.fromEntries(await Promise.all(directions.map(async (direction) => {
@@ -86,7 +96,7 @@ export async function POST(request: Request) {
       title: typeof body.title === "string" ? body.title.trim() || undefined : undefined,
       subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() || undefined : undefined,
       brandColor: accentColor, textColor: "#241f47", textSafeTreatment, artDirection,
-      purpose, canvasWidth: W, canvasHeight: H,
+      purpose, heroAspectRatio, canvasWidth: W, canvasHeight: H,
     });
 
     return NextResponse.json({

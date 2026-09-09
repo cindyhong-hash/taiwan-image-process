@@ -39,3 +39,15 @@ test("renders scene support behind product and copy", () => {
   assert.ok(product.zIndex < text.zIndex);
   assert.ok(layers.every((layer) => ["background", "product", "object", "decoration", "independent_text"].includes(layer.type)));
 });
+
+test("fits the identity-critical product inside its template zone without stretching it", () => {
+  const productFocus = resolveAdLayoutDesignSpecs({ ...input, productAspectRatio: 0.35 })
+    .find((spec) => spec.direction === "product-focus");
+  assert.ok(productFocus);
+  const product = renderAdLayoutSpec(productFocus).find((layer) => layer.id === "product_1");
+
+  assert.ok(product);
+  assert.ok(Math.abs(product.width / product.height - 0.35) < 0.01);
+  assert.ok(product.width < 1024 * 0.38);
+  assert.ok(product.height <= 1280 * 0.58);
+});

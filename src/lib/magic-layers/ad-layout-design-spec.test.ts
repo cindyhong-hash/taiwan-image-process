@@ -4,6 +4,9 @@ import {
   resolveAdLayoutDesignSpecs,
   validateAndRepairDesignSpec,
 } from "./ad-layout-design-spec.ts";
+import { createCreativeBrief, selectDesignRecipe } from "./ad-layout-creative-brief.ts";
+import { analyzeDesignGaps, planRecipeAssets } from "./ad-layout-gap-analysis.ts";
+import type { AdLayoutContext } from "./ad-layout-context.ts";
 
 const input = {
   canvas: { width: 1024, height: 1280, ratio: "4:5" },
@@ -66,4 +69,28 @@ test("quality validator removes excess visuals and restores a missing hero", () 
   assert.deepEqual(repaired.assets.product, { role: "hero", imageUrl: input.assets.hero });
   assert.ok(repaired.assets.decorations.length <= 2);
   assert.ok(repaired.quality.warnings.length > 0);
+});
+
+test("retains the creative brief, selected asset rationale, and gaps that drove the layout", () => {
+  const context: AdLayoutContext = {
+    product: { id: "product", name: "產品", profile: null },
+    brand: { primaryColor: "#66aee0", tones: [], palette: [] },
+    inventory: {
+      byRole: {
+        hero: { role: "hero", imageUrl: input.assets.hero, identityCritical: true, sourceRole: "hero" },
+        background: { role: "background", imageUrl: input.assets.background, identityCritical: false, sourceRole: "background" },
+        benefit: { role: "benefit", imageUrl: input.assets.benefit, identityCritical: false, sourceRole: "benefit" },
+      },
+    },
+  };
+  const brief = createCreativeBrief(context, { purpose: "product", ratio: "4:5", title: input.typography.headline });
+  const recipe = selectDesignRecipe(brief);
+  const assetPlan = planRecipeAssets(recipe, brief.inventory);
+  const gapPlan = analyzeDesignGaps(brief, recipe, brief.inventory);
+  const [spec] = resolveAdLayoutDesignSpecs({ ...input, planning: { brief, recipe, assetPlan, gapPlan } });
+
+  assert.equal(spec.creativeBrief?.product.name, "產品");
+  assert.equal(spec.recipe?.id, "product-hero");
+  assert.equal(spec.assetPlan?.support, undefined);
+  assert.ok(spec.gapPlan?.some((gap) => gap.kind === "product-shadow"));
 });

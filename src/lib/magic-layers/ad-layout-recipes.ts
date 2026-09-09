@@ -23,6 +23,7 @@ export interface AdLayoutInput {
   textSafeTreatment?: "none" | "light-panel" | "dark-panel" | Partial<Record<AdLayoutDirection, "none" | "light-panel" | "dark-panel">>;
   purpose?: AdLayoutPurpose;
   artDirection?: string;
+  heroAspectRatio?: number;
   canvasWidth: number;
   canvasHeight: number;
 }
@@ -52,6 +53,7 @@ export function buildAdLayoutCandidates(input: AdLayoutInput): AdLayoutCandidate
     },
     purpose: input.purpose ?? "product",
     artDirection: input.artDirection,
+    productAspectRatio: input.heroAspectRatio,
     typography: {
       headline: input.title,
       subtitle: input.subtitle,

@@ -1,4 +1,6 @@
 import { templateFor } from "./ad-layout-templates.ts";
+import type { CreativeBrief, DesignRecipe } from "./ad-layout-creative-brief.ts";
+import type { AdLayoutAssetPlan, GapPlanEntry } from "./ad-layout-gap-analysis.ts";
 
 export type AdLayoutPurpose = "product" | "benefit" | "scene" | "promo";
 export type AdLayoutDirection = "product-focus" | "editorial" | "scene-led";
@@ -23,18 +25,24 @@ export interface AdLayoutDesignInput {
   purpose: AdLayoutPurpose;
   typography: AdLayoutTypographyInput;
   artDirection?: string;
+  productAspectRatio?: number;
+  planning?: { brief: CreativeBrief; recipe: DesignRecipe; assetPlan: AdLayoutAssetPlan; gapPlan: GapPlanEntry[] };
 }
 export interface AdLayoutDesignSpec {
   direction: AdLayoutDirection;
   purpose: AdLayoutPurpose;
   templateId: string;
   artDirection: string;
+  creativeBrief?: CreativeBrief;
+  recipe?: DesignRecipe;
+  assetPlan?: AdLayoutAssetPlan;
+  gapPlan?: GapPlanEntry[];
   rationale: string[];
   canvas: { width: number; height: number; ratio: string };
   assets: { background?: AssetSelection; product?: AssetSelection; support?: AssetSelection; decorations: AssetSelection[] };
   textSafeArea: { zone: TextSafeZone; treatment: TextSafeTreatment };
   typography: { headline?: string; subtitle?: string; headlineColor: string; subtitleColor: string; accentColor: string; headlineWeight: 700 | 800; subtitleWeight: 500 | 600; };
-  productTreatment?: { shadow: "none" | "soft-ellipse" };
+  productTreatment?: { shadow: "none" | "soft-ellipse"; aspectRatio?: number };
   quality: { score: number; warnings: string[] };
 }
 
@@ -51,6 +59,17 @@ function assetPlan(direction: AdLayoutDirection, purpose: AdLayoutPurpose, asset
     ? selected(purpose === "benefit" && assets.benefit ? "benefit" : "detail", purpose === "benefit" && assets.benefit ? assets.benefit : assets.detail)
     : undefined;
   return { background, product, support, decorations: decoration ? [decoration] : [] };
+}
+
+function selectionsFromPlan(plan: AdLayoutAssetPlan): AdLayoutDesignSpec["assets"] {
+  return {
+    background: plan.background ? { role: "background", imageUrl: plan.background.imageUrl } : undefined,
+    product: plan.product ? { role: "hero", imageUrl: plan.product.imageUrl } : undefined,
+    support: plan.support && (plan.support.role === "detail" || plan.support.role === "benefit")
+      ? { role: plan.support.role, imageUrl: plan.support.imageUrl }
+      : undefined,
+    decorations: plan.decorations.map((decoration) => ({ role: "decoration" as const, imageUrl: decoration.imageUrl })),
+  };
 }
 
 function rationaleFor(direction: AdLayoutDirection, assets: AdLayoutDesignSpec["assets"]): string[] {
@@ -78,7 +97,7 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
   const directions: AdLayoutDirection[] = ["product-focus", "editorial", "scene-led"];
   return directions.map((direction) => {
     const template = templateFor(direction, input.purpose, input.canvas.ratio);
-    const assets = assetPlan(direction, input.purpose, input.assets);
+    const assets = input.planning ? selectionsFromPlan(input.planning.assetPlan) : assetPlan(direction, input.purpose, input.assets);
     const treatment = typeof input.typography.treatment === "string"
       ? input.typography.treatment
       : input.typography.treatment?.[direction] ?? "none";
@@ -89,6 +108,10 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
       purpose: input.purpose,
       templateId: template.id,
       artDirection: input.artDirection ?? "以品牌調性完成乾淨、清楚的產品社群設計",
+      creativeBrief: input.planning?.brief,
+      recipe: input.planning?.recipe,
+      assetPlan: input.planning?.assetPlan,
+      gapPlan: input.planning?.gapPlan,
       rationale: rationaleFor(direction, assets),
       canvas: input.canvas,
       assets,
@@ -102,7 +125,10 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
         headlineWeight: direction === "editorial" ? 700 : 800,
         subtitleWeight: 500,
       },
-      productTreatment: assets.product ? { shadow: direction === "scene-led" ? "none" : "soft-ellipse" } : undefined,
+      productTreatment: assets.product ? {
+        shadow: direction === "scene-led" ? "none" : "soft-ellipse",
+        aspectRatio: input.productAspectRatio && Number.isFinite(input.productAspectRatio) && input.productAspectRatio > 0 ? input.productAspectRatio : undefined,
+      } : undefined,
       quality: { score: 100, warnings: [] },
     };
     return validateAndRepairDesignSpec(spec, input.assets);
