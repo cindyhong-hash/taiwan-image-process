@@ -5,6 +5,8 @@
 
 > **Composition P0 已完成（branch `feat/ai-layout-composition`，待 review / 部署）**：同一次設定會產生三個可選方向：`product-focus`（商品主視覺）、`editorial`（編輯留白感）、`scene-led`（情境氛圍感）。使用者先預覽、選一張，才把該選項的 `layers` 寫入既有 seed；seed 契約沒有改。P0 不再把素材包當必用清單：先建立 DesignSpec、限制素材數量、驗證品質，最後才 render 成可編輯圖層。
 
+> **Design Foundation P1 已完成（branch `feat/ai-design-foundation-p1`，疊在 P0 上）**：route 先將產品、品牌與新舊 asset roles 正規化成 visual-kit context，再建立 Creative Brief、Design Recipe、direction-aware asset plan 和 deterministic gap plan。商品主體與 logo 明確標為 identity-critical；hero 按原始長寬比 contain 進 template。品質檢查會驗證 hero、素材數量、direction support、文字 treatment 與比例；Modal 預覽則直接讀 renderer 產出的 layer bounds。
+
 整條產品流程：
 `產品 → AI 建立商品素材 → AI 幫我排版 → 可編輯設計稿 → 自由畫布微調 → 完成`
 
@@ -32,6 +34,9 @@
 - `src/lib/magic-layers/ad-layout-templates.ts`：6 個固定視覺階層模板；template 定義 zone，不讓模型／呼叫端直接隨機設 x/y。
 - `src/lib/magic-layers/ad-layout-renderer.ts`：將 validated spec 轉為真 `LayerData[]`。背景、商品、支援素材、裝飾、橢圓投影、文字安全底板、文字、Logo 都是可個別編輯圖層。
 - `src/lib/magic-layers/ad-layout-recipes.ts` 是 route 相容入口：只負責把 input 串到 spec + renderer。
+- `src/lib/magic-layers/ad-layout-context.ts`：唯一負責將資料庫資產 role（含 legacy alias）、品牌資料與 visual profile 正規化成 product visual-kit context。
+- `src/lib/magic-layers/ad-layout-creative-brief.ts`、`ad-layout-gap-analysis.ts`：建立目的／品牌／文案的 Creative Brief，挑選 recipe，並將缺口映射到既有可編輯 shape，而不是重新生圖。
+- `src/lib/magic-layers/ad-layout-quality.ts`：純規則檢查，render 前保護 hero、support budget、裝飾 budget、文字 treatment 和商品比例。
 - 素材規則：商品主視覺／編輯留白預設只用背景、hero、最多一個裝飾；情境版最多一個 support（`detail` 或 `benefit`）；賣點用途可選 `benefit`，但不會與 `detail` 疊用。
 
 **資料契約（沿用、別破壞）**
@@ -42,9 +47,9 @@
 
 ---
 
-## 二、下一階段（P1，不要破壞 P0）
+## 二、下一階段（P2 以上，不要破壞 P0/P1）
 
-1. **Vision art direction**：可用 OpenRouter vision 讀候選素材縮圖與過往貼文，回傳受限 JSON（template／素材角色／safe area／文案）。它不得回 raw x/y；P0 validator 必須驗證並永遠保留 deterministic fallback。
+1. **Vision art direction**：可用 OpenRouter vision 讀候選素材縮圖與過往貼文，回傳受限 JSON（template／素材角色／safe area／文案）。它不得回 raw x/y；P1 validator 必須驗證並永遠保留 deterministic fallback。
 2. **資產安全辨識**：舊 background/detail 可能仍含完整商品。P0 已靠少用素材降低風險；P1 才用 vision 判定並排除競爭商品。
 3. **更細緻的背景處理**：目前是安全底板；若要漸層面板或圖片模糊，需要先擴充 Editor 的 shape/image effect 契約，再讓 renderer 使用，不能直接 flatten 全圖。
 4. **自動文案**：使用者未填文字時，可重用既有 `POST /api/activities/creative-direction` 的方向，但仍要保留空字層／無文案的安全 fallback。

@@ -1,6 +1,7 @@
 import { templateFor } from "./ad-layout-templates.ts";
 import type { CreativeBrief, DesignRecipe } from "./ad-layout-creative-brief.ts";
-import type { AdLayoutAssetPlan, GapPlanEntry } from "./ad-layout-gap-analysis.ts";
+import { planRecipeAssets, type AdLayoutAssetPlan, type GapPlanEntry } from "./ad-layout-gap-analysis.ts";
+import { validateAdLayoutSpec, type AdLayoutQualityCheck } from "./ad-layout-quality.ts";
 
 export type AdLayoutPurpose = "product" | "benefit" | "scene" | "promo";
 export type AdLayoutDirection = "product-focus" | "editorial" | "scene-led";
@@ -43,7 +44,7 @@ export interface AdLayoutDesignSpec {
   textSafeArea: { zone: TextSafeZone; treatment: TextSafeTreatment };
   typography: { headline?: string; subtitle?: string; headlineColor: string; subtitleColor: string; accentColor: string; headlineWeight: 700 | 800; subtitleWeight: 500 | 600; };
   productTreatment?: { shadow: "none" | "soft-ellipse"; aspectRatio?: number };
-  quality: { score: number; warnings: string[] };
+  quality: { score: number; warnings: string[]; checks: AdLayoutQualityCheck[] };
 }
 
 function selected(role: AdAssetRole, imageUrl?: string): AssetSelection | undefined {
@@ -90,14 +91,20 @@ export function validateAndRepairDesignSpec(spec: AdLayoutDesignSpec, available:
     assets.product = { role: "hero", imageUrl: available.hero };
     warnings.push("已補回商品主體，維持主視覺層級");
   }
-  return { ...spec, assets, quality: { score: Math.max(0, 100 - warnings.length * 8), warnings } };
+  const repaired = { ...spec, assets };
+  const checks = validateAdLayoutSpec(repaired);
+  const failed = checks.filter((check) => !check.passed);
+  return { ...repaired, quality: { score: Math.max(0, 100 - warnings.length * 8 - failed.length * 15), warnings: [...warnings, ...failed.map((check) => check.message)], checks } };
 }
 
 export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayoutDesignSpec[] {
   const directions: AdLayoutDirection[] = ["product-focus", "editorial", "scene-led"];
   return directions.map((direction) => {
     const template = templateFor(direction, input.purpose, input.canvas.ratio);
-    const assets = input.planning ? selectionsFromPlan(input.planning.assetPlan) : assetPlan(direction, input.purpose, input.assets);
+    const directionalPlan = input.planning
+      ? planRecipeAssets(input.planning.recipe, input.planning.brief.inventory, direction)
+      : undefined;
+    const assets = directionalPlan ? selectionsFromPlan(directionalPlan) : assetPlan(direction, input.purpose, input.assets);
     const treatment = typeof input.typography.treatment === "string"
       ? input.typography.treatment
       : input.typography.treatment?.[direction] ?? "none";
@@ -110,7 +117,7 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
       artDirection: input.artDirection ?? "以品牌調性完成乾淨、清楚的產品社群設計",
       creativeBrief: input.planning?.brief,
       recipe: input.planning?.recipe,
-      assetPlan: input.planning?.assetPlan,
+      assetPlan: directionalPlan ?? input.planning?.assetPlan,
       gapPlan: input.planning?.gapPlan,
       rationale: rationaleFor(direction, assets),
       canvas: input.canvas,
@@ -129,7 +136,7 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
         shadow: direction === "scene-led" ? "none" : "soft-ellipse",
         aspectRatio: input.productAspectRatio && Number.isFinite(input.productAspectRatio) && input.productAspectRatio > 0 ? input.productAspectRatio : undefined,
       } : undefined,
-      quality: { score: 100, warnings: [] },
+      quality: { score: 100, warnings: [], checks: [] },
     };
     return validateAndRepairDesignSpec(spec, input.assets);
   });

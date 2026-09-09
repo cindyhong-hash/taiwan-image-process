@@ -94,3 +94,25 @@ test("retains the creative brief, selected asset rationale, and gaps that drove 
   assert.equal(spec.assetPlan?.support, undefined);
   assert.ok(spec.gapPlan?.some((gap) => gap.kind === "product-shadow"));
 });
+
+test("uses a direction-aware asset plan so scene-led keeps one support without cluttering hero directions", () => {
+  const context: AdLayoutContext = {
+    product: { id: "product", name: "產品", profile: null },
+    brand: { primaryColor: "#66aee0", tones: [], palette: [] },
+    inventory: {
+      byRole: {
+        hero: { role: "hero", imageUrl: input.assets.hero, identityCritical: true, sourceRole: "hero" },
+        background: { role: "background", imageUrl: input.assets.background, identityCritical: false, sourceRole: "background" },
+        detail: { role: "detail", imageUrl: input.assets.detail, identityCritical: false, sourceRole: "detail" },
+      },
+    },
+  };
+  const brief = createCreativeBrief(context, { purpose: "product", ratio: "4:5" });
+  const recipe = selectDesignRecipe(brief);
+  const assetPlan = planRecipeAssets(recipe, brief.inventory);
+  const specs = resolveAdLayoutDesignSpecs({ ...input, planning: { brief, recipe, assetPlan, gapPlan: analyzeDesignGaps(brief, recipe, brief.inventory) } });
+
+  assert.equal(specs.find((spec) => spec.direction === "product-focus")?.assets.support, undefined);
+  assert.equal(specs.find((spec) => spec.direction === "editorial")?.assets.support, undefined);
+  assert.equal(specs.find((spec) => spec.direction === "scene-led")?.assets.support?.role, "detail");
+});

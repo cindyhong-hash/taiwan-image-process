@@ -5,6 +5,8 @@ import {
 } from "./ad-layout-design-spec.ts";
 import { renderAdLayoutSpec } from "./ad-layout-renderer.ts";
 import type { LayerData } from "./types.ts";
+import type { CreativeBrief, DesignRecipe } from "./ad-layout-creative-brief.ts";
+import type { AdLayoutAssetPlan, GapPlanEntry } from "./ad-layout-gap-analysis.ts";
 
 export type { AdLayoutPurpose } from "./ad-layout-design-spec.ts";
 export type AdLayoutCandidateId = "product-focus" | "editorial" | "scene-led";
@@ -22,8 +24,10 @@ export interface AdLayoutInput {
   textColor?: string;
   textSafeTreatment?: "none" | "light-panel" | "dark-panel" | Partial<Record<AdLayoutDirection, "none" | "light-panel" | "dark-panel">>;
   purpose?: AdLayoutPurpose;
+  ratio?: "1:1" | "4:5" | "9:16" | "16:9";
   artDirection?: string;
   heroAspectRatio?: number;
+  planning?: { brief: CreativeBrief; recipe: DesignRecipe; assetPlan: AdLayoutAssetPlan; gapPlan: GapPlanEntry[] };
   canvasWidth: number;
   canvasHeight: number;
 }
@@ -43,7 +47,7 @@ const LABELS: Record<AdLayoutCandidateId, Pick<AdLayoutCandidate, "label" | "des
 
 export function buildAdLayoutCandidates(input: AdLayoutInput): AdLayoutCandidate[] {
   const specs = resolveAdLayoutDesignSpecs({
-    canvas: { width: input.canvasWidth, height: input.canvasHeight, ratio: `${input.canvasWidth}:${input.canvasHeight}` },
+    canvas: { width: input.canvasWidth, height: input.canvasHeight, ratio: input.ratio ?? `${input.canvasWidth}:${input.canvasHeight}` },
     assets: {
       background: input.backgroundUrl,
       hero: input.heroUrl,
@@ -54,6 +58,7 @@ export function buildAdLayoutCandidates(input: AdLayoutInput): AdLayoutCandidate
     purpose: input.purpose ?? "product",
     artDirection: input.artDirection,
     productAspectRatio: input.heroAspectRatio,
+    planning: input.planning,
     typography: {
       headline: input.title,
       subtitle: input.subtitle,

@@ -8,6 +8,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { buildAdLayoutCandidates, type AdLayoutCandidateId, type AdLayoutInput } from "@/lib/magic-layers/compose-layers.ts";
 import { createAdLayoutContext } from "@/lib/magic-layers/ad-layout-context.ts";
+import { createCreativeBrief, selectDesignRecipe } from "@/lib/magic-layers/ad-layout-creative-brief.ts";
+import { analyzeDesignGaps, planRecipeAssets } from "@/lib/magic-layers/ad-layout-gap-analysis.ts";
 import { prepareAdBackground, resolveTextSafeTreatment } from "@/lib/magic-layers/ad-layout-data.ts";
 import { templateFor } from "@/lib/magic-layers/ad-layout-templates.ts";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
     const benefitUrl = context.inventory.byRole.benefit?.imageUrl;
     const logoUrl = context.inventory.logo?.imageUrl;
 
-    if (!rawBg && !heroUrl) return NextResponse.json({ error: "此產品尚未有可用的情境背景或商品主體素材" }, { status: 400 });
+    if (!heroUrl) return NextResponse.json({ error: "此產品尚未有商品主體，請先完成去背商品素材再建立設計稿" }, { status: 400 });
 
     // 以 full-bleed cover 準備背景，避免 contain 產生白邊／像貼上去的照片。
     let backgroundUrl: string;
@@ -91,12 +93,21 @@ export async function POST(request: Request) {
       context.product.description || context.product.category,
       palette.length ? `色彩：${palette.join("、")}` : undefined,
     ].filter(Boolean).join("；") || `以「${product.name}」完成乾淨清楚的品牌產品設計`;
+    const brief = createCreativeBrief(context, {
+      purpose,
+      ratio,
+      title: typeof body.title === "string" ? body.title : undefined,
+      subtitle: typeof body.subtitle === "string" ? body.subtitle : undefined,
+    });
+    const recipe = selectDesignRecipe(brief);
+    const assetPlan = planRecipeAssets(recipe, brief.inventory);
+    const gapPlan = analyzeDesignGaps(brief, recipe, brief.inventory);
     const options = buildAdLayoutCandidates({
       backgroundUrl, heroUrl, decorationUrl, textureUrl, benefitUrl, logoUrl,
       title: typeof body.title === "string" ? body.title.trim() || undefined : undefined,
       subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() || undefined : undefined,
       brandColor: accentColor, textColor: "#241f47", textSafeTreatment, artDirection,
-      purpose, heroAspectRatio, canvasWidth: W, canvasHeight: H,
+      purpose, ratio, heroAspectRatio, planning: { brief, recipe, assetPlan, gapPlan }, canvasWidth: W, canvasHeight: H,
     });
 
     return NextResponse.json({

@@ -20,12 +20,17 @@ function planned(asset: AdAssetCandidate | undefined, reason: string): PlannedAs
   return asset ? { ...asset, reason } : undefined;
 }
 
-export function planRecipeAssets(recipe: DesignRecipe, inventory: AdAssetInventory): AdLayoutAssetPlan {
+export function planRecipeAssets(
+  recipe: DesignRecipe,
+  inventory: AdAssetInventory,
+  direction?: "product-focus" | "editorial" | "scene-led",
+): AdLayoutAssetPlan {
   const product = planned(inventory.byRole.hero, "保留原始去背商品，作為唯一 identity-critical 主體");
   const background = planned(inventory.byRole.background, "使用情境背景提供場景與留白");
-  const supportCandidate = recipe.supportPolicy === "one-benefit-first"
+  const supportPolicy = direction === "scene-led" && recipe.supportPolicy === "none" ? "one-detail-first" : recipe.supportPolicy;
+  const supportCandidate = supportPolicy === "one-benefit-first"
     ? inventory.byRole.benefit ?? inventory.byRole.detail
-    : recipe.supportPolicy === "one-detail-first"
+    : supportPolicy === "one-detail-first"
       ? inventory.byRole.detail ?? inventory.byRole.benefit
       : undefined;
   const support = planned(supportCandidate, supportCandidate?.role === "benefit" ? "以單一賣點視覺支援訊息" : "以單一質地細節支援情境");

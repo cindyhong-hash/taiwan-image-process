@@ -45,3 +45,10 @@ test("moves hierarchy for each stated purpose instead of scaling one template", 
   assert.notDeepEqual(layer(benefit.layers, "benefit_1")?.bbox, layer(scene.layers, "benefit_1")?.bbox);
   assert.ok(promo.layers.some((item) => item.id === "promo_panel"));
 });
+
+test("uses the requested named ratio when selecting a responsive template", async () => {
+  const [portrait] = await buildAdLayoutCandidates({ ...input, purpose: "product", ratio: "9:16" });
+  const [feed] = await buildAdLayoutCandidates({ ...input, purpose: "product", ratio: "4:5" });
+
+  assert.notDeepEqual(layer(portrait.layers, "product_1")?.bbox, layer(feed.layers, "product_1")?.bbox);
+});
