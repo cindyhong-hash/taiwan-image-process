@@ -123,6 +123,7 @@ async function deriveTrendKeywords(ctx: TrendSignalContext): Promise<string[]> {
 
 /** Threads 趨勢 provider（RapidAPI）：自動推導產品類別關鍵字 → 搜近期貼文 → LLM 萃取可做的題材。
  *  需 RAPIDAPI_KEY；沒設就不啟用。任何失敗都回空，不阻斷主題生成。 */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- 暫時下架（訂閱失效），重新訂閱後加回 getTrendProviders
 const threadsProvider: TrendSignalProvider = {
   name: "threads",
   async fetch(ctx) {
@@ -165,6 +166,95 @@ const threadsProvider: TrendSignalProvider = {
   },
 };
 
+/** IG 近期貼文文字（RapidAPI instagram-scraper-20251）。
+ *  取 hashtag 的近期熱門貼文 caption → LLM 萃取可做的角度。
+ *  key 先讀 RAPIDAPI_KEY_IG，沒有才退回 RAPIDAPI_KEY；沒 key 就不啟用。
+ *  只採「90 天內」的貼文，避免把幾年前的爆文當成近期熱度。 */
+const IG_HOST = "instagram-scraper-20251.p.rapidapi.com";
+const IG_MAX_AGE_MS = 90 * 86400_000;
+// RapidAPI 免費方案有「每月」請求上限，而靈感中心的「再換一批」會繞過結果快取。
+// 若不另外快取訊號，幾個使用者點幾下就會把整個月的額度打光。
+// IG 討論本來就是以「天」為單位變動，快取 12 小時完全夠用。
+const IG_SIGNAL_TTL_MS = 12 * 60 * 60 * 1000;
+const IG_SIGNAL_CACHE = new Map<string, { at: number; signals: TrendSignal[] }>();
+
+type IgPost = { text: string; engagement: number };
+
+/** 從 hashtagposts 回應抽出「近期」貼文的 caption + 互動數。 */
+function collectIgPosts(payload: unknown, out: IgPost[]): void {
+  const items = (payload as { data?: { items?: unknown[] } })?.data?.items;
+  if (!Array.isArray(items)) return;
+  const cutoff = Date.now() - IG_MAX_AGE_MS;
+  for (const raw of items) {
+    const it = raw as Record<string, unknown>;
+    const caption = it.caption as Record<string, unknown> | null | undefined;
+    const text = typeof caption?.text === "string" ? caption.text.trim() : "";
+    if (text.length < 8) continue;
+    const ts = Number(caption?.created_at ?? it.taken_at ?? 0);
+    if (!ts || ts * 1000 < cutoff) continue;   // 太舊：不算近期熱度
+    out.push({ text, engagement: Number(it.like_count ?? 0) + Number(it.comment_count ?? 0) * 3 });
+  }
+}
+
+const instagramProvider: TrendSignalProvider = {
+  name: "instagram",
+  async fetch(ctx) {
+    const key = process.env.RAPIDAPI_KEY_IG || process.env.RAPIDAPI_KEY;
+    if (!key) return [];
+    const keywords = await deriveTrendKeywords(ctx);
+    if (!keywords.length) return [];
+
+    const cacheKey = keywords.slice(0, 3).join("|");
+    const cached = IG_SIGNAL_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.at < IG_SIGNAL_TTL_MS) return cached.signals;
+
+    // 關鍵字並行抓（各自 15s timeout，單一失敗不影響其他）。
+    const perKeyword = await Promise.all(
+      keywords.slice(0, 3).map(async (kw) => {
+        const bucket: IgPost[] = [];
+        try {
+          const res = await fetch(`https://${IG_HOST}/hashtagposts/?keyword=${encodeURIComponent(kw)}`, {
+            headers: { "x-rapidapi-host": IG_HOST, "x-rapidapi-key": key },
+            signal: AbortSignal.timeout(15000),
+          });
+          // 429＝超出方案額度（免費方案有月上限）；403＝該 key 沒訂閱這個 API。
+          // 這類失敗一定要留下痕跡，否則就會像 Threads 那樣默默回空、半年沒人發現。
+          if (!res.ok) console.warn(`[trend-signals:instagram] "${kw}" HTTP ${res.status}`);
+          else collectIgPosts(await res.json().catch(() => null), bucket);
+        } catch (e) {
+          console.warn(`[trend-signals:instagram] "${kw}" 失敗：${e instanceof Error ? e.message : String(e)}`);
+        }
+        return bucket;
+      }),
+    );
+    // 依互動高到低取前 25 則（互動高＝真的有共鳴，比單純新更有參考價值）。
+    const seen = new Set<string>();
+    const posts = perKeyword.flat()
+      .sort((a, b) => b.engagement - a.engagement)
+      .filter((p) => { const k = p.text.slice(0, 40); if (seen.has(k)) return false; seen.add(k); return true; })
+      .slice(0, 25);
+    if (!posts.length) return [];
+    const kwLabel = keywords.join("、");
+    try {
+      const prompt = `以下是 Instagram 上「${kwLabel}」相關 hashtag 的「近三個月」熱門貼文文字。請萃取 5-8 個與「${kwLabel}」相關、適合台灣品牌社群貼文的「近期話題／角度」。只回 JSON array，每項 {"label":"繁中短語(≤16字)","score":0到1熱度}。不得杜撰與貼文無關的內容；若都不相關就回 []。\n貼文：\n${posts.map((p, i) => `${i + 1}. ${p.text.slice(0, 200)}`).join("\n")}`;
+      const out = await chatTextOpenRouter(prompt, 800);
+      const parsed = JSON.parse((out ?? "[]").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+      if (!Array.isArray(parsed)) return [];
+      const out2: TrendSignal[] = parsed.slice(0, 8).map((s: Record<string, unknown>, i: number) => ({
+        id: `instagram:${normLabel(kwLabel)}:${i}`,
+        source: "instagram",
+        kind: "keyword" as const,
+        label: String(s.label ?? "").trim(),
+        score: typeof s.score === "number" ? Math.max(0, Math.min(1, s.score)) : 0.6,
+        meta: { keywords, sampled: posts.length },
+        fetchedAt: nowIso(),
+      })).filter((s) => s.label);
+      IG_SIGNAL_CACHE.set(cacheKey, { at: Date.now(), signals: out2 });
+      return out2;
+    } catch { return []; }
+  },
+};
+
 /**
  * 台灣季節／節慶靜態資料（無外部 API）。key = 月份(1–12)，每項 {label, kind, score}。
  * 供靈感中心「季節時事 / 節日行銷」機會使用；importantDate（使用者輸入）之外的常青脈絡。
@@ -201,9 +291,13 @@ const seasonalProvider: TrendSignalProvider = {
   },
 };
 
-/** 本版啟用的 providers。Threads 只在有 RAPIDAPI_KEY 時掛上（沒設自動跳過、不影響現有）。 */
+/** 本版啟用的 providers。
+ *  IG 只在有 RAPIDAPI_KEY_IG / RAPIDAPI_KEY 時掛上（沒設自動跳過）。
+ *  threadsProvider 暫時下架：RapidAPI 的 Threads 訂閱已失效（403 not subscribed），
+ *  留著只會每次多打一次必失敗的請求。程式碼保留，之後重新訂閱把它加回這個陣列即可。 */
 export function getTrendProviders(): TrendSignalProvider[] {
-  return [importantDateProvider, seasonalProvider, mockProvider, ...(process.env.RAPIDAPI_KEY ? [threadsProvider] : [])];
+  const hasIgKey = Boolean(process.env.RAPIDAPI_KEY_IG || process.env.RAPIDAPI_KEY);
+  return [importantDateProvider, seasonalProvider, mockProvider, ...(hasIgKey ? [instagramProvider] : [])];
 }
 
 const normLabel = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
@@ -212,6 +306,9 @@ const normLabel = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 export async function collectTrendSignals(ctx: TrendSignalContext): Promise<TrendSignal[]> {
   const providers = getTrendProviders();
   const results = await Promise.all(providers.map((p) => p.fetch(ctx).catch(() => [] as TrendSignal[])));
+  // 每個 provider 拿到幾筆——外部來源掛掉時只會回空陣列（設計上不阻斷），
+  // 沒有這行就會像 Threads 那樣「靜默失敗、畫面看起來正常」而長期沒人發現。
+  console.log(`[trend-signals] ${providers.map((p, i) => `${p.name}=${results[i].length}`).join(" ")}`);
   const seenId = new Set<string>();
   const seenLabel = new Set<string>();
   const merged: TrendSignal[] = [];

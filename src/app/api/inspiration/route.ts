@@ -229,8 +229,13 @@ export async function POST(request: Request) {
   const productLine = products.length
     ? `可帶入的真實產品（只能從中挑，label 必須一字不差）：${JSON.stringify(products.map((p) => p.label))}`
     : "目前沒有可用產品資料：不得杜撰任何具體產品；只給品牌／知識／生活風格／互動型內容。";
+  // 訊號帶上 source，讓 trend 卡優先用真實社群訊號（instagram），而不是寫死的季節表。
+  const liveSignals = signals.filter((s) => s.source === "instagram");
   const signalLine = signals.length
-    ? `近期外部趨勢訊號（僅供參考，不得杜撰未列出的訊號）：${JSON.stringify(signals.map((s) => ({ label: s.label, kind: s.kind, score: s.score })))}`
+    ? `近期外部趨勢訊號（僅供參考，不得杜撰未列出的訊號）：${JSON.stringify(signals.map((s) => ({ label: s.label, kind: s.kind, score: s.score, source: s.source })))}
+- source="instagram"＝從 IG 近三個月熱門貼文萃取的「真實近期討論」；source="seasonal"＝台灣當月常青季節脈絡（不是即時熱度）；source="important-date"＝品牌自己填的重要日期。
+- type="trend"（正在升溫）這一則${liveSignals.length ? "必須選自 source=\"instagram\" 的訊號，並在 whyNow 說明它正在被討論" : "本次沒有 instagram 訊號，請改用季節脈絡，且 whyNow 不得宣稱『正在熱議／討論度上升』這類假的即時熱度"}。
+- type="upcoming"（近期值得準備）優先用 source="important-date" 或 source="seasonal" 的節點。`
     : "（本次沒有外部趨勢訊號）";
   const postsLine = recentPosts.length
     ? `品牌最近的貼文主題（拿來判斷內容缺口 gap；請推斷它們偏向哪些類型，找出偏少的類型）：${JSON.stringify(recentPosts.map((p) => p.theme))}`
