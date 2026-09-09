@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/button";
 type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; isSelected?: boolean; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null; cellImageUrls?: string };
 type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; genMode?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string }; plannerItem?: { id: string; monthlyPlanId: string; status: string } | null };
 
+// AI 月度企劃已從主流程隱藏（見 SidebarNav：保留 route/code，僅能由 URL 直達），
+// 所以「指派到企劃」這個入口也要一起收起來 —— 否則點了會開一個沒有任何企劃可選的
+// 空對話框。之後要把企劃放回主流程時，把這個改回 true 即可。
+const SHOW_ASSIGN_TO_PLAN = false;
+
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
   const router = useRouter();
   const [approving, setApproving] = useState(false);
@@ -246,8 +251,8 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
               {selectedId ? "核准並回日曆" : "選一款後核准"}
             </Button>
           )}
-          {/* B：尚未屬於任何企劃、已有成品 → 指派到月度企劃某篇 */}
-          {!activity.plannerItem && activity.generatedLayouts.length > 0 && (
+          {/* B：尚未屬於任何企劃、已有成品 → 指派到月度企劃某篇（企劃隱藏中，預設不顯示） */}
+          {SHOW_ASSIGN_TO_PLAN && !activity.plannerItem && activity.generatedLayouts.length > 0 && (
             <Button variant="outline" size="sm" onClick={openAssign} className="gap-1">
               <CalendarPlus className="h-4 w-4" />指派到企劃
             </Button>
