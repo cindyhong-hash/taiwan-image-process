@@ -78,8 +78,13 @@ function resolveProduct(label: unknown, products: Product[]): RecommendedProduct
 /** 依真實舊活動組「你可以重新利用」機會（誠實：不編互動數據）。 */
 function buildReuseOpportunity(
   activities: { id: string; theme: string; createdAt: Date; layoutId: string | null; status: string }[],
+  avoidTitles: string[] = [],
 ): Opportunity | null {
-  const done = activities.filter((a) => a.status === "DONE" && a.layoutId !== "magic-layers" && a.theme);
+  const usable = activities.filter((a) => a.status === "DONE" && a.layoutId !== "magic-layers" && a.theme);
+  // 「再換一批」時避開已看過的舊活動；若全被避開就放寬（有總比沒有好）。
+  const skip = new Set(avoidTitles);
+  const fresh = usable.filter((a) => !skip.has(a.theme));
+  const done = fresh.length ? fresh : usable;
   if (!done.length) return null;
   const now = new Date();
   const curMonth = now.getUTCMonth();
@@ -292,7 +297,7 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
       gapNote: o.gapNote ? String(o.gapNote) : undefined,
     }));
 
-  const reuse = buildReuseOpportunity(client.activities as { id: string; theme: string; createdAt: Date; layoutId: string | null; status: string }[]);
+  const reuse = buildReuseOpportunity(client.activities as { id: string; theme: string; createdAt: Date; layoutId: string | null; status: string }[], avoid);
 
   // 依 spec 順序：trend → upcoming → reuse → gap
   const order: Record<string, number> = { trend: 0, upcoming: 1, reuse: 2, gap: 3 };

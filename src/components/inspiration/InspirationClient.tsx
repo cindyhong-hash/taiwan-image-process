@@ -3,9 +3,9 @@
  * 靈感中心主體。串起：搜尋框 → /api/inspiration → 兩區（內容機會 / 為你推薦）→
  * 「用這個做貼文」寫 handoff 導去既有建立圖文流程。收藏存 localStorage。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Loader2, Lightbulb, Settings, Package, MessageCircle } from "lucide-react";
+import { RefreshCw, Loader2, Lightbulb, Settings, Package, MessageCircle } from "lucide-react";
 import {
   ACTIVITY_HANDOFF_KEY,
   ACTIVITY_REF_KEY,
@@ -46,9 +46,11 @@ export function InspirationClient({ clientId }: { clientId: string }) {
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<InspirationResult | null>(null);
   const [angleOpp, setAngleOpp] = useState<Opportunity | null>(null);
+  // 「再換一批」：累積已看過的標題，送進 API 的 avoid（後端會避開這些，且不吃 10 分鐘快取）。
+  const seenTitlesRef = useRef<string[]>([]);
 
   const fetchInspiration = useCallback(
-    async (opts: { query?: string; filter?: InspirationTag | "" }) => {
+    async (opts: { query?: string; filter?: InspirationTag | ""; avoid?: string[] }) => {
       setLoading(true);
       try {
         const res = await fetch("/api/inspiration", {
@@ -58,10 +60,17 @@ export function InspirationClient({ clientId }: { clientId: string }) {
             clientId,
             query: opts.query ?? "",
             filter: opts.filter || "all",
+            ...(opts.avoid?.length ? { avoid: opts.avoid } : {}),
           }),
         });
         const data = (await res.json()) as InspirationResult;
         setResult(data);
+        // 記住這批標題，下次「再換一批」才不會給重複的
+        seenTitlesRef.current = [...new Set([
+          ...seenTitlesRef.current,
+          ...(data.opportunities ?? []).map((o) => o.title),
+          ...(data.recommendations ?? []).map((r) => r.title),
+        ].filter(Boolean))].slice(-40);
       } catch {
         setResult({ opportunities: [], recommendations: [], meta: { hasBrand: false, hasProduct: false, signalCount: 0, needBrandSetup: false, needProduct: false } });
       } finally {
@@ -82,6 +91,9 @@ export function InspirationClient({ clientId }: { clientId: string }) {
     setFilterTag(tag);
     fetchInspiration({ query, filter: tag });
   };
+
+  // 再換一批：把已看過的標題丟進 avoid，後端會避開重複並略過快取
+  const handleShuffle = () => fetchInspiration({ query, filter: filterTag, avoid: seenTitlesRef.current });
 
   // ── 用這個做貼文：opp / rec / angle → InspirationBrief → handoff → 導去既有流程 ──
   const goWithBrief = (brief: InspirationBrief) => {
@@ -252,16 +264,14 @@ export function InspirationClient({ clientId }: { clientId: string }) {
           <div className="mt-12 flex flex-col items-center gap-3 rounded-2xl border border-violet-100 bg-violet-50/60 px-6 py-8 text-center">
             <MessageCircle className="h-6 w-6 text-violet-400" />
             <p className="text-sm font-medium text-gray-700">想要更多靈感？</p>
-            <p className="max-w-md text-xs text-gray-500">告訴 AI 你的想法、目標或想推的產品，獲得更個人化的內容建議。</p>
+            <p className="max-w-md text-xs text-gray-500">換一批不重複的建議，或在上方搜尋你想做的主題。</p>
             <button
               type="button"
-              onClick={() => {
-                const el = document.querySelector<HTMLInputElement>("input");
-                el?.focus();
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
+              onClick={handleShuffle}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-60"
             >
-              <Sparkles className="h-4 w-4" /> 和 AI 聊聊我的靈感
+              <RefreshCw className="h-4 w-4" /> 再換一批
             </button>
           </div>
         </>
