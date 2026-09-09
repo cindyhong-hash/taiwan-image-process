@@ -291,7 +291,7 @@ opportunities 給 trend、upcoming、gap 各一則（共 3 則），brandFit 反
   const monthLabel = `台灣 ${now.getUTCMonth() + 1} 月季節脈絡`;
   const sourceLabelFor = (type: Opportunity["type"]): string | undefined => {
     if (type === "trend") {
-      return liveSignals.length ? `IG 近三個月討論（${liveSignals.length} 個訊號）` : monthLabel;
+      return liveSignals.length ? `IG 近期討論（${liveSignals.length} 個訊號）` : monthLabel;
     }
     if (type === "upcoming") {
       return importantDates.length ? `你設定的重要日期 + ${monthLabel}` : monthLabel;

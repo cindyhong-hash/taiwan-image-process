@@ -101,7 +101,15 @@ const isGenericProduct = (p: string) => /^產品\s*\d*$/.test(p.trim()) || !p.tr
 
 /** 自動推導「適合社群搜尋」的產品類別關鍵字（避免用太利基的品牌名，如 舒適牌女刀 → 除毛/除毛刀）。
  *  LLM 失敗時退回描述性產品名 → 品牌名。 */
+const KEYWORD_TTL_MS = 12 * 60 * 60 * 1000;
+const KEYWORD_CACHE = new Map<string, { at: number; keywords: string[] }>();
+
 async function deriveTrendKeywords(ctx: TrendSignalContext): Promise<string[]> {
+  // 同一個品牌的搜尋關鍵字是穩定的，沒必要每次請求都問一次 LLM。
+  // 更重要的是：這步失敗會退回不同的關鍵字，導致下游訊號快取 key 跟著變、整批重抓。
+  const ck = ctx.clientId;
+  const hit = KEYWORD_CACHE.get(ck);
+  if (hit && Date.now() - hit.at < KEYWORD_TTL_MS) return hit.keywords;
   const products = (ctx.products ?? []).filter((p) => !isGenericProduct(p));
   const fallback = [products[0] || ctx.clientName].filter((k): k is string => !!k && k.trim().length > 0).map((k) => k.trim());
   const facts = [
@@ -115,8 +123,11 @@ async function deriveTrendKeywords(ctx: TrendSignalContext): Promise<string[]> {
     const out = await chatTextOpenRouter(prompt, 200);
     const parsed = JSON.parse((out ?? "[]").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
     const kws = Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string" && k.trim().length > 0).map((k) => k.trim()) : [];
-    return kws.length ? kws.slice(0, 3) : fallback;
+    const picked = kws.length ? kws.slice(0, 3) : fallback;
+    if (picked.length) KEYWORD_CACHE.set(ck, { at: Date.now(), keywords: picked });
+    return picked;
   } catch {
+    // 只快取成功結果：失敗時不要把退化的 fallback 鎖住 12 小時。
     return fallback;
   }
 }
@@ -170,7 +181,7 @@ const threadsProvider: TrendSignalProvider = {
  *  取 hashtag 的近期熱門貼文 caption → LLM 萃取可做的角度。
  *  key 先讀 RAPIDAPI_KEY_IG，沒有才退回 RAPIDAPI_KEY；沒 key 就不啟用。
  *  只採「90 天內」的貼文，避免把幾年前的爆文當成近期熱度。 */
-const IG_HOST = "instagram-scraper-20251.p.rapidapi.com";
+const IG_HOST = "instagram-scraper-stable-api.p.rapidapi.com";
 const IG_MAX_AGE_MS = 90 * 86400_000;
 // RapidAPI 免費方案有「每月」請求上限，而靈感中心的「再換一批」會繞過結果快取。
 // 若不另外快取訊號，幾個使用者點幾下就會把整個月的額度打光。
@@ -180,26 +191,35 @@ const IG_SIGNAL_CACHE = new Map<string, { at: number; signals: TrendSignal[] }>(
 
 type IgPost = { text: string; engagement: number };
 
-/** 從 hashtagposts 回應抽出「近期」貼文的 caption + 互動數。 */
+type IgEdge = { node?: Record<string, unknown> };
+
+/** 從 search_hashtag.php 回應抽出「近期」貼文的 caption + 互動數。
+ *  結構：{ posts: { edges: [{ node: { edge_media_to_caption: { edges: [{ node: { text } }] },
+ *                              taken_at_timestamp, edge_liked_by: { count }, edge_media_to_comment: { count } } }] },
+ *          top_posts: { edges: [...] } } */
 function collectIgPosts(payload: unknown, out: IgPost[]): void {
-  const items = (payload as { data?: { items?: unknown[] } })?.data?.items;
-  if (!Array.isArray(items)) return;
+  const root = payload as { posts?: { edges?: IgEdge[] }; top_posts?: { edges?: IgEdge[] } } | null;
+  if (!root) return;
+  const edges = [...(root.posts?.edges ?? []), ...(root.top_posts?.edges ?? [])];
   const cutoff = Date.now() - IG_MAX_AGE_MS;
-  for (const raw of items) {
-    const it = raw as Record<string, unknown>;
-    const caption = it.caption as Record<string, unknown> | null | undefined;
-    const text = typeof caption?.text === "string" ? caption.text.trim() : "";
+  for (const edge of edges) {
+    const n = edge?.node;
+    if (!n) continue;
+    const capEdges = (n.edge_media_to_caption as { edges?: IgEdge[] } | undefined)?.edges ?? [];
+    const text = String((capEdges[0]?.node as { text?: unknown } | undefined)?.text ?? "").trim();
     if (text.length < 8) continue;
-    const ts = Number(caption?.created_at ?? it.taken_at ?? 0);
+    const ts = Number(n.taken_at_timestamp ?? 0);
     if (!ts || ts * 1000 < cutoff) continue;   // 太舊：不算近期熱度
-    out.push({ text, engagement: Number(it.like_count ?? 0) + Number(it.comment_count ?? 0) * 3 });
+    const likes = Number((n.edge_liked_by as { count?: unknown } | undefined)?.count ?? 0);
+    const comments = Number((n.edge_media_to_comment as { count?: unknown } | undefined)?.count ?? 0);
+    out.push({ text, engagement: likes + comments * 3 });
   }
 }
 
 const instagramProvider: TrendSignalProvider = {
   name: "instagram",
   async fetch(ctx) {
-    const key = process.env.RAPIDAPI_KEY_IG || process.env.RAPIDAPI_KEY;
+    const key = process.env.RAPIDAPI_KEY_IG2 || process.env.RAPIDAPI_KEY_IG || process.env.RAPIDAPI_KEY;
     if (!key) return [];
     const keywords = await deriveTrendKeywords(ctx);
     if (!keywords.length) return [];
@@ -213,7 +233,7 @@ const instagramProvider: TrendSignalProvider = {
       keywords.slice(0, 3).map(async (kw) => {
         const bucket: IgPost[] = [];
         try {
-          const res = await fetch(`https://${IG_HOST}/hashtagposts/?keyword=${encodeURIComponent(kw)}`, {
+          const res = await fetch(`https://${IG_HOST}/search_hashtag.php?hashtag=${encodeURIComponent(kw)}`, {
             headers: { "x-rapidapi-host": IG_HOST, "x-rapidapi-key": key },
             signal: AbortSignal.timeout(15000),
           });
@@ -233,10 +253,13 @@ const instagramProvider: TrendSignalProvider = {
       .sort((a, b) => b.engagement - a.engagement)
       .filter((p) => { const k = p.text.slice(0, 40); if (seen.has(k)) return false; seen.add(k); return true; })
       .slice(0, 25);
-    if (!posts.length) return [];
+    if (!posts.length) {
+      console.warn(`[trend-signals:instagram] 「${keywords.join("、")}」沒有取得任何近期貼文`);
+      return [];
+    }
     const kwLabel = keywords.join("、");
     try {
-      const prompt = `以下是 Instagram 上「${kwLabel}」相關 hashtag 的「近三個月」熱門貼文文字。請萃取 5-8 個與「${kwLabel}」相關、適合台灣品牌社群貼文的「近期話題／角度」。只回 JSON array，每項 {"label":"繁中短語(≤16字)","score":0到1熱度}。不得杜撰與貼文無關的內容；若都不相關就回 []。\n貼文：\n${posts.map((p, i) => `${i + 1}. ${p.text.slice(0, 200)}`).join("\n")}`;
+      const prompt = `以下是 Instagram 上「${kwLabel}」相關 hashtag 的「近期」貼文文字（多為最近幾天發布）。請萃取 5-8 個與「${kwLabel}」相關、適合台灣品牌社群貼文的「近期話題／角度」。只回 JSON array，每項 {"label":"繁中短語(≤16字)","score":0到1熱度}。不得杜撰與貼文無關的內容；若都不相關就回 []。\n貼文：\n${posts.map((p, i) => `${i + 1}. ${p.text.slice(0, 200)}`).join("\n")}`;
       const out = await chatTextOpenRouter(prompt, 800);
       const parsed = JSON.parse((out ?? "[]").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
       if (!Array.isArray(parsed)) return [];
@@ -249,9 +272,17 @@ const instagramProvider: TrendSignalProvider = {
         meta: { keywords, sampled: posts.length },
         fetchedAt: nowIso(),
       })).filter((s) => s.label);
-      IG_SIGNAL_CACHE.set(cacheKey, { at: Date.now(), signals: out2 });
+      // 只快取「有結果」的，否則一次空回應會把空陣列鎖住 12 小時，
+      // 之後每次都直接回空、連日誌都不會印，等於又變回靜默失敗。
+      if (out2.length) IG_SIGNAL_CACHE.set(cacheKey, { at: Date.now(), signals: out2 });
+      else console.warn(`[trend-signals:instagram] ${posts.length} 則貼文萃取後為 0 筆訊號（不快取）`);
       return out2;
-    } catch { return []; }
+    } catch (e) {
+      // 貼文抓到了，但 LLM 萃取失敗（供應商錯誤／JSON 壞掉）。
+      // 這條路徑不記錄的話，畫面只會看到「沒有 IG 訊號」，誤以為是外部 API 掛了。
+      console.warn(`[trend-signals:instagram] ${posts.length} 則貼文萃取失敗：${e instanceof Error ? e.message : String(e)}`);
+      return [];
+    }
   },
 };
 
@@ -296,7 +327,7 @@ const seasonalProvider: TrendSignalProvider = {
  *  threadsProvider 暫時下架：RapidAPI 的 Threads 訂閱已失效（403 not subscribed），
  *  留著只會每次多打一次必失敗的請求。程式碼保留，之後重新訂閱把它加回這個陣列即可。 */
 export function getTrendProviders(): TrendSignalProvider[] {
-  const hasIgKey = Boolean(process.env.RAPIDAPI_KEY_IG || process.env.RAPIDAPI_KEY);
+  const hasIgKey = Boolean(process.env.RAPIDAPI_KEY_IG2 || process.env.RAPIDAPI_KEY_IG || process.env.RAPIDAPI_KEY);
   return [importantDateProvider, seasonalProvider, mockProvider, ...(hasIgKey ? [instagramProvider] : [])];
 }
 
