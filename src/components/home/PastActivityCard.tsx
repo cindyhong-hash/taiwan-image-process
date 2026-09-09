@@ -36,12 +36,16 @@ export function PastActivityCard({ items }: { items: PastActivityItem[] }) {
             >
               <Thumb src={it.thumb} />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-gray-800">{it.title}</div>
-                <div className="truncate text-xs text-gray-400">{it.reason ?? it.dateStr}</div>
+                {/* 標題允許兩行：這張卡在窄的右欄，單行 truncate 會變成「我的飛…」
+                    完全看不出是哪一篇。 */}
+                <div className="line-clamp-2 text-sm leading-snug text-gray-800" title={it.title}>{it.title}</div>
+                <div className="mt-0.5 flex items-center gap-1">
+                  <span className="min-w-0 flex-1 truncate text-xs text-gray-400">{it.reason ?? it.dateStr}</span>
+                  {/* 只放 icon，不放「再次使用」四個字：那顆 label 就算 hover 才顯示，
+                      版面寬度一直被它佔著，是標題被壓扁的主因。整列本來就可點。 */}
+                  <RotateCw className="h-3.5 w-3.5 shrink-0 text-gray-300 transition-colors group-hover:text-violet-600" />
+                </div>
               </div>
-              <span className="shrink-0 flex items-center gap-0.5 text-[11px] font-medium text-violet-600 opacity-0 transition-opacity group-hover:opacity-100">
-                <RotateCw className="h-3 w-3" />再次使用
-              </span>
             </button>
           ))}
         </div>
