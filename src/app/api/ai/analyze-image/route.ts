@@ -3,6 +3,9 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { contentTypeForExt } from "@/lib/storage";
 
+// LLM 呼叫可能超過 Vercel 的預設 10 秒上限（圖片分析）。
+export const maxDuration = 60;
+
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
 async function toBase64DataUrl(imageUrl: string): Promise<string> {

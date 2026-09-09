@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
+// LLM 呼叫可能超過 Vercel 的預設 10 秒上限（「給我靈感」）。
+export const maxDuration = 60;
+
 /**
  * 依品牌設定產生貼文「選題靈感」。
  * 吃 clientId → 撈品牌（名稱／語調／常放文字／禁忌／過往貼文數）做 grounding，

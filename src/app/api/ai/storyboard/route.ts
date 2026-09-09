@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { anthropic } from "@/lib/anthropic";
 
+// LLM 呼叫可能超過 Vercel 的預設 10 秒上限（多圖分鏡，實測約 15s；靈感中心帶入多圖時會自動呼叫）。
+export const maxDuration = 60;
+
 /**
  * 把一個活動核心主題，拆解成 N 格分鏡。
  * 每格回傳：description（畫面描述）+ mustText（必放文字，可空）。

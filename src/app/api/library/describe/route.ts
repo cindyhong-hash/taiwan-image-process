@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+// LLM 呼叫可能超過 Vercel 的預設 10 秒上限（素材描述）。
+export const maxDuration = 60;
+
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_MODEL = process.env.OPENROUTER_VISION_MODEL ?? "openai/gpt-5.4-nano";
 

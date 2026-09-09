@@ -3,6 +3,9 @@ import { db } from "@/lib/db";
 import { chatTextOpenRouter } from "@/lib/openrouter";
 import { parseJsonArray , parseJsonArrayAny} from "@/lib/marketing-planner";
 
+// LLM 呼叫可能超過 Vercel 的預設 10 秒上限（企劃單篇重生）。
+export const maxDuration = 60;
+
 function parse(text: string | null) { if (!text) return null; try { return JSON.parse(text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")); } catch { return null; } }
 
 export async function POST(_request: Request, { params }: { params: Promise<{ itemId: string }> }) {

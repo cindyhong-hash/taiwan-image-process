@@ -6,6 +6,9 @@ import { collectTrendSignals, filterCitedSignals, type TrendSignal } from "@/lib
 import { analyzePlannerProducts } from "@/lib/planner/analyze-products";
 import { buildPlannerContext, hasUngroundedProductClaim, hasUsableCampaignProducts, NO_PRODUCT_TOPIC_TEMPLATES } from "@/lib/planner/planner-context";
 
+// LLM 呼叫可能超過 Vercel 的預設 10 秒上限（月度企劃主題生成）。
+export const maxDuration = 60;
+
 type TopicDraft = { campaignId?: string; contentType?: string; topic?: string; contentDirection?: string; format?: string; platforms?: string[]; recommendationReason?: string; sourceSignals?: unknown };
 function extractArray(text: string | null): TopicDraft[] { if (!text) return []; try { const parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")); return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
 

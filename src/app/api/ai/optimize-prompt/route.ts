@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+// LLM 呼叫可能超過 Vercel 的預設 10 秒上限（「優化 Prompt」）。
+export const maxDuration = 60;
+
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
 export async function POST(request: Request) {

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { chatTextOpenRouter } from "@/lib/openrouter";
 
+// LLM 呼叫可能超過 Vercel 的預設 10 秒上限（文案轉換）。
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const { copyText, instruction } = await request.json();
   if (!copyText || !instruction) {
