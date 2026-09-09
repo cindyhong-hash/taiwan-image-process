@@ -1,7 +1,8 @@
-import { templateFor } from "./ad-layout-templates.ts";
+import { templateForAdvice } from "./ad-layout-templates.ts";
 import type { CreativeBrief, DesignRecipe } from "./ad-layout-creative-brief.ts";
 import { planRecipeAssets, type AdLayoutAssetPlan, type GapPlanEntry } from "./ad-layout-gap-analysis.ts";
 import { validateAdLayoutSpec, type AdLayoutQualityCheck } from "./ad-layout-quality.ts";
+import type { AdLayoutCompositionAdvice } from "./ad-layout-vision-policy.ts";
 
 export type AdLayoutPurpose = "product" | "benefit" | "scene" | "promo";
 export type AdLayoutDirection = "product-focus" | "editorial" | "scene-led";
@@ -28,6 +29,7 @@ export interface AdLayoutDesignInput {
   artDirection?: string;
   productAspectRatio?: number;
   planning?: { brief: CreativeBrief; recipe: DesignRecipe; assetPlan: AdLayoutAssetPlan; gapPlan: GapPlanEntry[] };
+  compositionAdvice?: AdLayoutCompositionAdvice;
 }
 export interface AdLayoutDesignSpec {
   direction: AdLayoutDirection;
@@ -38,6 +40,7 @@ export interface AdLayoutDesignSpec {
   recipe?: DesignRecipe;
   assetPlan?: AdLayoutAssetPlan;
   gapPlan?: GapPlanEntry[];
+  compositionAdvice?: AdLayoutCompositionAdvice;
   rationale: string[];
   canvas: { width: number; height: number; ratio: string };
   assets: { background?: AssetSelection; product?: AssetSelection; support?: AssetSelection; decorations: AssetSelection[] };
@@ -100,7 +103,7 @@ export function validateAndRepairDesignSpec(spec: AdLayoutDesignSpec, available:
 export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayoutDesignSpec[] {
   const directions: AdLayoutDirection[] = ["product-focus", "editorial", "scene-led"];
   return directions.map((direction) => {
-    const template = templateFor(direction, input.purpose, input.canvas.ratio);
+    const template = templateForAdvice(direction, input.purpose, input.canvas.ratio, input.compositionAdvice?.preferredTextSafeArea);
     const directionalPlan = input.planning
       ? planRecipeAssets(input.planning.recipe, input.planning.brief.inventory, direction)
       : undefined;
@@ -119,6 +122,7 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
       recipe: input.planning?.recipe,
       assetPlan: directionalPlan ?? input.planning?.assetPlan,
       gapPlan: input.planning?.gapPlan,
+      compositionAdvice: input.compositionAdvice,
       rationale: rationaleFor(direction, assets),
       canvas: input.canvas,
       assets,
@@ -133,10 +137,10 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
         subtitleWeight: 500,
       },
       productTreatment: assets.product ? {
-        shadow: direction === "scene-led" ? "none" : "soft-ellipse",
+        shadow: direction === "scene-led" && input.compositionAdvice?.sceneGrounding !== "surface" ? "none" : "soft-ellipse",
         aspectRatio: input.productAspectRatio && Number.isFinite(input.productAspectRatio) && input.productAspectRatio > 0 ? input.productAspectRatio : undefined,
       } : undefined,
-      quality: { score: 100, warnings: [], checks: [] },
+      quality: { score: 100, warnings: [...(input.compositionAdvice?.warnings ?? [])], checks: [] },
     };
     return validateAndRepairDesignSpec(spec, input.assets);
   });

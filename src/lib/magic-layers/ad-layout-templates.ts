@@ -72,6 +72,18 @@ export function templateFor(direction: AdLayoutDirection, purpose: AdLayoutPurpo
   return candidates[(purposeOffset[purpose] + ratioOffset) % candidates.length]!;
 }
 
+export function templateForAdvice(
+  direction: AdLayoutDirection,
+  purpose: AdLayoutPurpose,
+  ratio: string,
+  preferredTextSafeArea?: TextSafeZone,
+): AdLayoutTemplate {
+  const advised = preferredTextSafeArea
+    ? AD_LAYOUT_TEMPLATES.find((template) => template.direction === direction && template.textSafeArea === preferredTextSafeArea)
+    : undefined;
+  return advised ?? templateFor(direction, purpose, ratio);
+}
+
 export function templateById(id: string): AdLayoutTemplate {
   const template = AD_LAYOUT_TEMPLATES.find((candidate) => candidate.id === id);
   if (!template) throw new Error(`Unknown ad-layout template: ${id}`);

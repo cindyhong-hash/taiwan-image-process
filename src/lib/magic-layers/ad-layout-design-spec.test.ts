@@ -7,6 +7,7 @@ import {
 import { createCreativeBrief, selectDesignRecipe } from "./ad-layout-creative-brief.ts";
 import { analyzeDesignGaps, planRecipeAssets } from "./ad-layout-gap-analysis.ts";
 import type { AdLayoutContext } from "./ad-layout-context.ts";
+import { templateFor, templateForAdvice } from "./ad-layout-templates.ts";
 
 const input = {
   canvas: { width: 1024, height: 1280, ratio: "4:5" },
@@ -115,4 +116,27 @@ test("uses a direction-aware asset plan so scene-led keeps one support without c
   assert.equal(specs.find((spec) => spec.direction === "product-focus")?.assets.support, undefined);
   assert.equal(specs.find((spec) => spec.direction === "editorial")?.assets.support, undefined);
   assert.equal(specs.find((spec) => spec.direction === "scene-led")?.assets.support?.role, "detail");
+});
+
+test("uses a same-direction template matching trusted text-safe advice", () => {
+  assert.equal(templateForAdvice("editorial", "product", "4:5", "left-top").id, "editorial-product-bottom");
+});
+
+test("falls back to the deterministic template when advice has no compatible safe area", () => {
+  assert.deepEqual(
+    templateForAdvice("product-focus", "product", "4:5", "bottom"),
+    templateFor("product-focus", "product", "4:5"),
+  );
+});
+
+test("uses surface grounding only for a scene-led candidate with trusted advice", () => {
+  const specs = resolveAdLayoutDesignSpecs({
+    ...input,
+    compositionAdvice: { source: "vision", sceneGrounding: "surface", warnings: ["背景有可用檯面"] },
+  });
+  const scene = specs.find((spec) => spec.direction === "scene-led");
+
+  assert.equal(scene?.productTreatment?.shadow, "soft-ellipse");
+  assert.deepEqual(scene?.compositionAdvice?.warnings, ["背景有可用檯面"]);
+  assert.ok(scene?.quality.warnings.includes("背景有可用檯面"));
 });
