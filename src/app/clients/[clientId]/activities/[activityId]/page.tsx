@@ -5,14 +5,10 @@ import { LayoutPicker } from "@/components/activities/LayoutPicker";
 import { CalendarPlus, Check, Loader2, Pencil, SlidersHorizontal, ArrowLeft, X } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { SHOW_MONTHLY_PLANNER } from "@/lib/feature-flags";
 
 type GeneratedLayout = { id: string; layoutType: string; imageUrl: string; copyText: string; isSelected?: boolean; textBurnedIn?: boolean; savedToLibrary?: boolean; effectLevel?: string | null; cellImageUrls?: string };
 type Activity = { id: string; theme: string; focusPoint: string; titleText?: string | null; status: string; layoutId?: string; genMode?: string; variantCount?: number; generatedLayouts: GeneratedLayout[]; client?: { name: string }; plannerItem?: { id: string; monthlyPlanId: string; status: string } | null };
-
-// AI 月度企劃已從主流程隱藏（見 SidebarNav：保留 route/code，僅能由 URL 直達），
-// 所以「指派到企劃」這個入口也要一起收起來 —— 否則點了會開一個沒有任何企劃可選的
-// 空對話框。之後要把企劃放回主流程時，把這個改回 true 即可。
-const SHOW_ASSIGN_TO_PLAN = false;
 
 export default function ActivityPage({ params }: { params: Promise<{ clientId: string; activityId: string }> }) {
   const router = useRouter();
@@ -200,13 +196,17 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
     );
   }
 
+  // 企劃這一版不出：即使資料庫還留著舊的 plannerItem，也不要在畫面上露出任何
+  // 通往企劃／內容日曆的路（返回鍵、核准鍵都會指到使用者看不見的頁面）。
+  const plannerItem = SHOW_MONTHLY_PLANNER ? activity.plannerItem : null;
+
   return (
     <div>
       <Link
-        href={activity.plannerItem ? `/clients/${clientId}/marketing-plans/${activity.plannerItem.monthlyPlanId}/calendar` : `/clients/${clientId}`}
+        href={plannerItem ? `/clients/${clientId}/marketing-plans/${plannerItem.monthlyPlanId}/calendar` : `/clients/${clientId}`}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 border border-gray-200 bg-white rounded-lg px-3 py-1.5 hover:bg-gray-50 hover:text-gray-800 transition-colors mb-6"
       >
-        <ArrowLeft className="h-4 w-4" />{activity.plannerItem ? "返回內容日曆" : "返回活動列表"}
+        <ArrowLeft className="h-4 w-4" />{plannerItem ? "返回內容日曆" : "返回活動列表"}
       </Link>
       <div className="flex items-center justify-between mb-1">
         {editingTitle ? (
@@ -243,7 +243,7 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
             </Button>
           </Link>
           {/* Flow A ⑤：屬於月度企劃、已生成、尚未核准 → 一鍵核准並回日曆 */}
-          {activity.plannerItem && activity.status === "DONE" && activity.plannerItem.status !== "APPROVED" && (
+          {plannerItem && activity.status === "DONE" && plannerItem.status !== "APPROVED" && (
             <Button size="sm" onClick={approveAndBackToCalendar} disabled={approving || !selectedId}
               title={selectedId ? "核准選定的版型並回內容日曆" : "請先選一款版型"}
               className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">
@@ -252,7 +252,7 @@ export default function ActivityPage({ params }: { params: Promise<{ clientId: s
             </Button>
           )}
           {/* B：尚未屬於任何企劃、已有成品 → 指派到月度企劃某篇（企劃隱藏中，預設不顯示） */}
-          {SHOW_ASSIGN_TO_PLAN && !activity.plannerItem && activity.generatedLayouts.length > 0 && (
+          {SHOW_MONTHLY_PLANNER && !plannerItem && activity.generatedLayouts.length > 0 && (
             <Button variant="outline" size="sm" onClick={openAssign} className="gap-1">
               <CalendarPlus className="h-4 w-4" />指派到企劃
             </Button>
