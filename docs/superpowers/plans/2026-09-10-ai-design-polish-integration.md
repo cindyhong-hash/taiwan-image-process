@@ -34,13 +34,13 @@
 - `renderAdLayoutSpec(spec)` emits `background_base` when `spec.assets.background` is absent.
 - `hasNativeBenefitVisual(inventory)` returns true only for a retained `byRole.benefit` whose `sourceRole` is `benefit`.
 
-- [ ] Add failing gap tests for product with no background, scene with background but legacy lifestyle support, benefit with detail, benefit with legacy lifestyle, and benefit with native benefit.
-- [ ] Run `node --test --experimental-strip-types src/lib/magic-layers/ad-layout-gap-analysis.test.ts` and confirm the semantic benefit cases fail.
-- [ ] Implement the shape gap and native benefit rule while keeping the paid scene-background branch and one paid suggestion per request.
-- [ ] Add a failing renderer test asserting that no image background produces one full-canvas `background_base` layer with `type: "background"`, no image, opaque `#f8f9fc` rect shape, and z-index below the product.
-- [ ] Extend the renderer shape helper to accept background type/semantic metadata and implement the base.
-- [ ] Run gap, renderer, preview, saved-layer and compose tests; run TypeScript and focused ESLint.
-- [ ] Update the handoff and commit `fix(design): add editable background fallback`.
+- [x] Add failing gap tests for product with no background, scene with background but legacy lifestyle support, benefit with detail, benefit with legacy lifestyle, and benefit with native benefit.
+- [x] Run `node --test --experimental-strip-types src/lib/magic-layers/ad-layout-gap-analysis.test.ts` and confirm the semantic benefit cases fail.
+- [x] Implement the shape gap and native benefit rule while keeping the paid scene-background branch and one paid suggestion per request.
+- [x] Add a failing renderer test asserting that no image background produces one full-canvas `background_base` layer with `type: "background"`, no image, opaque `#f8f9fc` rect shape, and z-index below the product.
+- [x] Extend the renderer shape helper to accept background type/semantic metadata and implement the base.
+- [x] Run gap, renderer, preview, saved-layer and compose tests; run TypeScript and focused ESLint.
+- [x] Update the handoff and commit `fix(design): add editable background fallback`.
 
 ### Task 2: Bounded post-layout polish
 

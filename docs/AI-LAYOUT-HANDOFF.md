@@ -11,7 +11,7 @@
 
 > **Design Polish P2／P3（branch `codex/ai-layout-design-polish-p3`，待 review）**：新增比例感知構圖、多行可編輯文案、依實際 LayerData 繪製的候選預覽、可儲存的漸層／柔邊投影，以及使用者確認文字驅動的賣點圖示組。商品主體不變形，長文案會以可讀性限制回覆縮短提示。P3 已接入受限的 OpenRouter art-direction 決策：只接受固定 enum JSON、以單一合法值示範 schema、使用 `temperature: 0`，且僅影響既有可編輯版型能力。20 秒 deadline 或任何 provider/格式失敗都回到 P2 三候選，API 只回傳安全的 fallback reason（含 `low-confidence`），server log 不記錄模型原文。部署時需設 `AD_LAYOUT_ART_DIRECTION_ENABLED=true` 才會啟用；目前不提供過往貼文選取，避免無登入驗證的圖片網址揭露。
 
-> **P4 Gap Generation（branch `codex/ai-layout-design-polish-p3`，待 review）**：scene 缺背景、scene 缺輔助質地、benefit 缺賣點視覺時，排版結果會列出單一可選缺口。只有使用者主動按下按鈕才透過既有 paid image-set worker 建立一張 background／detail／benefit 素材；hero 與 Logo 永不由此流程重生成。完成後使用者明確重跑排版，生成素材會重新經既有 safety policy。
+> **P4 Gap Generation（branch `codex/ai-layout-design-polish-p3`，待 review）**：所有缺少背景素材的排版都先建立不透明、可編輯的 `background_base` shape，避免輸出透明畫布；只有 scene 用途仍會提示可選的付費情境背景。scene 有背景但缺輔助素材時會提示 detail，legacy lifestyle 仍可作 scene 支援。benefit 用途只有 `sourceRole: "benefit"` 的原生賣點素材能滿足語意缺口，detail／lifestyle／ingredient 只能作版型替代，不會壓掉補賣點視覺的提示。gap analysis 使用安全判讀後的 inventory，因此低信心、仍被保留的素材不會觸發付費提示。只有使用者主動按下按鈕才透過既有 paid image-set worker 建立一張 background／detail／benefit 素材；hero 與 Logo 永不由此流程重生成。完成後使用者明確重跑排版，生成素材會重新經既有 safety policy。
 
 整條產品流程：
 `產品 → AI 建立商品素材 → AI 幫我排版 → 可編輯設計稿 → 自由畫布微調 → 完成`

@@ -51,3 +51,23 @@ test("fits the identity-critical product inside its template zone without stretc
   assert.ok(product.width < 1024 * 0.38);
   assert.ok(product.height <= 1280 * 0.85);
 });
+
+test("renders an opaque editable background shape when no image background exists", () => {
+  const productFocus = resolveAdLayoutDesignSpecs({ ...input, assets: { hero: "hero" } })
+    .find((spec) => spec.direction === "product-focus");
+  assert.ok(productFocus);
+
+  const layers = renderAdLayoutSpec(productFocus);
+  const background = layers[0];
+
+  assert.equal(background.id, "background_base");
+  assert.equal(background.type, "background");
+  assert.equal(background.semanticId, "background");
+  assert.equal(background.image, null);
+  assert.deepEqual(background.bbox, { x: 0, y: 0, w: 1024, h: 1280 });
+  assert.equal(background.meta.opacity, 1);
+  assert.deepEqual(background.meta.shape, {
+    kind: "rect", fill: "#f8f9fc", stroke: "none", strokeWidth: 0, radius: 0,
+  });
+  assert.ok(background.zIndex < (layers.find((layer) => layer.id === "product_1")?.zIndex ?? -1));
+});

@@ -40,9 +40,19 @@ function imageLayer(
   };
 }
 
-function shapeLayer(id: string, name: string, zIndex: number, rect: Bbox, fill: string, opacity: number, kind: "rect" | "ellipse"): LayerData {
+function shapeLayer(
+  id: string,
+  name: string,
+  zIndex: number,
+  rect: Bbox,
+  fill: string,
+  opacity: number,
+  kind: "rect" | "ellipse",
+  type: LayerData["type"] = "object",
+  semanticId: SemanticId = "object",
+): LayerData {
   return {
-    id, name, type: "object", semanticId: "object", instanceId: id, parentId: null, bbox: rect, mask: null, image: null,
+    id, name, type, semanticId, instanceId: id, parentId: null, bbox: rect, mask: null, image: null,
     x: rect.x, y: rect.y, width: rect.w, height: rect.h, rotation: 0, zIndex, confidence: 1,
     source: "generated", editable: true, embeddedText: [], children: [],
     meta: { opacity, shape: { ...(id === "product_shadow" ? { softness: 0.9 } : {}), kind, fill, stroke: "none", strokeWidth: 0, radius: kind === "rect" ? Math.round(Math.min(rect.w, rect.h) * 0.1) : 0 } },
@@ -73,6 +83,20 @@ export function renderAdLayoutSpec(spec: AdLayoutDesignSpec, options: AdLayoutRe
 
   if (spec.assets.background) {
     layers.push(imageLayer("layer_bg", "情境背景", zIndex++, spec.assets.background.imageUrl, { x: 0, y: 0, w: width, h: height }, "background", "background"));
+  } else {
+    const background = shapeLayer(
+      "background_base",
+      "背景底色",
+      zIndex++,
+      { x: 0, y: 0, w: width, h: height },
+      "#f8f9fc",
+      1,
+      "rect",
+      "background",
+      "background",
+    );
+    background.meta.shape = { kind: "rect", fill: "#f8f9fc", stroke: "none", strokeWidth: 0, radius: 0 };
+    layers.push(background);
   }
   if (spec.assets.support) {
     const id = spec.assets.support.role === "benefit" ? "benefit_1" : "texture_1";
