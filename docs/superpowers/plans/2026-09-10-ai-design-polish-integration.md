@@ -99,17 +99,17 @@
 - Export `BENEFIT_ICON_REGISTRY` and extend `BenefitIcon` with `sun`, `clean`, `repair`, and `texture`.
 - Extend `BenefitGraphic` with `number: string | null`; number extraction accepts only text already present in the confirmed benefit.
 
-- [ ] Add failing registry tests for hydration, cushioning, blade, protection, radiance, botanical, sun/day, cleansing, repair, texture/smoothness, negation, unknown text, and supplied numeric phrases.
-- [ ] Implement ordered semantic registry matching and bounded numeric extraction without adding claims.
-- [ ] Add Canvas paths for the four new icon IDs and expose them in the editor icon picker.
-- [ ] Add failing renderer tests for editable glass badge ellipses behind matched icons, divider lines between multiple benefit cells, a separate numeric callout when present, shared group IDs, and text-only fallback.
-- [ ] Implement badge, divider, callout and group-highlight shapes with existing gradient/softness fields; keep benefit copy editable and unchanged.
-- [ ] Run graphics, editable-shape, renderer, preview, saved-layer and editor lint checks; run all Magic Layers/API tests, TypeScript and production build.
-- [ ] Update validation/handoff docs and commit `feat(design): expand semantic benefit graphics`.
+- [x] Add failing registry tests for hydration, cushioning, blade, protection, radiance, botanical, sun/day, cleansing, repair, texture/smoothness, negation, unknown text, and supplied numeric phrases.
+- [x] Implement ordered semantic registry matching and bounded numeric extraction without adding claims.
+- [x] Add Canvas paths for the four new icon IDs and expose them in the editor icon picker.
+- [x] Add failing renderer tests for editable glass badge ellipses behind matched icons, divider lines between multiple benefit cells, a separate numeric callout when present, shared group IDs, and text-only fallback.
+- [x] Implement badge, divider, callout and group-highlight shapes with existing gradient/softness fields; keep benefit copy editable and unchanged.
+- [x] Run graphics, editable-shape, renderer, preview, saved-layer and editor lint checks; run all Magic Layers/API tests, TypeScript and production build.
+- [x] Update validation/handoff docs and commit `feat(design): expand semantic benefit graphics`.
 
 ### Final verification
 
-- [ ] Run `node --test --experimental-strip-types src/lib/magic-layers/*.test.ts src/app/api/*.test.ts` and verify zero failures.
-- [ ] Run `node --test --experimental-strip-types src/lib/**/*.test.ts src/app/api/*.test.ts`; report the existing planner fixture separately if it remains the only failure.
-- [ ] Run focused ESLint for every changed TypeScript/TSX file, `npx tsc --noEmit`, `git diff --check`, and `npm run build`.
-- [ ] Confirm the worktree is clean and report all four commit hashes. Do not run P4 image generation; hand live button validation to release after the trigger matrix is visible.
+- [x] Run `node --test --experimental-strip-types src/lib/magic-layers/*.test.ts src/app/api/*.test.ts` and verify zero failures.
+- [x] Run `node --test --experimental-strip-types src/lib/**/*.test.ts src/app/api/*.test.ts`; report the existing planner fixture separately if it remains the only failure.
+- [x] Run focused ESLint for every changed TypeScript/TSX file, `npx tsc --noEmit`, `git diff --check`, and `npm run build`.
+- [x] Confirm the worktree is clean and report all four commit hashes. Do not run P4 image generation; hand live button validation to release after the trigger matrix is visible.

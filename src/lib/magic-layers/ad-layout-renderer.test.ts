@@ -128,3 +128,31 @@ test("renders an opaque editable background shape when no image background exist
   });
   assert.ok(background.zIndex < (layers.find((layer) => layer.id === "product_1")?.zIndex ?? -1));
 });
+
+test("renders semantic benefit graphics as editable grouped badges, dividers and numeric callouts", () => {
+  const benefitSpec = resolveAdLayoutDesignSpecs({
+    ...input,
+    purpose: "benefit",
+    benefits: [
+      { id: "hydration", text: "24小時長效保濕" },
+      { id: "repair", text: "夜間修護" },
+      { id: "unknown", text: "優雅設計" },
+    ],
+  })[0];
+  const layers = renderAdLayoutSpec(benefitSpec);
+
+  const hydrationGroup = layers.filter((layer) => layer.meta.groupId === "benefit_group_hydration");
+  assert.ok(hydrationGroup.some((layer) => layer.id === "benefit_badge_hydration" && layer.image === null && layer.editable));
+  assert.ok(hydrationGroup.some((layer) => layer.id === "graphic_hydration" && (layer.meta.shape as { icon?: string }).icon === "water-drop"));
+  assert.equal((hydrationGroup.find((layer) => layer.id === "benefit_number_hydration")?.meta.style as { text?: string }).text, "24小時");
+  assert.equal((hydrationGroup.find((layer) => layer.id === "benefit_text_hydration")?.meta.style as { text?: string }).text, "24小時長效保濕");
+
+  const repairIcon = layers.find((layer) => layer.id === "graphic_repair");
+  assert.equal((repairIcon?.meta.shape as { icon?: string }).icon, "repair");
+  assert.equal(layers.some((layer) => layer.id === "benefit_badge_unknown" || layer.id === "graphic_unknown"), false);
+  assert.ok(layers.some((layer) => layer.id === "benefit_text_unknown"));
+
+  const dividers = layers.filter((layer) => layer.id.startsWith("benefit_divider_"));
+  assert.equal(dividers.length, 2);
+  assert.ok(dividers.every((layer) => layer.editable && layer.image === null && (layer.meta.shape as { kind?: string }).kind === "line"));
+});

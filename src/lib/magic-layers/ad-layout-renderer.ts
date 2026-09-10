@@ -200,20 +200,90 @@ export function renderAdLayoutSpec(spec: AdLayoutDesignSpec, options: AdLayoutRe
     layers.push(textLayer("text_sub", zIndex++, spec.typography.subtitle, subtitleRect, subtitleColor, spec.typography.subtitleWeight, align, layout?.subtitleSize));
   }
   if (spec.benefits?.length) {
-    const n = spec.benefits.length, cellW = width * 0.86 / n, unit = Math.min(width,height);
-    spec.benefits.forEach((benefit,i) => {
-      const x = width*0.07+i*cellW, y=height*0.77, icon=matchBenefitGraphic(benefit).icon;
-      const groupId=`benefit_group_${benefit.id}`;
-      if(icon) {
-        const size=Math.round(unit*0.045), rect={x:Math.round(x),y:Math.round(y),w:size,h:size};
-        const graphic=shapeLayer(`graphic_${benefit.id}`,"賣點圖示",zIndex++,rect,spec.typography.accentColor,1,"rect");
-        graphic.meta.shape={kind:"icon",icon,fill:spec.typography.accentColor,stroke:"none",strokeWidth:0};graphic.meta.groupId=groupId;layers.push(graphic);
+    const n = spec.benefits.length;
+    const cellW = width * 0.86 / n;
+    const unit = Math.min(width, height);
+    spec.benefits.forEach((benefit, index) => {
+      const x = width * 0.07 + index * cellW;
+      const y = height * 0.77;
+      const match = matchBenefitGraphic(benefit);
+      const groupId = `benefit_group_${benefit.id}`;
+      if (index > 0) {
+        const length = Math.round(height * 0.105);
+        const divider = shapeLayer(
+          `benefit_divider_${index}`,
+          "賣點分隔線",
+          zIndex++,
+          { x: Math.round(x - length / 2), y: Math.round(y + unit * 0.02), w: length, h: 1 },
+          "none",
+          0.32,
+          "rect",
+        );
+        divider.rotation = 90;
+        divider.meta.shape = { kind: "line", fill: "none", stroke: spec.typography.accentColor, strokeWidth: 1 };
+        divider.meta.groupId = groupId;
+        layers.push(divider);
       }
-      const rect={x:Math.round(x),y:Math.round(y+unit*0.055),w:Math.floor(cellW-unit*0.02),h:Math.floor(height*0.075)};
-      const fitted=fitText(benefit.text,rect.w,rect.h,unit*0.018,unit*0.024);
-      if(!fitted.fits)throw new CopyTooLongError();
-      const label=textLayer("text_sub",zIndex++,benefit.text,rect,spec.typography.subtitleColor,500,"left",fitted.fontSize);
-      label.id=`benefit_text_${benefit.id}`;label.instanceId=label.id;label.meta.groupId=groupId;layers.push(label);
+      if (match.icon) {
+        const size = Math.round(unit * 0.045);
+        const badgeSize = Math.round(size * 1.45);
+        const badge = shapeLayer(
+          `benefit_badge_${benefit.id}`,
+          "賣點玻璃徽章",
+          zIndex++,
+          { x: Math.round(x - (badgeSize - size) / 2), y: Math.round(y - (badgeSize - size) / 2), w: badgeSize, h: badgeSize },
+          "#ffffff",
+          0.68,
+          "ellipse",
+        );
+        badge.meta.shape = {
+          kind: "ellipse", fill: "#ffffff", stroke: "#ffffff", strokeWidth: 1,
+          gradient: { axis: "vertical", from: "#ffffffeb", to: "#ffffff4d" },
+        };
+        badge.meta.groupId = groupId;
+        layers.push(badge);
+
+        const graphic = shapeLayer(
+          `graphic_${benefit.id}`,
+          "賣點圖示",
+          zIndex++,
+          { x: Math.round(x), y: Math.round(y), w: size, h: size },
+          spec.typography.accentColor,
+          1,
+          "rect",
+        );
+        graphic.meta.shape = { kind: "icon", icon: match.icon, fill: spec.typography.accentColor, stroke: "none", strokeWidth: 0 };
+        graphic.meta.groupId = groupId;
+        layers.push(graphic);
+      }
+      if (match.number) {
+        const numberRect = {
+          x: Math.round(x + (match.icon ? unit * 0.065 : 0)),
+          y: Math.round(y),
+          w: Math.max(24, Math.floor(cellW - (match.icon ? unit * 0.08 : unit * 0.02))),
+          h: Math.round(unit * 0.05),
+        };
+        const fittedNumber = fitText(match.number, numberRect.w, numberRect.h, unit * 0.02, unit * 0.036);
+        if (!fittedNumber.fits) throw new CopyTooLongError();
+        const callout = textLayer("text_title", zIndex++, match.number, numberRect, spec.typography.accentColor, 800, "left", fittedNumber.fontSize);
+        callout.id = `benefit_number_${benefit.id}`;
+        callout.instanceId = callout.id;
+        callout.meta.groupId = groupId;
+        layers.push(callout);
+      }
+      const rect = {
+        x: Math.round(x),
+        y: Math.round(y + unit * 0.065),
+        w: Math.floor(cellW - unit * 0.02),
+        h: Math.floor(height * 0.075),
+      };
+      const fitted = fitText(benefit.text, rect.w, rect.h, unit * 0.018, unit * 0.024);
+      if (!fitted.fits) throw new CopyTooLongError();
+      const label = textLayer("text_sub", zIndex++, benefit.text, rect, spec.typography.subtitleColor, 500, "left", fitted.fontSize);
+      label.id = `benefit_text_${benefit.id}`;
+      label.instanceId = label.id;
+      label.meta.groupId = groupId;
+      layers.push(label);
     });
   }
   if (options.logoUrl) {

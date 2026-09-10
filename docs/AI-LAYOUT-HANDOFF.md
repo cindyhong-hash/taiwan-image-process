@@ -40,6 +40,7 @@
 - `src/lib/magic-layers/ad-layout-templates.ts`：6 個固定視覺階層模板；template 定義 zone，不讓模型／呼叫端直接隨機設 x/y。
 - `src/lib/magic-layers/ad-layout-polish.ts`：在初始幾何完成後作有上限的調整；只有安全時把過小商品放大最多 8%、加強短標題、移除碰撞裝飾，並可加入可編輯背景柔光，不增加 bitmap。
 - `src/lib/magic-layers/ad-layout-product-integration.ts`：依可信表面判讀與商品位置，確定性規劃 surface／floating 的接觸影、方向投影、側光、halo 與有空間才出現的表面反光；不修改商品圖片像素。
+- `src/lib/magic-layers/ad-layout-graphics.ts`：以可擴充的 semantic registry 將已確認賣點映射到 10 類向量 icon；未知或否定敘述維持純文字，數字 callout 只擷取使用者原文。renderer 會建立同 group 的 glass badge、icon、原文與數字字層，並用可編輯 divider 分隔多個賣點。
 - `src/lib/magic-layers/ad-layout-renderer.ts`：將 validated spec 轉為真 `LayerData[]`。背景、柔光、商品整合光影、商品、支援素材、裝飾、文字安全底板、文字、Logo 都是可個別編輯圖層。
 - `src/lib/magic-layers/ad-layout-recipes.ts` 是 route 相容入口：只負責把 input 串到 spec + renderer。
 - `src/lib/magic-layers/ad-layout-context.ts`：唯一負責將資料庫資產 role（含 legacy alias）、品牌資料與 visual profile 正規化成 product visual-kit context。
@@ -61,7 +62,7 @@
 
 1. **歷史設計參考**：若要讓 vision 讀過往貼文，先定義可讀的「已核准、同品牌、同用途」資料來源與隱私範圍；P2-A 不讀任何歷史貼文，也沒有 persistent cache。
 2. **更細緻的背景處理**：目前是安全底板；若要漸層面板或圖片模糊，需要先擴充 Editor 的 shape/image effect 契約，再讓 renderer 使用，不能直接 flatten 全圖。
-3. **Graphic / Icon system**：benefit icon、badge、callout 必須先有可編輯 primitives 與 semantic icon library；不可讓 vision 或文字模型傳入任意圖層座標。
+3. **Graphic / Icon system**：目前 benefit icon、glass badge、divider、數字 callout 已使用可編輯 primitives 與 semantic registry；後續擴充仍須走 registry，不可讓 vision 或文字模型傳入任意圖層座標。
 4. **自動文案**：使用者未填文字時，可重用既有 `POST /api/activities/creative-direction` 的方向，但仍要保留空字層／無文案的安全 fallback。
 
 ---
