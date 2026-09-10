@@ -18,6 +18,10 @@ const ALLOWED_EXT = ["woff2", "woff", "ttf", "otf"] as const;
 /** 中文字體動輒 10–20MB；留一點餘裕但擋掉明顯不合理的檔案。 */
 const MAX_BYTES = 30 * 1024 * 1024;
 
+/** multipart 退路是把整個字體檔傳進函式再轉存，Vercel 預設 10s 不一定夠。
+ *  正式站幾乎都走 Blob 直傳（不經函式），這個上限只是保險。 */
+export const maxDuration = 60;
+
 export type BrandFont = { id: string; name: string; url: string; format: string; family: string };
 
 /** CSS font-family 名稱：用 id 產生，避免使用者取的名字含引號或逗號破壞 @font-face。 */

@@ -42,12 +42,16 @@ export function BrandFontUploader({ clientId }: { clientId: string }) {
       // 先試 Blob 直傳：Vercel 函式的 body 上限只有 4.5MB，
       // 中文字體幾乎一定超過，只有直傳才過得去。
       let registered = false;
+      // 檔案已經進 Blob 了：之後就算登記失敗也不能再走 multipart 重傳一次，
+      // 否則 Blob 上會留下一個沒人引用的孤兒檔。
+      let uploadedToBlob = false;
       try {
         const { upload: blobUpload } = await import("@vercel/blob/client");
         const blob = await blobUpload(`brandfont-${Date.now()}-${file.name}`, file, {
           access: "public",
           handleUploadUrl: "/api/brand-fonts/blob",
         });
+        uploadedToBlob = true;
         const res = await fetch("/api/brand-fonts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -56,6 +60,9 @@ export function BrandFontUploader({ clientId }: { clientId: string }) {
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "登記失敗");
         registered = true;
       } catch (blobError) {
+        if (uploadedToBlob) {
+          throw new Error(blobError instanceof Error ? blobError.message : "字體已上傳但登記失敗，請重試");
+        }
         // 本機沒設 Blob（token 端點回 501）→ 退回 multipart，小檔仍可用。
         if (file.size > 4 * 1024 * 1024) {
           throw new Error(

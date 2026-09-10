@@ -340,7 +340,12 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
       </Card>
 
       {/* 6. 品牌字體 — 上傳字檔（畫布可用）+ 名稱 chips（純備註） */}
-      <Card title="品牌字體" sub="上傳字檔後可在自由畫布與 AI 幫我設計的文字圖層選用。（選填）">
+      <Card
+        title="品牌字體"
+        sub={clientId
+          ? "上傳字檔後可在自由畫布與 AI 幫我設計的文字圖層選用。（選填）"
+          : "先建立品牌後即可上傳字檔；這裡可先記下想用的字體名稱。（選填）"}
+      >
         {clientId && (
           <div className="mb-5">
             <BrandFontUploader clientId={clientId} />
