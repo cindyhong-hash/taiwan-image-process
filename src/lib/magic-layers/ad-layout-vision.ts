@@ -68,9 +68,12 @@ Return strict JSON only:
     "benefit": { "safeForDeclaredRole": true, "productVisible": false, "textOrLogoVisible": false, "completeSceneVisible": false, "confidence": 0.9 },
     "decoration": { "safeForDeclaredRole": true, "productVisible": false, "textOrLogoVisible": false, "completeSceneVisible": false, "confidence": 0.9 }
   },
-  "background": { "textSafeArea": "left-top|right-top|left-center|bottom|unknown", "placementSurface": "counter|shelf|platform|table|none|unknown", "confidence": 0.9 }
+  "background": { "textSafeArea": "left-top", "placementSurface": "none", "confidence": 0.9 }
 }
 
+Each enum field must contain exactly one value, never a pipe-delimited list. Choose the value from visible evidence; do not copy the example unless it is accurate.
+textSafeArea must be exactly one of: left-top | right-top | left-center | bottom | unknown
+placementSurface must be exactly one of: counter | shelf | platform | table | none | unknown
 For background, productVisible means any complete product/package visible in the environment. A clean environmental background (for example an empty bathroom or tabletop) is valid and is NOT a completeSceneVisible conflict. completeSceneVisible means a finished multi-subject composition or advertising scene that is unsuitable as an independently composable asset. Omit unavailable roles from assets.`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -107,32 +110,46 @@ function parseSafety(value: unknown): AssetSafety | null {
   };
 }
 
-function parseBackground(value: unknown): ParsedVisionAssessment["background"] | null {
-  if (!isRecord(value)) return null;
+type VisionParseResult =
+  | { value: ParsedVisionAssessment; reason?: never }
+  | { value: null; reason: string };
+
+function parseBackground(value: unknown): { value: NonNullable<ParsedVisionAssessment["background"]>; reason?: never } | { value: null; reason: string } {
+  if (!isRecord(value)) return { value: null, reason: "background must be an object" };
   const { textSafeArea, placementSurface, confidence } = value;
-  if (!hasValue(SAFE_AREAS, textSafeArea) || !hasValue(SURFACES, placementSurface) || typeof confidence !== "number" || !Number.isFinite(confidence)) return null;
-  return { textSafeArea, placementSurface, confidence: clamp(confidence) };
+  if (!hasValue(SAFE_AREAS, textSafeArea)) return { value: null, reason: "background.textSafeArea is not an allowed value" };
+  if (!hasValue(SURFACES, placementSurface)) return { value: null, reason: "background.placementSurface is not an allowed value" };
+  if (typeof confidence !== "number" || !Number.isFinite(confidence)) return { value: null, reason: "background.confidence must be a finite number" };
+  return { value: { textSafeArea, placementSurface, confidence: clamp(confidence) } };
 }
 
-export function parseAdLayoutVisionAssessment(text: string): ParsedVisionAssessment | null {
+function parseAdLayoutVisionAssessmentResult(text: string): VisionParseResult {
   const fence = text.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   const json = fence ? fence[1] : text.trim();
   try {
     const parsed: unknown = JSON.parse(json);
-    if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.assets)) return null;
+    if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.assets)) {
+      return { value: null, reason: "root must contain version 1 and an assets object" };
+    }
     const assets: ParsedVisionAssessment["assets"] = {};
     for (const role of ASSESSED_ROLES) {
       if (!(role in parsed.assets)) continue;
       const safety = parseSafety(parsed.assets[role]);
-      if (!safety) return null;
+      if (!safety) return { value: null, reason: `assets.${role} has invalid safety fields` };
       assets[role] = safety;
     }
-    if (parsed.background === undefined) return { version: 1, assets };
+    if (parsed.background === undefined) return { value: { version: 1, assets } };
     const background = parseBackground(parsed.background);
-    return background ? { version: 1, assets, background } : null;
+    return background.value
+      ? { value: { version: 1, assets, background: background.value } }
+      : background;
   } catch {
-    return null;
+    return { value: null, reason: "response is not valid JSON" };
   }
+}
+
+export function parseAdLayoutVisionAssessment(text: string): ParsedVisionAssessment | null {
+  return parseAdLayoutVisionAssessmentResult(text).value;
 }
 
 function fallback(message: string): AdLayoutVisionAssessment {
@@ -224,8 +241,10 @@ export async function assessAdLayoutVisualKit(
       ? await deps.completeVision(request)
       : await defaultCompleteVision(request, apiKey!, deps.model ?? process.env.OPENROUTER_VISION_MODEL ?? DEFAULT_VISION_MODEL);
     signal.throwIfAborted();
-    const parsed = parseAdLayoutVisionAssessment(text);
-    return parsed ? { ...parsed, source: "vision", warnings: [] } : fallback("素材視覺判讀格式無效，已使用穩定設計規則");
+    const parsed = parseAdLayoutVisionAssessmentResult(text);
+    if (parsed.value) return { ...parsed.value, source: "vision", warnings: [] };
+    console.warn(`[ad-layout-vision] Rejected provider response: ${parsed.reason}; using fallback`);
+    return fallback("素材視覺判讀格式無效，已使用穩定設計規則");
   } catch {
     return fallback(signal.aborted ? "素材視覺判讀逾時，已使用穩定設計規則" : "素材視覺判讀不可用，已使用穩定設計規則");
   } finally {
