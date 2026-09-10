@@ -141,7 +141,7 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
     const color = input.textColors?.[direction] ?? (useLightText ? input.typography.light : input.typography.dark);
     const spec: AdLayoutDesignSpec = {
       direction,
-      benefits: directionDecision ? directionDecision.graphics === "benefit-group" ? input.benefits : undefined : input.benefits,
+      benefits: input.benefits,
       artDirectionDecision: directionDecision,
       purpose: input.purpose,
       templateId: template.id,

@@ -8,6 +8,7 @@ import { createCreativeBrief, selectDesignRecipe } from "./ad-layout-creative-br
 import { analyzeDesignGaps, planRecipeAssets } from "./ad-layout-gap-analysis.ts";
 import type { AdLayoutContext } from "./ad-layout-context.ts";
 import { templateFor, templateForAdvice } from "./ad-layout-templates.ts";
+import type { DirectionDecision } from "./ad-layout-art-direction.ts";
 
 const input = {
   canvas: { width: 1024, height: 1280, ratio: "4:5" },
@@ -139,4 +140,37 @@ test("uses surface grounding only for a scene-led candidate with trusted advice"
   assert.equal(scene?.productTreatment?.shadow, "soft-ellipse");
   assert.deepEqual(scene?.compositionAdvice?.warnings, ["背景有可用檯面"]);
   assert.ok(scene?.quality.warnings.includes("背景有可用檯面"));
+});
+
+test("keeps every user-confirmed benefit when vision chooses no optional graphics", () => {
+  const decision = (direction: DirectionDecision["direction"]): DirectionDecision => ({
+    direction,
+    composition: direction === "scene-led" ? "stacked" : "copy-left",
+    typography: "balanced",
+    density: "minimal",
+    support: "none",
+    decoration: "none",
+    accent: "primary",
+    graphics: "none",
+    backdrop: "none",
+    confidence: 0.9,
+  });
+  const benefits = [
+    { id: "benefit-1", text: "雙重保濕" },
+    { id: "benefit-2", text: "溫和不刺激" },
+    { id: "benefit-3", text: "柔嫩觸感" },
+  ];
+  const specs = resolveAdLayoutDesignSpecs({
+    ...input,
+    purpose: "benefit",
+    benefits,
+    directionDecisions: {
+      "product-focus": decision("product-focus"),
+      editorial: decision("editorial"),
+      "scene-led": decision("scene-led"),
+    },
+  });
+
+  assert.equal(specs.length, 3);
+  for (const spec of specs) assert.deepEqual(spec.benefits, benefits);
 });
