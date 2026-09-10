@@ -79,11 +79,28 @@ test("keeps uncertain material and always keeps identity-critical hero and logo"
 test("applies only trusted valid background advice from a retained background", () => {
   const result = applyAdLayoutVisionPolicy(context, vision(
     { background: safe },
-    { textSafeArea: "right-top", placementSurface: "counter", confidence: 0.9 },
+    { textSafeArea: "right-top", placementSurface: "counter", surfaceRect: { x: 0.08, y: 0.62, w: 0.55, h: 0.1 }, confidence: 0.9 },
   ));
 
   assert.equal(result.advice.preferredTextSafeArea, "right-top");
   assert.equal(result.advice.sceneGrounding, "surface");
+  assert.deepEqual(result.advice.surfaceRect, { x: 0.08, y: 0.62, w: 0.55, h: 0.1 });
+});
+
+test("does not claim surface grounding without a trusted normalized surface rectangle", () => {
+  const missingRect = applyAdLayoutVisionPolicy(context, vision(
+    { background: safe },
+    { textSafeArea: "right-top", placementSurface: "counter", confidence: 0.9 },
+  ));
+  const lowConfidence = applyAdLayoutVisionPolicy(context, vision(
+    { background: safe },
+    { textSafeArea: "right-top", placementSurface: "counter", surfaceRect: { x: 0.08, y: 0.62, w: 0.55, h: 0.1 }, confidence: 0.6 },
+  ));
+
+  assert.equal(missingRect.advice.sceneGrounding, "floating");
+  assert.equal(missingRect.advice.surfaceRect, undefined);
+  assert.equal(lowConfidence.advice.sceneGrounding, "floating");
+  assert.equal(lowConfidence.advice.surfaceRect, undefined);
 });
 
 test("does not use composition advice from a removed background or fallback", () => {
@@ -95,6 +112,7 @@ test("does not use composition advice from a removed background or fallback", ()
 
   assert.equal(removed.advice.preferredTextSafeArea, undefined);
   assert.equal(removed.advice.sceneGrounding, "floating");
+  assert.equal(removed.advice.surfaceRect, undefined);
   assert.equal(fallback.context.inventory.byRole.background?.imageUrl, "background");
   assert.equal(fallback.advice.source, "fallback");
 });

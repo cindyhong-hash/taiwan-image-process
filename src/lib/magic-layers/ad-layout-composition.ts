@@ -9,6 +9,60 @@ export type ResolvedAdLayout = {
   headlineSize: number; subtitleSize: number;
 };
 export class CopyTooLongError extends Error { constructor() { super("文案較長，請縮短標題或副標後再試"); } }
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function alignProductToSurface(
+  product: LayoutRect,
+  aspect: number,
+  input: AdLayoutDesignInput,
+): LayoutRect {
+  const advice = input.compositionAdvice;
+  const surface = advice?.source === "vision" && advice.sceneGrounding === "surface"
+    ? advice.surfaceRect
+    : undefined;
+  if (!surface) return product;
+
+  const { width: canvasWidth, height: canvasHeight } = input.canvas;
+  const surfaceLeft = Math.round(surface.x * canvasWidth);
+  const surfaceTop = Math.round(surface.y * canvasHeight);
+  const surfaceWidth = Math.round(surface.w * canvasWidth);
+  const maxWidth = Math.max(1, Math.round(surfaceWidth * 0.62));
+  const maxHeight = Math.max(1, surfaceTop - Math.round(canvasHeight * 0.08));
+  const scale = Math.min(1, maxWidth / product.w, maxHeight / product.h);
+
+  let w: number;
+  let h: number;
+  if (aspect >= 1) {
+    w = Math.max(1, Math.round(product.w * scale));
+    h = Math.max(1, Math.round(w / aspect));
+    if (h > maxHeight) {
+      h = maxHeight;
+      w = Math.max(1, Math.round(h * aspect));
+    }
+  } else {
+    h = Math.max(1, Math.round(product.h * scale));
+    w = Math.max(1, Math.round(h * aspect));
+    if (w > maxWidth) {
+      w = maxWidth;
+      h = Math.max(1, Math.round(w / aspect));
+    }
+  }
+
+  const minCenter = surfaceLeft + w / 2;
+  const maxCenter = surfaceLeft + surfaceWidth - w / 2;
+  const originalCenter = product.x + product.w / 2;
+  const center = clamp(originalCenter, minCenter, Math.max(minCenter, maxCenter));
+  return {
+    x: Math.round(center - w / 2),
+    y: surfaceTop - h,
+    w,
+    h,
+  };
+}
+
 export function resolveAdComposition(input: AdLayoutDesignInput, direction: AdLayoutDirection, decision?: DirectionDecision): ResolvedAdLayout {
   const { width: W, height: H } = input.canvas;
   const unit = Math.min(W, H);
@@ -27,7 +81,11 @@ export function resolveAdComposition(input: AdLayoutDesignInput, direction: AdLa
   let w = Math.min(heroZone.w, heroZone.h * aspect), h = w / aspect;
   w = Math.round(w); h = Math.round(h);
   if (input.benefits?.length) { heroZone.h = Math.min(heroZone.h, Math.round(H * 0.72) - heroZone.y); w = Math.round(Math.min(heroZone.w, heroZone.h * aspect)); h = Math.round(w / aspect); }
-  const product = { x: Math.round(heroZone.x + (heroZone.w - w) / 2), y: Math.round(heroZone.y + (heroZone.h - h) / 2), w, h };
+  const product = alignProductToSurface(
+    { x: Math.round(heroZone.x + (heroZone.w - w) / 2), y: Math.round(heroZone.y + (heroZone.h - h) / 2), w, h },
+    aspect,
+    input,
+  );
   const hasTitle = Boolean(input.typography.headline);
   const hasSub = Boolean(input.typography.subtitle);
   const gap = Math.round(unit * 0.018);

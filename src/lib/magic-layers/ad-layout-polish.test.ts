@@ -108,6 +108,22 @@ test("polish grows an undersized product by at most eight percent without changi
   assert.ok(polished.rationale.some((reason) => reason.includes("8%")));
 });
 
+test("polish preserves the size and bottom anchor of a product fitted to a trusted surface", () => {
+  const source = polishFixture({
+    compositionAdvice: {
+      source: "vision",
+      sceneGrounding: "surface",
+      surfaceRect: { x: 0.08, y: 0.6, w: 0.55, h: 0.1 },
+      warnings: [],
+    },
+  });
+  const polished = polishAdLayoutSpec(source);
+
+  assert.deepEqual(polished.layout?.product, { x: 300, y: 300, w: 200, h: 300 });
+  assert.equal((polished.layout?.product.y ?? 0) + (polished.layout?.product.h ?? 0), 600);
+  assert.equal(polished.rationale.some((reason) => reason.includes("8%")), false);
+});
+
 test("polish refuses product growth when the expanded bounds collide or leave the canvas", () => {
   const collision = polishFixture({
     layout: { ...polishFixture().layout!, headline: { x: 505, y: 300, w: 200, h: 100 } },
