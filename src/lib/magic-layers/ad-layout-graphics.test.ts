@@ -12,9 +12,18 @@ test("maps every confirmed semantic category through the exported registry",()=>
 });
 test("does not invent graphics for negated or unknown claims",()=>{
  assert.equal(matchBenefitGraphic({id:"4",text:"不保濕"}).icon,null);
+ assert.equal(matchBenefitGraphic({id:"5",text:"無防護效果"}).icon,null);
+ assert.equal(matchBenefitGraphic({id:"6",text:"不溫和配方"}).icon,null);
  assert.equal(matchBenefitGraphic({id:"5",text:"優雅設計"}).icon,null);
  assert.throws(()=>parseBenefits(["a","b","c","d"]));
  assert.throws(()=>parseBenefits(["長".repeat(41)]));
+});
+test("maps common gentle skincare and sensory claims without treating 不刺激 as negation",()=>{
+ const cases = [
+  ["溫和不刺激", "shield"], ["親膚配方", "shield"], ["低刺激呵護", "shield"],
+  ["柔嫩觸感", "texture"], ["舒緩修護", "repair"],
+ ] as const;
+ for (const [text, icon] of cases) assert.equal(matchBenefitGraphic({id:text,text}).icon, icon);
 });
 test("extracts only a number already present in confirmed benefit copy",()=>{
  assert.equal(matchBenefitGraphic({id:"1",text:"24小時長效保濕"}).number,"24小時");
