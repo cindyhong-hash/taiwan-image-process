@@ -1,3 +1,4 @@
+import { parseBenefits } from "@/lib/magic-layers/ad-layout-graphics.ts";
 /* ============================================================
    POST /api/magic-layers/ad-layout
    AI 幫我排版：用商品素材包 + 用途，組成一張「~80% 完成」的可編輯設計稿（真 LayerData[]）。
@@ -13,7 +14,7 @@ import { analyzeDesignGaps, planRecipeAssets } from "@/lib/magic-layers/ad-layou
 import { assessAdLayoutVisualKit } from "@/lib/magic-layers/ad-layout-vision.ts";
 import { applyAdLayoutVisionPolicy } from "@/lib/magic-layers/ad-layout-vision-policy.ts";
 import { prepareAdBackground, resolveTextSafeTreatment } from "@/lib/magic-layers/ad-layout-data.ts";
-import { templateForAdvice } from "@/lib/magic-layers/ad-layout-templates.ts";
+import { resolveAdComposition, CopyTooLongError } from "@/lib/magic-layers/ad-layout-composition.ts";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 import sharp from "sharp";
 
@@ -31,6 +32,8 @@ export async function POST(request: Request) {
     if (!clientId || !productId) return NextResponse.json({ error: "clientId and productId required" }, { status: 400 });
 
     const purpose = (["product", "benefit", "scene", "promo"].includes(body.purpose) ? body.purpose : "product") as NonNullable<AdLayoutInput["purpose"]>;
+    let benefits;
+    try { benefits = parseBenefits(body.benefits); } catch (error) { return NextResponse.json({error: error instanceof Error ? error.message : "賣點格式錯誤"}, {status:400}); }
     const ratio = typeof body.ratio === "string" && RATIO_SIZE[body.ratio] ? body.ratio : "4:5";
     const [W, H] = RATIO_SIZE[ratio];
 
@@ -85,11 +88,17 @@ export async function POST(request: Request) {
 
     const accentColor = safeContext.brand.primaryColor;
     const directions: AdLayoutCandidateId[] = ["product-focus", "editorial", "scene-led"];
-    const textSafeTreatment = Object.fromEntries(await Promise.all(directions.map(async (direction) => {
-      const template = templateForAdvice(direction, purpose, ratio, assessed.advice.preferredTextSafeArea);
-      const treatment = await resolveTextSafeTreatment(backgroundBuffer, template.zones.safePanel, accentColor);
-      return [direction, treatment.panelTreatment] as const;
-    })));
+    const layouts = Object.fromEntries(directions.map(direction => [direction, resolveAdComposition({
+      benefits, canvas: { width: W, height: H, ratio }, purpose, assets: {}, productAspectRatio: heroAspectRatio,
+      compositionAdvice: assessed.advice,
+      typography: { headline: typeof body.title === "string" ? body.title.trim() : undefined, subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() : undefined, dark: "#241f47", light: "#ffffff", accent: accentColor },
+    }, direction)]));
+    const treatments = await Promise.all(directions.map(async direction => {
+      const r = layouts[direction].safePanel;
+      return [direction, await resolveTextSafeTreatment(backgroundBuffer, { x: r.x/W, y: r.y/H, w: r.w/W, h: r.h/H }, accentColor)] as const;
+    }));
+    const textSafeTreatment = Object.fromEntries(treatments.map(([d,t]) => [d,t.panelTreatment]));
+    const textColors = Object.fromEntries(treatments.map(([d,t]) => [d,t.textColor]));
     const tones = safeContext.brand.tones.slice(0, 3);
     const palette = safeContext.brand.palette.slice(0, 3);
     const artDirection = [
@@ -111,7 +120,7 @@ export async function POST(request: Request) {
       backgroundUrl, heroUrl, decorationUrl, textureUrl, benefitUrl, logoUrl,
       title: typeof body.title === "string" ? body.title.trim() || undefined : undefined,
       subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() || undefined : undefined,
-      brandColor: accentColor, textColor: "#241f47", textSafeTreatment, artDirection,
+      benefits, layouts, textColors, brandColor: accentColor, textColor: "#241f47", textSafeTreatment, artDirection,
       purpose, ratio, heroAspectRatio, planning: { brief, recipe, assetPlan, gapPlan }, compositionAdvice: assessed.advice,
       assessment: { source: assessed.advice.source, warnings: assessed.advice.warnings }, canvasWidth: W, canvasHeight: H,
     });
@@ -129,7 +138,8 @@ export async function POST(request: Request) {
       canvasHeight: H,
     });
   } catch (err) {
-    console.error("[magic-layers/ad-layout] failed:", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    if (err instanceof CopyTooLongError) return NextResponse.json({ error: err.message }, { status: 422 });
+    console.error("[magic-layers/ad-layout] failed");
+    return NextResponse.json({ error: "建立設計稿失敗，請稍後再試" }, { status: 500 });
   }
 }

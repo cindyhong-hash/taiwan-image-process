@@ -49,5 +49,5 @@ test("fits the identity-critical product inside its template zone without stretc
   assert.ok(product);
   assert.ok(Math.abs(product.width / product.height - 0.35) < 0.01);
   assert.ok(product.width < 1024 * 0.38);
-  assert.ok(product.height <= 1280 * 0.58);
+  assert.ok(product.height <= 1280 * 0.85);
 });

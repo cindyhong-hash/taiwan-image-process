@@ -1,3 +1,6 @@
+import type { BenefitInput } from "./ad-layout-graphics.ts";
+import type { DirectionDecision } from "./ad-layout-art-direction.ts";
+import type { ResolvedAdLayout } from "./ad-layout-composition.ts";
 import {
   resolveAdLayoutDesignSpecs,
   type AdLayoutDirection,
@@ -26,6 +29,11 @@ export interface AdLayoutInput {
   textSafeTreatment?: "none" | "light-panel" | "dark-panel" | Partial<Record<AdLayoutDirection, "none" | "light-panel" | "dark-panel">>;
   purpose?: AdLayoutPurpose;
   ratio?: "1:1" | "4:5" | "9:16" | "16:9";
+  layouts?: Partial<Record<AdLayoutDirection, ResolvedAdLayout>>;
+  textColors?: Partial<Record<AdLayoutDirection, string>>;
+  benefits?: BenefitInput[];
+  directionDecisions?: Partial<Record<AdLayoutDirection, DirectionDecision>>;
+  secondaryBrandColor?: string;
   artDirection?: string;
   heroAspectRatio?: number;
   planning?: { brief: CreativeBrief; recipe: DesignRecipe; assetPlan: AdLayoutAssetPlan; gapPlan: GapPlanEntry[] };
@@ -41,6 +49,7 @@ export interface AdLayoutCandidate {
   description: string;
   layers: LayerData[];
   assessment?: AdLayoutAssessmentMetadata;
+  designDecision?: { version: 1; source: "vision" };
 }
 
 const LABELS: Record<AdLayoutCandidateId, Pick<AdLayoutCandidate, "label" | "description">> = {
@@ -60,7 +69,8 @@ export function buildAdLayoutCandidates(input: AdLayoutInput): AdLayoutCandidate
       decoration: input.decorationUrl,
     },
     purpose: input.purpose ?? "product",
-    artDirection: input.artDirection,
+    benefits: input.benefits, artDirection: input.artDirection, layouts: input.layouts, textColors: input.textColors,
+    directionDecisions: input.directionDecisions, secondaryAccent: input.secondaryBrandColor,
     productAspectRatio: input.heroAspectRatio,
     planning: input.planning,
     compositionAdvice: input.compositionAdvice,
