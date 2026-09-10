@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { resolveAdLayoutDesignSpecs } from "./ad-layout-design-spec.ts";
 import { renderAdLayoutSpec } from "./ad-layout-renderer.ts";
+import { resolveAdComposition } from "./ad-layout-composition.ts";
 for (const [ratio, width, height] of [["1:1",1024,1024],["4:5",1024,1280],["9:16",720,1280],["16:9",1280,720]] as const) {
   test(`finite, contained, non-overlapping compositions for every purpose on ${ratio}`, () => {
     for (const aspect of [0.28,1,2.4]) for (const purpose of ["product","benefit","scene","promo"] as const) {
@@ -16,3 +17,21 @@ for (const [ratio, width, height] of [["1:1",1024,1024],["4:5",1024,1280],["9:16
     }
   });
 }
+
+test("maps a trusted composition decision to a bounded template before resolving geometry", () => {
+  const layout = resolveAdComposition({
+    canvas: { width: 1024, height: 1280, ratio: "4:5" },
+    assets: { hero: "hero" }, purpose: "product", productAspectRatio: 1,
+    typography: { headline: "標題", dark: "#123456", light: "#fff", accent: "#68bbee" },
+  }, "product-focus", {
+    direction: "product-focus", composition: "stacked", typography: "balanced", density: "minimal",
+    support: "none", decoration: "none", accent: "primary", graphics: "none", backdrop: "none", confidence: 0.9,
+  });
+
+  assert.equal(layout.templateId, "center-product-bottom-copy");
+  assert.deepEqual(layout.product, { x: 246, y: 541, w: 532, h: 532 });
+  assert.deepEqual(layout.safePanel, { x: 56, y: 64, w: 819, h: 371 });
+  assert.deepEqual(layout.support, { x: 51, y: 794, w: 164, h: 141 });
+  assert.deepEqual(layout.decoration, { x: 819, y: 218, w: 102, h: 115 });
+  assert.deepEqual(layout.logo, { x: 768, y: 1165, w: 164, h: 64 });
+});

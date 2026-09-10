@@ -104,7 +104,7 @@ export type ArtDirectionResult = {
 
 **Files:** 更新 `docs/AI-LAYOUT-HANDOFF.md`；新增 `docs/ai-design-p2-p3-validation.md`。
 
-- [ ] 跑 `node --test --experimental-strip-types src/lib/magic-layers/ad-layout*.test.ts src/lib/magic-layers/editable-*.test.ts src/lib/magic-layers/saved-layer.test.ts`，再跑改動檔 eslint、`npx prisma generate`、`npx tsc --noEmit`、`npm run build`，記錄真實結果與環境限制。
+- [ ] 跑 `node --test --experimental-strip-types src/lib/magic-layers/*.test.ts`，再跑改動檔 eslint、`npx prisma generate`、`npx tsc --noEmit`、`npm run build`，記錄真實結果與環境限制。
 - [ ] 瀏覽器依 spec 矩陣比較 P2 與 P3，至少一組同品牌參考／無參考／強制 provider 失敗；檢查構圖有可見差異但 product/logo 不變、文案不被參考圖改寫、無跨品牌混入。
 - [ ] 點選候選進 editor，改文字與 icon 色、縮放／undo、存草稿、重開、匯出 PNG；比對 preview／editor／PNG。不得只憑單元測試稱完成。
 - [ ] feature flag 關閉時確認仍走 P2；所有回退不得遺失三候選。真實 provider 煙霧測試需用本次使用者明確選取的素材；無可用授權測試資料時標明未測，不捏造效果。

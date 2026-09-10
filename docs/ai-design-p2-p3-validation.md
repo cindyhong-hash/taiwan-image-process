@@ -4,7 +4,7 @@ Branch: `codex/ai-layout-design-polish-p3`.
 
 ## Completed checks
 
-- `node --test --experimental-strip-types src/lib/magic-layers/ad-layout*.test.ts src/lib/magic-layers/editable-*.test.ts src/lib/magic-layers/saved-layer.test.ts src/app/api/paid-image-set-routes.test.ts` — 76 passed.
+- `node --test --experimental-strip-types src/lib/magic-layers/*.test.ts src/app/api/paid-image-set-routes.test.ts` — 82 passed; includes every Magic Layers test, including composition candidates.
 - Focused ESLint for the P3 route, modal, provider, policy, orchestration, references and transport — passed.
 - `npx tsc --noEmit` — passed.
 - `npm run build` — passed; 44 static pages generated.
