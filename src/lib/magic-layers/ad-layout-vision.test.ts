@@ -48,6 +48,48 @@ test("returns a named fallback when vision output is malformed", async () => {
   assert.ok(value.warnings.length > 0);
 });
 
+test("sends an unambiguous single-value enum example to the vision provider", async () => {
+  let systemPrompt = "";
+  await assessAdLayoutVisualKit(context, {
+    loadAsDataUrl: async (url) => `data:image/png;base64,${url}`,
+    completeVision: async (request) => {
+      systemPrompt = request.systemPrompt;
+      return validJson;
+    },
+  });
+
+  assert.doesNotMatch(systemPrompt, /"textSafeArea"\s*:\s*"[^"]*\|/);
+  assert.doesNotMatch(systemPrompt, /"placementSurface"\s*:\s*"[^"]*\|/);
+  assert.match(systemPrompt, /textSafeArea must be exactly one of:/);
+  assert.match(systemPrompt, /placementSurface must be exactly one of:/);
+});
+
+test("logs a safe parser reason when an enum value is rejected", async (t) => {
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args.map(String).join(" "));
+  t.after(() => { console.warn = originalWarn; });
+
+  const copiedEnumJson = JSON.stringify({
+    version: 1,
+    assets: {},
+    background: {
+      textSafeArea: "left-top|right-top|left-center|bottom|unknown",
+      placementSurface: "none",
+      confidence: 0.9,
+    },
+  });
+  const value = await assessAdLayoutVisualKit(context, {
+    loadAsDataUrl: async (url) => `data:image/png;base64,${url}`,
+    completeVision: async () => copiedEnumJson,
+  });
+
+  assert.equal(value.source, "fallback");
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0] ?? "", /background\.textSafeArea/);
+  assert.doesNotMatch(warnings[0] ?? "", /left-top\|right-top/);
+});
+
 test("sends identity reference and only selected non-identity visual-kit roles", async () => {
   const received: { roles: string[]; urls: string[] }[] = [];
   const value = await assessAdLayoutVisualKit(context, {
