@@ -9,6 +9,7 @@ import { analyzeDesignGaps, planRecipeAssets } from "./ad-layout-gap-analysis.ts
 import type { AdLayoutContext } from "./ad-layout-context.ts";
 import { templateFor, templateForAdvice } from "./ad-layout-templates.ts";
 import type { DirectionDecision } from "./ad-layout-art-direction.ts";
+import { renderAdLayoutSpec } from "./ad-layout-renderer.ts";
 
 const input = {
   canvas: { width: 1024, height: 1280, ratio: "4:5" },
@@ -172,5 +173,11 @@ test("keeps every user-confirmed benefit when vision chooses no optional graphic
   });
 
   assert.equal(specs.length, 3);
-  for (const spec of specs) assert.deepEqual(spec.benefits, benefits);
+  for (const spec of specs) {
+    assert.deepEqual(spec.benefits, benefits);
+    const renderedBenefitCopy = renderAdLayoutSpec(spec)
+      .filter((layer) => layer.id.startsWith("benefit_text_"))
+      .map((layer) => (layer.meta.style as { text: string }).text);
+    assert.deepEqual(renderedBenefitCopy, benefits.map((benefit) => benefit.text));
+  }
 });
