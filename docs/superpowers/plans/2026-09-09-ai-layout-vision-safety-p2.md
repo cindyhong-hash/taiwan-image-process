@@ -153,20 +153,20 @@ Run: `node --experimental-strip-types --test src/lib/magic-layers/ad-layout-visi
 
 Expected: FAIL because the policy module does not exist.
 
-- [ ] **Step 3: Implement `MIN_TRUSTED_CONFIDENCE = 0.7` and omission rules**
+- [ ] **Step 3: Implement separate advice and omission confidence thresholds**
 
-Only omit for a `vision` source with confidence at least `0.7`. Never omit hero or logo. A high-confidence `safeForDeclaredRole: false` is enough to omit; otherwise use these visible-conflict rules:
+Use `MIN_TRUSTED_CONFIDENCE = 0.7` for constrained composition advice and `MIN_OMISSION_CONFIDENCE = 0.95` for destructive filtering. Never omit hero or logo. `safeForDeclaredRole: false` alone is advisory; omission also requires the following role-specific visible conflict:
 
 ```ts
 function mustOmit(role: AssessedVisualRole, asset: AssetSafety): boolean {
-  if (role === "background") return asset.productVisible || asset.textOrLogoVisible || asset.completeSceneVisible;
+  if (role === "background") return asset.productVisible || asset.textOrLogoVisible;
   if (role === "detail") return asset.productVisible || asset.completeSceneVisible;
   if (role === "benefit") return asset.productVisible || asset.completeSceneVisible;
   return asset.productVisible || asset.textOrLogoVisible || asset.completeSceneVisible;
 }
 ```
 
-Copy the P1 inventory, delete only a failed non-identity candidate, and add the same role-specific human reason to `omitted` and `advice.warnings`.
+Copy the P1 inventory. A clean environmental background remains valid even when `completeSceneVisible` is true. Delete only a non-identity candidate with an explicit conflict at confidence `>= 0.95`, and add the same role-specific human reason to `omitted` and `advice.warnings`. For confidence `>= 0.7` and `< 0.95`, retain the asset and add a deterministic warning.
 
 - [ ] **Step 4: Implement constrained advice**
 

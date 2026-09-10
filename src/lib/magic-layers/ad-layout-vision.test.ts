@@ -62,6 +62,29 @@ test("sends an unambiguous single-value enum example to the vision provider", as
   assert.doesNotMatch(systemPrompt, /"placementSurface"\s*:\s*"[^"]*\|/);
   assert.match(systemPrompt, /textSafeArea must be exactly one of:/);
   assert.match(systemPrompt, /placementSurface must be exactly one of:/);
+  assert.match(systemPrompt, /immediately following that role label/);
+  assert.match(systemPrompt, /Do not attribute anything visible in the hero reference to another role/);
+});
+
+test("uses deterministic sampling for the default vision completion", async (t) => {
+  let requestBody: Record<string, unknown> = {};
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({ choices: [{ message: { content: validJson } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const value = await assessAdLayoutVisualKit(context, {
+    apiKey: "test-key",
+    loadAsDataUrl: async (url) => `data:image/png;base64,${url}`,
+  });
+
+  assert.equal(value.source, "vision");
+  assert.equal(requestBody.temperature, 0);
 });
 
 test("logs a safe parser reason when an enum value is rejected", async (t) => {

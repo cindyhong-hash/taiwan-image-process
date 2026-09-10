@@ -7,9 +7,9 @@
 
 > **Design Foundation P1 已完成（branch `feat/ai-design-foundation-p1`，疊在 P0 上）**：route 先將產品、品牌與新舊 asset roles 正規化成 visual-kit context，再建立 Creative Brief、Design Recipe、direction-aware asset plan 和 deterministic gap plan。商品主體與 logo 明確標為 identity-critical；hero 按原始長寬比 contain 進 template。品質檢查會驗證 hero、素材數量、direction support、文字 treatment 與比例；Modal 預覽則直接讀 renderer 產出的 layer bounds。
 
-> **Vision Safety P2-A 已完成（branch `feat/ai-layout-vision-safety-p2`，疊在 P1 上）**：在背景處理與 brief 前，route 會把 hero 加上至多四張既有非 identity 素材縮至 768px，以私有 data URI 交給 OpenRouter 做一次可失敗的視覺安全判讀。高信心且角色不符、含第二個商品、文字／Logo 或不適合的完整 composition 的素材會被省略；hero／Logo 絕不會被移除。provider、storage、逾時或格式失敗一律保留原素材並走 P1 deterministic fallback。模型只能建議既有的 text-safe category 與是否有可用場景表面，不能提供座標、URL、template ID、顏色或 effect。
+> **Vision Safety P2-A 已完成（branch `feat/ai-layout-vision-safety-p2`，疊在 P1 上）**：在背景處理與 brief 前，route 會把 hero 加上至多四張既有非 identity 素材縮至 768px，以私有 data URI 交給 OpenRouter 做一次可失敗的視覺安全判讀。`background` 本來就可以是完整的乾淨情境空景；只有角色特定的可見衝突（例如背景出現商品或文字／Logo）且信心至少 `0.95` 才會省略素材。`0.7` 到 `0.95` 的衝突會保留素材並附警告，抽象的 `safeForDeclaredRole: false` 不會單獨刪除素材；hero／Logo 絕不會被移除。provider、storage、逾時或格式失敗一律保留原素材並走 P1 deterministic fallback。模型只能建議既有的 text-safe category 與是否有可用場景表面，不能提供座標、URL、template ID、顏色或 effect。
 
-> **Design Polish P2／P3（branch `codex/ai-layout-design-polish-p3`，待 review）**：新增比例感知構圖、多行可編輯文案、依實際 LayerData 繪製的候選預覽、可儲存的漸層／柔邊投影，以及使用者確認文字驅動的賣點圖示組。商品主體不變形，長文案會以可讀性限制回覆縮短提示。P3 已接入受限的 OpenRouter art-direction 決策：只接受固定 enum JSON、僅影響既有可編輯版型能力，20 秒 deadline 或任何 provider/格式失敗都回到 P2 三候選。部署時需設 `AD_LAYOUT_ART_DIRECTION_ENABLED=true` 才會啟用；目前不提供過往貼文選取，避免無登入驗證的圖片網址揭露。
+> **Design Polish P2／P3（branch `codex/ai-layout-design-polish-p3`，待 review）**：新增比例感知構圖、多行可編輯文案、依實際 LayerData 繪製的候選預覽、可儲存的漸層／柔邊投影，以及使用者確認文字驅動的賣點圖示組。商品主體不變形，長文案會以可讀性限制回覆縮短提示。P3 已接入受限的 OpenRouter art-direction 決策：只接受固定 enum JSON、以單一合法值示範 schema、使用 `temperature: 0`，且僅影響既有可編輯版型能力。20 秒 deadline 或任何 provider/格式失敗都回到 P2 三候選，API 只回傳安全的 fallback reason（含 `low-confidence`），server log 不記錄模型原文。部署時需設 `AD_LAYOUT_ART_DIRECTION_ENABLED=true` 才會啟用；目前不提供過往貼文選取，避免無登入驗證的圖片網址揭露。
 
 > **P4 Gap Generation（branch `codex/ai-layout-design-polish-p3`，待 review）**：scene 缺背景、scene 缺輔助質地、benefit 缺賣點視覺時，排版結果會列出單一可選缺口。只有使用者主動按下按鈕才透過既有 paid image-set worker 建立一張 background／detail／benefit 素材；hero 與 Logo 永不由此流程重生成。完成後使用者明確重跑排版，生成素材會重新經既有 safety policy。
 
@@ -44,7 +44,7 @@
 - `src/lib/magic-layers/ad-layout-creative-brief.ts`、`ad-layout-gap-analysis.ts`：建立目的／品牌／文案的 Creative Brief，挑選 recipe，並將缺口映射到既有可編輯 shape，而不是重新生圖。
 - `src/lib/magic-layers/ad-layout-quality.ts`：純規則檢查，render 前保護 hero、support budget、裝飾 budget、文字 treatment 和商品比例。
 - `src/lib/magic-layers/ad-layout-vision.ts`：一次、可注入測試的 OpenRouter visual-kit assessment。只送既有 hero／background／detail／benefit／decoration 的縮圖；所有失敗回傳 named fallback，不會讓設計 API 失敗。
-- `src/lib/magic-layers/ad-layout-vision-policy.ts`：唯一可將 vision 結果轉成素材省略與 composition advice 的純規則層；`0.7` 以下一律不刪素材。它不會也不能改寫 identity assets。
+- `src/lib/magic-layers/ad-layout-vision-policy.ts`：唯一可將 vision 結果轉成素材省略與 composition advice 的純規則層；`0.7` 是版面建議信任門檻，`0.95` 是角色衝突的刪除門檻。完整情境本身不會讓 `background` 失效，低於刪除門檻則保留素材。它不會也不能改寫 identity assets。
 - 素材規則：商品主視覺／編輯留白預設只用背景、hero、最多一個裝飾；情境版最多一個 support（`detail` 或 `benefit`）；賣點用途可選 `benefit`，但不會與 `detail` 疊用。
 
 **資料契約（沿用、別破壞）**

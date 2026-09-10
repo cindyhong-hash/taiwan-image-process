@@ -8,6 +8,7 @@ test("only reports vision when a trusted decision changed a candidate", () => {
   assert.deepEqual(artDirectionStatus(result, [{}]), {
     source: "fallback",
     message: "已使用穩定排版規則。",
+    reason: "low-confidence",
   });
   assert.deepEqual(artDirectionStatus(result, [{ designDecision: { version: 1, source: "vision" } }]), {
     source: "vision",
@@ -20,5 +21,6 @@ test("uses a safe fallback message without provider details", () => {
   assert.deepEqual(artDirectionStatus(result, []), {
     source: "fallback",
     message: "視覺方向暫時不可用，已使用穩定排版規則。",
+    reason: "timeout",
   });
 });

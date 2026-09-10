@@ -29,7 +29,7 @@ function vision(assets: AdLayoutVisionAssessment["assets"], background?: AdLayou
 
 test("omits a trusted legacy background containing a product before planning", () => {
   const result = applyAdLayoutVisionPolicy(context, vision({
-    background: { ...safe, safeForDeclaredRole: false, productVisible: true, reason: "完整瓶身" },
+    background: { ...safe, safeForDeclaredRole: false, productVisible: true, confidence: 0.99, reason: "完整瓶身" },
   }));
 
   assert.equal(result.context.inventory.byRole.background, undefined);
@@ -39,11 +39,30 @@ test("omits a trusted legacy background containing a product before planning", (
 
 test("omits a trusted asset that is visibly unsuitable for its declared role", () => {
   const result = applyAdLayoutVisionPolicy(context, vision({
-    decoration: { ...safe, safeForDeclaredRole: false, reason: "這是產品示意卡，不是獨立裝飾" },
+    decoration: { ...safe, safeForDeclaredRole: false, textOrLogoVisible: true, confidence: 0.99, reason: "含有完整標題卡" },
   }));
 
   assert.equal(result.context.inventory.byRole.decoration, undefined);
   assert.match(result.omitted[0]?.reason ?? "", /裝飾元素/);
+});
+
+test("keeps an empty environmental background when the model calls it a complete scene", () => {
+  const result = applyAdLayoutVisionPolicy(context, vision({
+    background: { ...safe, safeForDeclaredRole: false, completeSceneVisible: true, confidence: 0.99, reason: "完整居家空景" },
+  }));
+
+  assert.equal(result.context.inventory.byRole.background?.imageUrl, "background");
+  assert.deepEqual(result.omitted, []);
+});
+
+test("keeps a single-call conflict below the destructive confidence threshold", () => {
+  const result = applyAdLayoutVisionPolicy(context, vision({
+    detail: { ...safe, safeForDeclaredRole: false, productVisible: true, confidence: 0.9, reason: "可能含有商品" },
+  }));
+
+  assert.equal(result.context.inventory.byRole.detail?.imageUrl, "detail");
+  assert.deepEqual(result.omitted, []);
+  assert.match(result.advice.warnings[0] ?? "", /信心不足.*保留/);
 });
 
 test("keeps uncertain material and always keeps identity-critical hero and logo", () => {

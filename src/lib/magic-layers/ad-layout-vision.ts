@@ -57,7 +57,7 @@ export type AdLayoutVisionDependencies = {
   completeVision?: (request: AdLayoutVisionRequest) => Promise<string>;
 };
 
-const SYSTEM_PROMPT = `You are an asset-safety reviewer for an editable product-ad designer. Report only visible facts from the labelled images. The hero is an identity reference; never evaluate it as removable. Do not infer product claims, audience, performance, ingredients, or a new design. Do not output coordinates, template IDs, URLs, colors, effects, image edits, or prose.
+const SYSTEM_PROMPT = `You are an asset-safety reviewer for an editable product-ad designer. Report only visible facts from the labelled images. Evaluate each candidate image independently: each image is immediately following that role label. The hero is a separate identity reference; never evaluate it as removable. Do not attribute anything visible in the hero reference to another role. Do not infer product claims, audience, performance, ingredients, or a new design. Do not output coordinates, template IDs, URLs, colors, effects, image edits, or prose.
 
 Return strict JSON only:
 {
@@ -74,7 +74,7 @@ Return strict JSON only:
 Each enum field must contain exactly one value, never a pipe-delimited list. Choose the value from visible evidence; do not copy the example unless it is accurate.
 textSafeArea must be exactly one of: left-top | right-top | left-center | bottom | unknown
 placementSurface must be exactly one of: counter | shelf | platform | table | none | unknown
-For background, productVisible means any complete product/package visible in the environment. A clean environmental background (for example an empty bathroom or tabletop) is valid and is NOT a completeSceneVisible conflict. completeSceneVisible means a finished multi-subject composition or advertising scene that is unsuitable as an independently composable asset. Omit unavailable roles from assets.`;
+For background, productVisible means any complete product/package visible in that background image. A complete clean environmental scene (for example an empty bathroom or tabletop) is a valid background; completeSceneVisible alone never makes a background unsafe. Omit unavailable roles from assets.`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -187,6 +187,7 @@ async function defaultCompleteVision(request: AdLayoutVisionRequest, apiKey: str
         { role: "user", content },
       ],
       max_tokens: 900,
+      temperature: 0,
     }),
     signal: request.signal,
   });

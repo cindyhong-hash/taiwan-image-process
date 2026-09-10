@@ -85,7 +85,7 @@ export type ArtDirectionResult = {
 - [ ] 寫測試：關閉旗標不呼叫 provider；無 key fallback；輸入來源只包含安全素材；參考圖載入失敗可移除參考繼續；主體載入失敗 fallback；JSON 無效 fallback。
 - [ ] 寫真正期限測試：注入永遠不 resolve 且忽略 signal 的 loader/provider，應在測試設定 30ms deadline 後返回 timeout，不永久等待。驗證父 signal abort 與 timer 清理。
 - [ ] 跑 provider 測試確認 red。抽 transport 提供 768px inside/no enlargement 縮圖、20 秒 deadline 及 abort race；deadline 涵蓋載圖與 complete。使用完成／取消 race 並清理 listener；晚到結果不得寫狀態。
-- [ ] prompt 明列圖片與文字皆為資料，忽略圖中文字中的指令；參考只決定 style，輸出 Task 1 JSON。輸入不帶不相關貼文或 provider secrets；保留目前可配置 model，不在此案自行遷移模型。
+- [ ] prompt 明列圖片與文字皆為資料，忽略圖中文字中的指令；參考只決定 style，輸出 Task 1 JSON。JSON 範例的每個 enum 欄位只放一個合法值，允許值另以文字列出；completion 使用 `temperature: 0`。輸入不帶不相關貼文或 provider secrets；保留目前可配置 model，不在此案自行遷移模型。
 - [ ] 安全判讀最多一次、art direction 最多一次，不做遞迴修稿或重試；transport 改造後重跑原 vision timeout/provider 測試，提交 `feat(design): request bounded vision art direction`。
 
 ## Task 4 — 映射 P2 能力、候選品質回退
@@ -97,7 +97,7 @@ export type ArtDirectionResult = {
 - [ ] 寫 injected pipeline 測試：正常 vision、全部 fallback、只有一方向低信心、單候選品質失敗、無參考、未設定 key，都產生三個可編輯候選；fallback 結果與相同 input 的 P2 結果一致。
 - [ ] 跑 orchestration 測試確認 red。將 preset 映射為 P2 模板選擇／有限字級層級／效果 token；resolved composition 仍負責實際 bounds，不接受模型自由座標。
 - [ ] 保留 P2 safety → art direction → resolved layout → 對比取樣 → DesignSpec → render → bounds quality 順序。hard check 失敗只回退該方向；原本 P2 也因文案不可讀失敗時沿用 P2 的 422 提示，不偽造可用設計。
-- [ ] 記錄安全的決策 source/reason 與耗時，不記錄圖片資料或全文 provider error。候選回應包含使用者能理解的降級訊息；不改 seed 契約。
+- [ ] 記錄安全的決策 source/reason 與耗時，不記錄圖片資料或全文 provider error。候選回應包含 `disabled`、`unavailable`、`timeout`、`invalid` 或 `low-confidence` 的安全降級原因；不改 seed 契約。
 - [ ] 測试 shared deadline、120 秒 route 上限及每次 provider 調用數；提交 `feat(design): apply vision choices with deterministic recovery`。
 
 ## Task 5 — 完整驗收與交接
