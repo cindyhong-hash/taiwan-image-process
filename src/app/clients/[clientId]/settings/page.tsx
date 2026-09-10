@@ -51,10 +51,12 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
         body: JSON.stringify(values),
       });
       if (!res.ok) throw new Error("save failed");
-      router.push(`/clients/${clientId}`);
+      // 停在原頁：使用者常常連續改好幾張卡，跳回品牌首頁等於每次都要重進設定。
+      // 成功回饋交給表單的「已更新」pill。
       router.refresh();
-    } catch {
+    } catch (e) {
       setSaveError(true);
+      throw e;   // 讓表單知道失敗，不要亮出「已更新」
     }
   };
 

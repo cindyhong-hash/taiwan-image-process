@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { X, Upload, Loader2 } from "lucide-react";
+import { X, Upload, Loader2, CheckCircle2 } from "lucide-react";
 import { FONT_STYLE_PRESETS, INDUSTRY_PRESETS } from "@/types/presets";
 import { HelpTip } from "@/components/activities/formParts";
 import { BrandFontUploader } from "./BrandFontUploader";
@@ -76,6 +76,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
   const [fontInput, setFontInput] = useState("");
   const [uploading, setUploading] = useState(false);
   const [pastDragging, setPastDragging] = useState(false);
+  const [saved, setSaved] = useState(false);   // 短暫顯示「✓ 已更新」回饋
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -153,6 +154,11 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
     setLoading(true);
     try {
       await onSubmit(values);
+      // 只有 onSubmit 沒有 throw 才算成功；錯誤訊息由呼叫端自己顯示。
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {
+      /* 呼叫端負責顯示錯誤 */
     } finally {
       setLoading(false);
     }
@@ -471,9 +477,17 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
         </div>
       </Card>
 
-      <Button type="submit" disabled={loading} className="bg-violet-600 hover:bg-violet-700">
-        {loading ? "儲存中..." : submitLabel}
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button type="submit" disabled={loading} className="bg-violet-600 hover:bg-violet-700">
+          {loading ? "儲存中..." : submitLabel}
+        </Button>
+        {saved && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700">
+            <CheckCircle2 className="h-3 w-3" />
+            已更新
+          </span>
+        )}
+      </div>
     </form>
   );
 }
