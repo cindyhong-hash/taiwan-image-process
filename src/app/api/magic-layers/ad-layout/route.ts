@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 import { type AdLayoutCandidateId, type AdLayoutInput } from "@/lib/magic-layers/compose-layers.ts";
 import { createAdLayoutContext } from "@/lib/magic-layers/ad-layout-context.ts";
 import { createCreativeBrief, selectDesignRecipe } from "@/lib/magic-layers/ad-layout-creative-brief.ts";
-import { analyzeDesignGaps, planRecipeAssets } from "@/lib/magic-layers/ad-layout-gap-analysis.ts";
+import { analyzeDesignGaps, isGeneratableGap, planRecipeAssets } from "@/lib/magic-layers/ad-layout-gap-analysis.ts";
 import { assessAdLayoutVisualKit } from "@/lib/magic-layers/ad-layout-vision.ts";
 import { applyAdLayoutVisionPolicy } from "@/lib/magic-layers/ad-layout-vision-policy.ts";
 import { prepareAdBackground, resolveTextSafeTreatment } from "@/lib/magic-layers/ad-layout-data.ts";
@@ -110,6 +110,7 @@ export async function POST(request: Request) {
     const recipe = selectDesignRecipe(brief);
     const assetPlan = planRecipeAssets(recipe, brief.inventory);
     const gapPlan = analyzeDesignGaps(brief, recipe, brief.inventory);
+    const generationGaps = gapPlan.filter(isGeneratableGap).map(({ kind, role, label, message }) => ({ kind, role, label, message }));
     let references: string[];
     try {
       references = selectDesignReferences(availableBrandPostReferences(client?.pastPostImageUrls), body.brandReferenceUrls);
@@ -163,6 +164,7 @@ export async function POST(request: Request) {
         },
       })),
       artDirection: directionStatus,
+      generationGaps,
       canvasWidth: W,
       canvasHeight: H,
     });

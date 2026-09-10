@@ -3,7 +3,7 @@
  * AI 幫我排版：用商品素材包，問極少的問題（用途/尺寸/主要文字）→ 呼叫 /api/magic-layers/ad-layout
  * 組成一張可編輯設計稿 → seed 進 Magic Layers 編輯器（?seed=1）讓使用者自由微調。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Loader2, Sparkles, X } from "lucide-react";
 import { ML_WIZARD_SEED_KEY } from "@/components/activities/RolePickerModal";
@@ -29,6 +29,16 @@ const RATIOS = [
 
 type LayoutCanvas = { width: number; height: number };
 type ArtDirectionStatus = { source: "vision" | "fallback"; message: string };
+type GenerationGap = { kind: "missing-background" | "missing-detail" | "missing-benefit"; role: "background" | "detail" | "benefit"; label: string; message: string };
+type GapJob = { id: string; role: GenerationGap["role"]; label: string; status: "PENDING" | "GENERATING" | "DONE" | "FAILED"; errorMessage?: string };
+
+function isGenerationGap(value: unknown): value is GenerationGap {
+  if (!value || typeof value !== "object") return false;
+  const gap = value as Record<string, unknown>;
+  return (gap.kind === "missing-background" || gap.kind === "missing-detail" || gap.kind === "missing-benefit")
+    && (gap.role === "background" || gap.role === "detail" || gap.role === "benefit")
+    && typeof gap.label === "string" && typeof gap.message === "string";
+}
 
 function LayoutOptionPreview({
   option,
@@ -86,6 +96,35 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
   const [readyLayers, setReadyLayers] = useState<Record<string, LayerData[] | null>>({});
   const [canvas, setCanvas] = useState<LayoutCanvas | null>(null);
   const [artDirection, setArtDirection] = useState<ArtDirectionStatus | null>(null);
+  const [generationGaps, setGenerationGaps] = useState<GenerationGap[]>([]);
+  const [gapJob, setGapJob] = useState<GapJob | null>(null);
+  const [gapBusy, setGapBusy] = useState(false);
+
+  useEffect(() => {
+    if (!gapJob || gapJob.status === "DONE" || gapJob.status === "FAILED") return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/library/images?ids=${encodeURIComponent(gapJob.id)}`);
+        const data = await response.json().catch(() => ({}));
+        const row = Array.isArray(data.items) ? data.items[0] : null;
+        if (!cancelled && row && (row.status === "PENDING" || row.status === "GENERATING" || row.status === "DONE" || row.status === "FAILED")) {
+          setGapJob((current) => current && current.id === gapJob.id ? {
+            ...current,
+            status: row.status,
+            errorMessage: typeof row.errorMessage === "string" ? row.errorMessage : undefined,
+          } : current);
+          if (row.status === "DONE" || row.status === "FAILED") return;
+        }
+      } catch {
+        // A temporary poll failure never changes the durable generation state.
+      }
+      if (!cancelled) timer = setTimeout(poll, 2_000);
+    };
+    timer = setTimeout(poll, 1_500);
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [gapJob]);
 
   const generate = async () => {
     if (busy) return;
@@ -107,11 +146,37 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
       setArtDirection(data.artDirection?.source === "vision" || data.artDirection?.source === "fallback"
         ? { source: data.artDirection.source, message: typeof data.artDirection.message === "string" ? data.artDirection.message : "已使用穩定排版規則。" }
         : null);
+      setGenerationGaps(Array.isArray(data.generationGaps) ? data.generationGaps.filter(isGenerationGap) : []);
+      setGapJob(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "產生設計稿失敗，請稍後再試");
     } finally {
       setBusy(false);   // 成功也要解除 busy，否則「使用這個方向進入編輯」會一直卡在「排版中…」disabled
     }
+  };
+
+  const startGapGeneration = async (gap: GenerationGap) => {
+    if (gapBusy || gapJob) return;
+    setGapBusy(true); setError(null);
+    try {
+      const response = await fetch(`/api/products/${productId}/image-set`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: [{ role: gap.role }] }),
+      });
+      const data = await response.json().catch(() => ({}));
+      const item = Array.isArray(data.items) ? data.items[0] : null;
+      if (!response.ok || !item || typeof item.id !== "string" || typeof item.label !== "string") throw new Error(typeof data.error === "string" ? data.error : "無法開始建立素材");
+      setGapJob({ id: item.id, role: gap.role, label: item.label, status: item.status === "GENERATING" ? "GENERATING" : "PENDING" });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法開始建立素材");
+    } finally {
+      setGapBusy(false);
+    }
+  };
+
+  const restartDesign = () => {
+    setOptions(null); setCanvas(null); setSelectedOptionId(null); setArtDirection(null); setGenerationGaps([]); setGapJob(null);
   };
 
   const continueToEditor = () => {
@@ -150,11 +215,17 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
                 <div className="text-sm font-bold text-gray-900">選一個設計方向</div>
                 <p className="mt-1 text-xs leading-5 text-gray-500">每個方向都已挑選必要素材並建立文字層級；下一步仍可自由調整。</p>
               </div>
-              <button type="button" onClick={() => { setOptions(null); setCanvas(null); setSelectedOptionId(null); setArtDirection(null); }} className="flex shrink-0 items-center gap-1 text-xs font-medium text-gray-500 hover:text-violet-700">
+              <button type="button" onClick={restartDesign} className="flex shrink-0 items-center gap-1 text-xs font-medium text-gray-500 hover:text-violet-700">
                 <ArrowLeft className="h-3.5 w-3.5" />重選條件
               </button>
             </div>
             {artDirection && <p className={`mt-2 text-xs ${artDirection.source === "vision" ? "text-violet-700" : "text-gray-500"}`}>{artDirection.message}</p>}
+            {(generationGaps.length > 0 || gapJob) && <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3 text-xs leading-5 text-gray-600">
+              {gapJob?.status === "DONE" ? <div><p><strong className="text-gray-800">{gapJob.label}</strong> 已加入商品素材。</p><button type="button" onClick={restartDesign} className="mt-2 font-bold text-violet-700 hover:text-violet-800">重新建立設計稿</button></div>
+                : gapJob?.status === "FAILED" ? <div><p>建立{gapJob.label}未完成{gapJob.errorMessage ? `：${gapJob.errorMessage}` : ""}</p><button type="button" onClick={() => setGapJob(null)} className="mt-2 font-bold text-violet-700 hover:text-violet-800">重新選擇補齊素材</button></div>
+                  : gapJob ? <p>正在建立{gapJob.label}；完成後可重新建立設計稿。</p>
+                    : <div><p>有一項素材可補齊。只會在你按下按鈕後建立一張不含商品的素材，並產生影像生成用量。</p><div className="mt-2 flex flex-wrap gap-2">{generationGaps.map((gap) => <button key={gap.kind} type="button" onClick={() => void startGapGeneration(gap)} disabled={gapBusy} className="rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50">補{gap.label}</button>)}</div></div>}
+            </div>}
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {options.map((option) => (
                 <LayoutOptionPreview
