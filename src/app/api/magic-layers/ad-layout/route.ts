@@ -7,7 +7,7 @@ import { parseBenefits } from "@/lib/magic-layers/ad-layout-graphics.ts";
    ============================================================ */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { buildAdLayoutCandidates, type AdLayoutCandidateId, type AdLayoutInput } from "@/lib/magic-layers/compose-layers.ts";
+import { type AdLayoutCandidateId, type AdLayoutInput } from "@/lib/magic-layers/compose-layers.ts";
 import { createAdLayoutContext } from "@/lib/magic-layers/ad-layout-context.ts";
 import { createCreativeBrief, selectDesignRecipe } from "@/lib/magic-layers/ad-layout-creative-brief.ts";
 import { analyzeDesignGaps, planRecipeAssets } from "@/lib/magic-layers/ad-layout-gap-analysis.ts";
@@ -15,6 +15,10 @@ import { assessAdLayoutVisualKit } from "@/lib/magic-layers/ad-layout-vision.ts"
 import { applyAdLayoutVisionPolicy } from "@/lib/magic-layers/ad-layout-vision-policy.ts";
 import { prepareAdBackground, resolveTextSafeTreatment } from "@/lib/magic-layers/ad-layout-data.ts";
 import { resolveAdComposition, CopyTooLongError } from "@/lib/magic-layers/ad-layout-composition.ts";
+import { applyArtDirectionPolicy } from "@/lib/magic-layers/ad-layout-art-direction-policy.ts";
+import { planArtDirection } from "@/lib/magic-layers/ad-layout-art-direction-provider.ts";
+import { buildDirectedCandidates } from "@/lib/magic-layers/ad-layout-orchestration.ts";
+import { availableBrandPostReferences, selectDesignReferences } from "@/lib/magic-layers/ad-layout-references.ts";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 import sharp from "sharp";
 
@@ -47,7 +51,7 @@ export async function POST(request: Request) {
     if (!product || product.clientId !== clientId) return NextResponse.json({ error: "Product not found" }, { status: 404 });
     const client = await db.client.findUnique({
       where: { id: clientId },
-      select: { name: true, description: true, industry: true, logoUrls: true, primaryColor: true, secondaryColor: true, toneLabels: true, paletteColors: true, fonts: true },
+      select: { name: true, description: true, industry: true, logoUrls: true, primaryColor: true, secondaryColor: true, toneLabels: true, paletteColors: true, fonts: true, pastPostImageUrls: true },
     });
 
     const context = createAdLayoutContext({ product, client, assets: product.assets });
@@ -88,17 +92,6 @@ export async function POST(request: Request) {
 
     const accentColor = safeContext.brand.primaryColor;
     const directions: AdLayoutCandidateId[] = ["product-focus", "editorial", "scene-led"];
-    const layouts = Object.fromEntries(directions.map(direction => [direction, resolveAdComposition({
-      benefits, canvas: { width: W, height: H, ratio }, purpose, assets: {}, productAspectRatio: heroAspectRatio,
-      compositionAdvice: assessed.advice,
-      typography: { headline: typeof body.title === "string" ? body.title.trim() : undefined, subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() : undefined, dark: "#241f47", light: "#ffffff", accent: accentColor },
-    }, direction)]));
-    const treatments = await Promise.all(directions.map(async direction => {
-      const r = layouts[direction].safePanel;
-      return [direction, await resolveTextSafeTreatment(backgroundBuffer, { x: r.x/W, y: r.y/H, w: r.w/W, h: r.h/H }, accentColor)] as const;
-    }));
-    const textSafeTreatment = Object.fromEntries(treatments.map(([d,t]) => [d,t.panelTreatment]));
-    const textColors = Object.fromEntries(treatments.map(([d,t]) => [d,t.textColor]));
     const tones = safeContext.brand.tones.slice(0, 3);
     const palette = safeContext.brand.palette.slice(0, 3);
     const artDirection = [
@@ -116,14 +109,47 @@ export async function POST(request: Request) {
     const recipe = selectDesignRecipe(brief);
     const assetPlan = planRecipeAssets(recipe, brief.inventory);
     const gapPlan = analyzeDesignGaps(brief, recipe, brief.inventory);
-    const options = buildAdLayoutCandidates({
+    let references: string[];
+    try {
+      references = selectDesignReferences(availableBrandPostReferences(client?.pastPostImageUrls), body.brandReferenceUrls);
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "參考貼文格式錯誤" }, { status: 400 });
+    }
+    const artResult = await planArtDirection(safeContext, { brief, purpose, ratio, title: typeof body.title === "string" ? body.title.trim() : undefined, subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() : undefined, benefits }, references);
+    const directionDecisions = artResult.decision
+      ? applyArtDirectionPolicy({
+        decision: artResult.decision,
+        hasSecondaryAccent: Boolean(safeContext.brand.secondaryColor),
+        assets: { hero: Boolean(heroUrl), detail: Boolean(textureUrl), benefit: Boolean(benefitUrl), decoration: Boolean(decorationUrl) },
+        benefits,
+      })
+      : undefined;
+    const layouts = Object.fromEntries(directions.map(direction => [direction, resolveAdComposition({
+      benefits, canvas: { width: W, height: H, ratio }, purpose, assets: {}, productAspectRatio: heroAspectRatio,
+      compositionAdvice: assessed.advice,
+      typography: { headline: typeof body.title === "string" ? body.title.trim() : undefined, subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() : undefined, dark: "#241f47", light: "#ffffff", accent: accentColor },
+    }, direction, directionDecisions?.[direction])]));
+    const treatments = await Promise.all(directions.map(async direction => {
+      const r = layouts[direction].safePanel;
+      return [direction, await resolveTextSafeTreatment(backgroundBuffer, { x: r.x/W, y: r.y/H, w: r.w/W, h: r.h/H }, accentColor)] as const;
+    }));
+    const textSafeTreatment = Object.fromEntries(treatments.map(([d,t]) => [d,t.panelTreatment]));
+    const textColors = Object.fromEntries(treatments.map(([d,t]) => [d,t.textColor]));
+    const designInput: AdLayoutInput = {
       backgroundUrl, heroUrl, decorationUrl, textureUrl, benefitUrl, logoUrl,
       title: typeof body.title === "string" ? body.title.trim() || undefined : undefined,
       subtitle: typeof body.subtitle === "string" ? body.subtitle.trim() || undefined : undefined,
       benefits, layouts, textColors, brandColor: accentColor, textColor: "#241f47", textSafeTreatment, artDirection,
       purpose, ratio, heroAspectRatio, planning: { brief, recipe, assetPlan, gapPlan }, compositionAdvice: assessed.advice,
-      assessment: { source: assessed.advice.source, warnings: assessed.advice.warnings }, canvasWidth: W, canvasHeight: H,
-    });
+      assessment: { source: assessed.advice.source, warnings: assessed.advice.warnings }, secondaryBrandColor: safeContext.brand.secondaryColor, canvasWidth: W, canvasHeight: H,
+    };
+    const options = buildDirectedCandidates(
+      designInput,
+      artResult,
+      { hero: Boolean(heroUrl), detail: Boolean(textureUrl), benefit: Boolean(benefitUrl), decoration: Boolean(decorationUrl) },
+      Boolean(safeContext.brand.secondaryColor),
+      benefits,
+    );
 
     return NextResponse.json({
       options: options.map((option) => ({
