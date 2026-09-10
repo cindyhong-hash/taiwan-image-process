@@ -36,13 +36,15 @@
 - 呼叫 `buildAdLayoutCandidates(...)` 回三個 `LayerData[]` 選項。舊的 `buildAdLayoutLayers(...)` 保留為相容包裝，回第一個候選版，不可拿它當 route 的主入口。
 
 **組版引擎**
-- `src/lib/magic-layers/ad-layout-design-spec.ts`：建立／驗證 `AdLayoutDesignSpec`，包含方向、template、資產預算、文字安全區、字級層級、投影與 quality warnings。
+- `src/lib/magic-layers/ad-layout-design-spec.ts`：建立／驗證 `AdLayoutDesignSpec`，包含方向、template、資產預算、文字安全區、字級層級、polish、商品整合與 quality warnings。
 - `src/lib/magic-layers/ad-layout-templates.ts`：6 個固定視覺階層模板；template 定義 zone，不讓模型／呼叫端直接隨機設 x/y。
-- `src/lib/magic-layers/ad-layout-renderer.ts`：將 validated spec 轉為真 `LayerData[]`。背景、商品、支援素材、裝飾、橢圓投影、文字安全底板、文字、Logo 都是可個別編輯圖層。
+- `src/lib/magic-layers/ad-layout-polish.ts`：在初始幾何完成後作有上限的調整；只有安全時把過小商品放大最多 8%、加強短標題、移除碰撞裝飾，並可加入可編輯背景柔光，不增加 bitmap。
+- `src/lib/magic-layers/ad-layout-product-integration.ts`：依可信表面判讀與商品位置，確定性規劃 surface／floating 的接觸影、方向投影、側光、halo 與有空間才出現的表面反光；不修改商品圖片像素。
+- `src/lib/magic-layers/ad-layout-renderer.ts`：將 validated spec 轉為真 `LayerData[]`。背景、柔光、商品整合光影、商品、支援素材、裝飾、文字安全底板、文字、Logo 都是可個別編輯圖層。
 - `src/lib/magic-layers/ad-layout-recipes.ts` 是 route 相容入口：只負責把 input 串到 spec + renderer。
 - `src/lib/magic-layers/ad-layout-context.ts`：唯一負責將資料庫資產 role（含 legacy alias）、品牌資料與 visual profile 正規化成 product visual-kit context。
 - `src/lib/magic-layers/ad-layout-creative-brief.ts`、`ad-layout-gap-analysis.ts`：建立目的／品牌／文案的 Creative Brief，挑選 recipe，並將缺口映射到既有可編輯 shape，而不是重新生圖。
-- `src/lib/magic-layers/ad-layout-quality.ts`：純規則檢查，render 前保護 hero、support budget、裝飾 budget、文字 treatment 和商品比例。
+- `src/lib/magic-layers/ad-layout-quality.ts`：純規則檢查，render 前保護 hero、support budget、裝飾 budget、文字 treatment、商品比例、商品邊界、光影整合與商品／文案分離。
 - `src/lib/magic-layers/ad-layout-vision.ts`：一次、可注入測試的 OpenRouter visual-kit assessment。只送既有 hero／background／detail／benefit／decoration 的縮圖；所有失敗回傳 named fallback，不會讓設計 API 失敗。
 - `src/lib/magic-layers/ad-layout-vision-policy.ts`：唯一可將 vision 結果轉成素材省略與 composition advice 的純規則層；`0.7` 是版面建議信任門檻，`0.95` 是角色衝突的刪除門檻。完整情境本身不會讓 `background` 失效，低於刪除門檻則保留素材。它不會也不能改寫 identity assets。
 - 素材規則：商品主視覺／編輯留白預設只用背景、hero、最多一個裝飾；情境版最多一個 support（`detail` 或 `benefit`）；賣點用途可選 `benefit`，但不會與 `detail` 疊用。

@@ -18,10 +18,48 @@ test("renders a focused composition without support-image clutter", () => {
   const layers = renderAdLayoutSpec(productFocus, { logoUrl: "logo" });
 
   assert.deepEqual(layers.map((layer) => layer.id), [
-    "layer_bg", "background_wash", "product_shadow", "product_1", "decoration_1", "text_safe_panel", "text_title", "text_sub", "logo_1",
+    "layer_bg", "background_wash", "product_color_halo", "product_grounding_shadow", "product_highlight", "product_1", "decoration_1", "text_safe_panel", "text_title", "text_sub", "logo_1",
   ]);
   assert.equal(layers.some((layer) => layer.id === "texture_1" || layer.id === "benefit_1"), false);
   assert.equal((layers.find((layer) => layer.id === "text_safe_panel")?.meta.shape as { kind?: string }).kind, "rect");
+});
+
+test("renders distinct editable integration layers for trusted surface grounding", () => {
+  const scene = resolveAdLayoutDesignSpecs({
+    ...input,
+    purpose: "scene",
+    compositionAdvice: { source: "vision", sceneGrounding: "surface", warnings: [] },
+  }).find((spec) => spec.direction === "scene-led");
+  assert.ok(scene);
+
+  const layers = renderAdLayoutSpec(scene);
+  const effectIds = ["product_cast_shadow", "product_contact_shadow", "product_highlight", "product_reflection_highlight"];
+  const effects = layers.filter((layer) => effectIds.includes(layer.id));
+  const product = layers.find((layer) => layer.id === "product_1");
+
+  assert.ok(product);
+  assert.equal(product.image, "hero");
+  assert.ok(effects.some((layer) => layer.id === "product_cast_shadow"));
+  assert.ok(effects.some((layer) => layer.id === "product_contact_shadow"));
+  assert.ok(effects.some((layer) => layer.id === "product_highlight"));
+  if (scene.productIntegration?.reflectionHighlight) {
+    assert.ok(effects.some((layer) => layer.id === "product_reflection_highlight"));
+  }
+  assert.ok(effects.every((layer) => layer.editable && layer.image === null && Boolean(layer.meta.shape)));
+  assert.ok(effects.every((layer) => layer.zIndex < product.zIndex));
+  assert.equal(layers.some((layer) => layer.id === "product_color_halo" || layer.id === "product_grounding_shadow"), false);
+});
+
+test("renders floating grounding and brand halo without contact or reflection layers", () => {
+  const productFocus = resolveAdLayoutDesignSpecs(input).find((spec) => spec.direction === "product-focus");
+  assert.ok(productFocus);
+  const layers = renderAdLayoutSpec(productFocus);
+
+  assert.ok(layers.some((layer) => layer.id === "product_grounding_shadow"));
+  assert.ok(layers.some((layer) => layer.id === "product_color_halo"));
+  assert.ok(layers.some((layer) => layer.id === "product_highlight"));
+  assert.equal(layers.some((layer) => layer.id === "product_contact_shadow"), false);
+  assert.equal(layers.some((layer) => layer.id === "product_reflection_highlight"), false);
 });
 
 test("renders the polish wash as an editable full-canvas gradient above the image background", () => {

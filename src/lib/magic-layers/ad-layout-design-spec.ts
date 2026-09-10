@@ -6,6 +6,7 @@ import type { CreativeBrief, DesignRecipe } from "./ad-layout-creative-brief.ts"
 import { planRecipeAssets, type AdLayoutAssetPlan, type GapPlanEntry } from "./ad-layout-gap-analysis.ts";
 import { validateAdLayoutSpec, type AdLayoutQualityCheck } from "./ad-layout-quality.ts";
 import { polishAdLayoutSpec } from "./ad-layout-polish.ts";
+import { planProductIntegration, type ProductIntegrationPlan } from "./ad-layout-product-integration.ts";
 import type { AdLayoutCompositionAdvice } from "./ad-layout-vision-policy.ts";
 
 export type AdLayoutPurpose = "product" | "benefit" | "scene" | "promo";
@@ -60,6 +61,7 @@ export interface AdLayoutDesignSpec {
   textSafeArea: { zone: TextSafeZone; treatment: TextSafeTreatment };
   typography: { headline?: string; subtitle?: string; headlineColor: string; subtitleColor: string; accentColor: string; headlineWeight: 700 | 800; subtitleWeight: 500 | 600; };
   productTreatment?: { shadow: "none" | "soft-ellipse"; aspectRatio?: number };
+  productIntegration?: ProductIntegrationPlan;
   polishTreatment: AdLayoutPolishTreatment;
   quality: { score: number; warnings: string[]; checks: AdLayoutQualityCheck[] };
 }
@@ -109,9 +111,12 @@ export function validateAndRepairDesignSpec(spec: AdLayoutDesignSpec, available:
     warnings.push("已補回商品主體，維持主視覺層級");
   }
   const repaired = { ...spec, assets };
-  const checks = validateAdLayoutSpec(repaired);
+  const integrated = assets.product
+    ? { ...repaired, productIntegration: planProductIntegration(repaired) }
+    : { ...repaired, productIntegration: undefined };
+  const checks = validateAdLayoutSpec(integrated);
   const failed = checks.filter((check) => !check.passed);
-  return { ...repaired, quality: { score: Math.max(0, 100 - warnings.length * 8 - failed.length * 15), warnings: [...warnings, ...failed.map((check) => check.message)], checks } };
+  return { ...integrated, quality: { score: Math.max(0, 100 - warnings.length * 8 - failed.length * 15), warnings: [...warnings, ...failed.map((check) => check.message)], checks } };
 }
 
 export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayoutDesignSpec[] {

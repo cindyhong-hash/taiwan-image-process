@@ -77,13 +77,13 @@
 - Add `ProductIntegrationPlan` with `mode`, `lightSide`, `contactShadow`, `castShadow`, `highlight`, `halo`, and `reflectionHighlight` booleans.
 - Add `planProductIntegration(spec): ProductIntegrationPlan` and bounded geometry helpers returning `Bbox` values.
 
-- [ ] Add failing planner tests proving surface mode enables contact/cast/highlight/reflection when space permits, while floating mode enables only grounding/highlight/halo.
-- [ ] Implement deterministic mode and light-side selection from trusted surface advice and resolved product placement.
-- [ ] Add failing renderer tests for editable `product_cast_shadow`, `product_contact_shadow`, `product_highlight`, `product_color_halo`, and conditional `product_reflection_highlight`, with the hero URL and ratio unchanged.
-- [ ] Render each effect as a bounded rect/ellipse/gradient/softness shape; do not create or modify product bitmaps.
-- [ ] Extend quality checks with product bounds, visible integration, and text/product overlap checks using resolved geometry.
-- [ ] Run integration, renderer, quality, composition, saved-layer and preview tests; run TypeScript and focused ESLint.
-- [ ] Commit `feat(design): integrate products with editable lighting`.
+- [x] Add failing planner tests proving surface mode enables contact/cast/highlight/reflection when space permits, while floating mode enables only grounding/highlight/halo.
+- [x] Implement deterministic mode and light-side selection from trusted surface advice and resolved product placement.
+- [x] Add failing renderer tests for editable `product_cast_shadow`, `product_contact_shadow`, `product_highlight`, `product_color_halo`, and conditional `product_reflection_highlight`, with the hero URL and ratio unchanged.
+- [x] Render each effect as a bounded rect/ellipse/gradient/softness shape; do not create or modify product bitmaps.
+- [x] Extend quality checks with product bounds, visible integration, and text/product overlap checks using resolved geometry.
+- [x] Run integration, renderer, quality, composition, saved-layer and preview tests; run TypeScript and focused ESLint.
+- [x] Commit `feat(design): integrate products with editable lighting`.
 
 ### Task 4: Semantic benefit graphic system
 

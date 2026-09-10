@@ -3,6 +3,7 @@ import { fitText } from "./editable-text.ts";
 import { CopyTooLongError } from "./ad-layout-composition.ts";
 import { DEFAULT_TEXT_LAYOUT } from "./editable-text.ts";
 import { templateById } from "./ad-layout-templates.ts";
+import { planProductIntegration, resolveProductIntegrationGeometry } from "./ad-layout-product-integration.ts";
 import type { AdLayoutDesignSpec, NormalizedRect } from "./ad-layout-design-spec.ts";
 import type { Bbox, LayerData, SemanticId } from "./types.ts";
 
@@ -125,13 +126,43 @@ export function renderAdLayoutSpec(spec: AdLayoutDesignSpec, options: AdLayoutRe
     const label = spec.assets.support.role === "benefit" ? "賣點視覺" : "質地細節";
     layers.push(imageLayer(id, label, zIndex++, spec.assets.support.imageUrl, layout?.support ?? box(template.zones.support, width, height), "object", "object", 0.82));
   }
-  if (spec.assets.product && spec.productTreatment?.shadow === "soft-ellipse") {
-    const product = layout?.product ?? fitAspectWithin(box(template.zones.hero, width, height), spec.productTreatment.aspectRatio);
-    const shadow: Bbox = {
-      x: Math.round(product.x + product.w * 0.15), y: Math.round(product.y + product.h * 0.82),
-      w: Math.round(product.w * 0.7), h: Math.max(12, Math.round(product.h * 0.10)),
-    };
-    layers.push(shapeLayer("product_shadow", "商品柔和投影", zIndex++, shadow, "#24364a", 0.16, "ellipse"));
+  if (spec.assets.product) {
+    const integration = spec.productIntegration ?? planProductIntegration(spec);
+    const geometry = resolveProductIntegrationGeometry(spec, integration);
+    if (geometry.halo) {
+      const halo = shapeLayer("product_color_halo", "商品品牌光暈", zIndex++, geometry.halo, spec.typography.accentColor, 0.14, "ellipse");
+      halo.meta.shape = { kind: "ellipse", fill: spec.typography.accentColor, stroke: "none", strokeWidth: 0, softness: 0.95 };
+      layers.push(halo);
+    }
+    if (geometry.castShadow) {
+      const cast = shapeLayer("product_cast_shadow", "商品方向投影", zIndex++, geometry.castShadow, "#1f2937", 0.13, "ellipse");
+      cast.rotation = integration.lightSide === "left" ? 8 : -8;
+      cast.meta.shape = { kind: "ellipse", fill: "#1f2937", stroke: "none", strokeWidth: 0, softness: 0.92 };
+      layers.push(cast);
+    }
+    if (geometry.groundingShadow) {
+      const grounding = shapeLayer("product_grounding_shadow", "商品懸浮底影", zIndex++, geometry.groundingShadow, "#24364a", 0.14, "ellipse");
+      grounding.meta.shape = { kind: "ellipse", fill: "#24364a", stroke: "none", strokeWidth: 0, softness: 0.9 };
+      layers.push(grounding);
+    }
+    if (geometry.contactShadow) {
+      const contact = shapeLayer("product_contact_shadow", "商品接觸陰影", zIndex++, geometry.contactShadow, "#1f2937", 0.2, "ellipse");
+      contact.meta.shape = { kind: "ellipse", fill: "#1f2937", stroke: "none", strokeWidth: 0, softness: 0.78 };
+      layers.push(contact);
+    }
+    if (geometry.reflectionHighlight) {
+      const reflection = shapeLayer("product_reflection_highlight", "商品表面反光", zIndex++, geometry.reflectionHighlight, "#ffffff", 0.14, "rect");
+      reflection.meta.shape = {
+        kind: "rect", fill: "#ffffff", stroke: "none", strokeWidth: 0, radius: 0,
+        gradient: { axis: "vertical", from: "#ffffff70", to: "#ffffff00" }, softness: 0.72,
+      };
+      layers.push(reflection);
+    }
+    if (geometry.highlight) {
+      const highlight = shapeLayer("product_highlight", "商品側光", zIndex++, geometry.highlight, "#ffffff", 0.18, "ellipse");
+      highlight.meta.shape = { kind: "ellipse", fill: "#ffffff", stroke: "none", strokeWidth: 0, softness: 0.86 };
+      layers.push(highlight);
+    }
   }
   if (spec.assets.product) {
     const product = layout?.product ?? fitAspectWithin(box(template.zones.hero, width, height), spec.productTreatment?.aspectRatio);
