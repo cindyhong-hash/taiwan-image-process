@@ -7,7 +7,7 @@ import { drawEditableShape, drawIcon, EDITABLE_ICON_NAMES } from "@/lib/magic-la
    pipeline; extracts each layer along its contour (no rectangle crops).
    Ported from the verified vanilla engine.
    ============================================================ */
-import { drawEditableText, readTextLayout, type TextLayout } from "@/lib/magic-layers/editable-text.ts";
+import { drawEditableText, readTextLayout, DEFAULT_TEXT_LAYOUT, type TextLayout } from "@/lib/magic-layers/editable-text.ts";
 import type { SavedLayer, TextFx, ShapeKind, ShapeSpec } from "@/lib/magic-layers/saved-layer.ts";
 export type { SavedLayer } from "@/lib/magic-layers/saved-layer.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -1016,10 +1016,13 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
                     <label style={S.rlabel}>文字內容</label>
                     <input value={selEl.text} onChange={(e) => updateText({ text: e.target.value })} style={S.rinput} />
                     <label style={S.rlabel}>字體</label>
+                    {/* 這三個家族由 app/layout.tsx 以 next/font 實際載入（見該檔註解）。
+                        先前選單裡的 Manrope 根本沒被載入，選了等於沒選；
+                        中文字也沒有任何 webfont，實際字形取決於觀看者的作業系統。 */}
                     <select value={selEl.fontFamily} onChange={(e) => updateText({ fontFamily: e.target.value })} style={S.rinput}>
-                      <option value="'Noto Sans TC',system-ui,sans-serif">Noto Sans TC</option>
-                      <option value="'Noto Serif TC',serif">Noto Serif TC</option>
-                      <option value="'Manrope','Noto Sans TC',sans-serif">Manrope</option>
+                      <option value="'Noto Sans TC',system-ui,sans-serif">思源黑體（Noto Sans TC）</option>
+                      <option value="'Noto Serif TC',serif">思源宋體（Noto Serif TC）</option>
+                      <option value="'Manrope','Noto Sans TC',sans-serif">Manrope（英數）</option>
                     </select>
                     <div style={{ display: "flex", gap: 10 }}>
                       <div style={{ flex: 1 }}><label style={S.rlabel}>字型大小</label>
@@ -1028,6 +1031,22 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
                         <select value={selEl.fontWeight} onChange={(e) => updateText({ fontWeight: Number(e.target.value) })} style={S.rinput}>
                           <option value={400}>Regular</option><option value={600}>Medium</option><option value={700}>Bold</option><option value={800}>Black</option>
                         </select></div>
+                    </div>
+                    {/* 字距／行高：drawTextEl 早就會讀 textLayout 來排版，但一直沒有 UI，
+                        使用者調不到。沒有 textLayout 的舊圖層在這裡第一次調整時建立預設值。 */}
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <div style={{ flex: 1 }}><label style={S.rlabel}>字距</label>
+                        <input type="number" step={0.5} value={selEl.textLayout?.letterSpacing ?? 0}
+                          onChange={(e) => {
+                            const v = Math.max(-20, Math.min(20, Number(e.target.value) || 0));
+                            updateText({ textLayout: { ...(selEl.textLayout ?? DEFAULT_TEXT_LAYOUT), letterSpacing: v } });
+                          }} style={S.rinput} /></div>
+                      <div style={{ flex: 1 }}><label style={S.rlabel}>行高</label>
+                        <input type="number" step={0.05} value={selEl.textLayout?.lineHeight ?? DEFAULT_TEXT_LAYOUT.lineHeight}
+                          onChange={(e) => {
+                            const v = Math.max(1, Math.min(2, Number(e.target.value) || DEFAULT_TEXT_LAYOUT.lineHeight));
+                            updateText({ textLayout: { ...(selEl.textLayout ?? DEFAULT_TEXT_LAYOUT), lineHeight: v } });
+                          }} style={S.rinput} /></div>
                     </div>
                     <label style={S.rlabel}>顏色</label>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
