@@ -355,15 +355,10 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
           ? "上傳品牌專用字體，在自由畫布編輯文字時使用。"
           : "先建立品牌後即可上傳字檔。"}
         right={clientId ? (
-          <>
-            <span className="rounded-full border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-600">
-              可實際套用於編輯器
-            </span>
-            <HelpTip
-              label="生效範圍"
-              text="自由畫布與「AI 幫我設計」的文字圖層可直接套用上傳的字體。產品套圖／單圖主視覺上的文字是 AI 畫進圖片裡的，不會套用這裡的字體。請確認你擁有該字體的使用授權。"
-            />
-          </>
+          <HelpTip
+            label="生效範圍"
+            text="自由畫布與「AI 幫我設計」的文字圖層可直接套用上傳的字體。產品套圖／單圖主視覺上的文字是 AI 畫進圖片裡的，不會套用這裡的字體。請確認你擁有該字體的使用授權。"
+          />
         ) : undefined}
       >
         {clientId
