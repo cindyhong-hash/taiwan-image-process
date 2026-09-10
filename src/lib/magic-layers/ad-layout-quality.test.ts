@@ -37,3 +37,30 @@ test("allows a single benefit visual when the brief is benefit-led", () => {
   assert.equal(base.assets.support?.role, "benefit");
   assert.equal(checks.find((check) => check.id === "direction-support")?.passed, true);
 });
+
+test("flags a product that leaves the canvas", () => {
+  const [base] = resolveAdLayoutDesignSpecs(input);
+  const checks = validateAdLayoutSpec({
+    ...base,
+    layout: { ...base.layout!, product: { ...base.layout!.product, x: -1 } },
+  });
+
+  assert.equal(checks.find((check) => check.id === "product-bounds")?.passed, false);
+});
+
+test("flags a visible product without an integration treatment", () => {
+  const [base] = resolveAdLayoutDesignSpecs(input);
+  const checks = validateAdLayoutSpec({ ...base, productIntegration: undefined });
+
+  assert.equal(checks.find((check) => check.id === "product-integration")?.passed, false);
+});
+
+test("flags product and headline overlap in resolved geometry", () => {
+  const [base] = resolveAdLayoutDesignSpecs(input);
+  const checks = validateAdLayoutSpec({
+    ...base,
+    layout: { ...base.layout!, headline: { ...base.layout!.product } },
+  });
+
+  assert.equal(checks.find((check) => check.id === "product-copy-overlap")?.passed, false);
+});

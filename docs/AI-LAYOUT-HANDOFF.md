@@ -11,7 +11,7 @@
 
 > **Design Polish P2／P3（branch `codex/ai-layout-design-polish-p3`，待 review）**：新增比例感知構圖、多行可編輯文案、依實際 LayerData 繪製的候選預覽、可儲存的漸層／柔邊投影，以及使用者確認文字驅動的賣點圖示組。商品主體不變形，長文案會以可讀性限制回覆縮短提示。P3 已接入受限的 OpenRouter art-direction 決策：只接受固定 enum JSON、以單一合法值示範 schema、使用 `temperature: 0`，且僅影響既有可編輯版型能力。20 秒 deadline 或任何 provider/格式失敗都回到 P2 三候選，API 只回傳安全的 fallback reason（含 `low-confidence`），server log 不記錄模型原文。部署時需設 `AD_LAYOUT_ART_DIRECTION_ENABLED=true` 才會啟用；目前不提供過往貼文選取，避免無登入驗證的圖片網址揭露。
 
-> **P4 Gap Generation（branch `codex/ai-layout-design-polish-p3`，待 review）**：scene 缺背景、scene 缺輔助質地、benefit 缺賣點視覺時，排版結果會列出單一可選缺口。只有使用者主動按下按鈕才透過既有 paid image-set worker 建立一張 background／detail／benefit 素材；hero 與 Logo 永不由此流程重生成。完成後使用者明確重跑排版，生成素材會重新經既有 safety policy。
+> **P4 Gap Generation（branch `codex/ai-layout-design-polish-p3`，待 review）**：所有缺少背景素材的排版都先建立不透明、可編輯的 `background_base` shape，避免輸出透明畫布；只有 scene 用途仍會提示可選的付費情境背景。scene 有背景但缺輔助素材時會提示 detail，legacy lifestyle 仍可作 scene 支援。benefit 用途只有 `sourceRole: "benefit"` 的原生賣點素材能滿足語意缺口，detail／lifestyle／ingredient 只能作版型替代，不會壓掉補賣點視覺的提示。gap analysis 使用安全判讀後的 inventory，因此低信心、仍被保留的素材不會觸發付費提示。只有使用者主動按下按鈕才透過既有 paid image-set worker 建立一張 background／detail／benefit 素材；hero 與 Logo 永不由此流程重生成。完成後使用者明確重跑排版，生成素材會重新經既有 safety policy。
 
 整條產品流程：
 `產品 → AI 建立商品素材 → AI 幫我排版 → 可編輯設計稿 → 自由畫布微調 → 完成`
@@ -36,13 +36,16 @@
 - 呼叫 `buildAdLayoutCandidates(...)` 回三個 `LayerData[]` 選項。舊的 `buildAdLayoutLayers(...)` 保留為相容包裝，回第一個候選版，不可拿它當 route 的主入口。
 
 **組版引擎**
-- `src/lib/magic-layers/ad-layout-design-spec.ts`：建立／驗證 `AdLayoutDesignSpec`，包含方向、template、資產預算、文字安全區、字級層級、投影與 quality warnings。
+- `src/lib/magic-layers/ad-layout-design-spec.ts`：建立／驗證 `AdLayoutDesignSpec`，包含方向、template、資產預算、文字安全區、字級層級、polish、商品整合與 quality warnings。
 - `src/lib/magic-layers/ad-layout-templates.ts`：6 個固定視覺階層模板；template 定義 zone，不讓模型／呼叫端直接隨機設 x/y。
-- `src/lib/magic-layers/ad-layout-renderer.ts`：將 validated spec 轉為真 `LayerData[]`。背景、商品、支援素材、裝飾、橢圓投影、文字安全底板、文字、Logo 都是可個別編輯圖層。
+- `src/lib/magic-layers/ad-layout-polish.ts`：在初始幾何完成後作有上限的調整；只有安全時把過小商品放大最多 8%、加強短標題、移除碰撞裝飾，並可加入可編輯背景柔光，不增加 bitmap。
+- `src/lib/magic-layers/ad-layout-product-integration.ts`：依可信表面判讀與商品位置，確定性規劃 surface／floating 的接觸影、方向投影、側光、halo 與有空間才出現的表面反光；不修改商品圖片像素。
+- `src/lib/magic-layers/ad-layout-graphics.ts`：以可擴充的 semantic registry 將已確認賣點映射到 10 類向量 icon；未知或否定敘述維持純文字，數字 callout 只擷取使用者原文。renderer 會建立同 group 的 glass badge、icon、原文與數字字層，並用可編輯 divider 分隔多個賣點。
+- `src/lib/magic-layers/ad-layout-renderer.ts`：將 validated spec 轉為真 `LayerData[]`。背景、柔光、商品整合光影、商品、支援素材、裝飾、文字安全底板、文字、Logo 都是可個別編輯圖層。
 - `src/lib/magic-layers/ad-layout-recipes.ts` 是 route 相容入口：只負責把 input 串到 spec + renderer。
 - `src/lib/magic-layers/ad-layout-context.ts`：唯一負責將資料庫資產 role（含 legacy alias）、品牌資料與 visual profile 正規化成 product visual-kit context。
 - `src/lib/magic-layers/ad-layout-creative-brief.ts`、`ad-layout-gap-analysis.ts`：建立目的／品牌／文案的 Creative Brief，挑選 recipe，並將缺口映射到既有可編輯 shape，而不是重新生圖。
-- `src/lib/magic-layers/ad-layout-quality.ts`：純規則檢查，render 前保護 hero、support budget、裝飾 budget、文字 treatment 和商品比例。
+- `src/lib/magic-layers/ad-layout-quality.ts`：純規則檢查，render 前保護 hero、support budget、裝飾 budget、文字 treatment、商品比例、商品邊界、光影整合與商品／文案分離。
 - `src/lib/magic-layers/ad-layout-vision.ts`：一次、可注入測試的 OpenRouter visual-kit assessment。只送既有 hero／background／detail／benefit／decoration 的縮圖；所有失敗回傳 named fallback，不會讓設計 API 失敗。
 - `src/lib/magic-layers/ad-layout-vision-policy.ts`：唯一可將 vision 結果轉成素材省略與 composition advice 的純規則層；`0.7` 是版面建議信任門檻，`0.95` 是角色衝突的刪除門檻。完整情境本身不會讓 `background` 失效，低於刪除門檻則保留素材。它不會也不能改寫 identity assets。
 - 素材規則：商品主視覺／編輯留白預設只用背景、hero、最多一個裝飾；情境版最多一個 support（`detail` 或 `benefit`）；賣點用途可選 `benefit`，但不會與 `detail` 疊用。
@@ -59,7 +62,7 @@
 
 1. **歷史設計參考**：若要讓 vision 讀過往貼文，先定義可讀的「已核准、同品牌、同用途」資料來源與隱私範圍；P2-A 不讀任何歷史貼文，也沒有 persistent cache。
 2. **更細緻的背景處理**：目前是安全底板；若要漸層面板或圖片模糊，需要先擴充 Editor 的 shape/image effect 契約，再讓 renderer 使用，不能直接 flatten 全圖。
-3. **Graphic / Icon system**：benefit icon、badge、callout 必須先有可編輯 primitives 與 semantic icon library；不可讓 vision 或文字模型傳入任意圖層座標。
+3. **Graphic / Icon system**：目前 benefit icon、glass badge、divider、數字 callout 已使用可編輯 primitives 與 semantic registry；後續擴充仍須走 registry，不可讓 vision 或文字模型傳入任意圖層座標。
 4. **自動文案**：使用者未填文字時，可重用既有 `POST /api/activities/creative-direction` 的方向，但仍要保留空字層／無文案的安全 fallback。
 
 ---

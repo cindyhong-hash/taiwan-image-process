@@ -3,6 +3,7 @@ import { fitText } from "./editable-text.ts";
 import { CopyTooLongError } from "./ad-layout-composition.ts";
 import { DEFAULT_TEXT_LAYOUT } from "./editable-text.ts";
 import { templateById } from "./ad-layout-templates.ts";
+import { planProductIntegration, resolveProductIntegrationGeometry } from "./ad-layout-product-integration.ts";
 import type { AdLayoutDesignSpec, NormalizedRect } from "./ad-layout-design-spec.ts";
 import type { Bbox, LayerData, SemanticId } from "./types.ts";
 
@@ -40,9 +41,19 @@ function imageLayer(
   };
 }
 
-function shapeLayer(id: string, name: string, zIndex: number, rect: Bbox, fill: string, opacity: number, kind: "rect" | "ellipse"): LayerData {
+function shapeLayer(
+  id: string,
+  name: string,
+  zIndex: number,
+  rect: Bbox,
+  fill: string,
+  opacity: number,
+  kind: "rect" | "ellipse",
+  type: LayerData["type"] = "object",
+  semanticId: SemanticId = "object",
+): LayerData {
   return {
-    id, name, type: "object", semanticId: "object", instanceId: id, parentId: null, bbox: rect, mask: null, image: null,
+    id, name, type, semanticId, instanceId: id, parentId: null, bbox: rect, mask: null, image: null,
     x: rect.x, y: rect.y, width: rect.w, height: rect.h, rotation: 0, zIndex, confidence: 1,
     source: "generated", editable: true, embeddedText: [], children: [],
     meta: { opacity, shape: { ...(id === "product_shadow" ? { softness: 0.9 } : {}), kind, fill, stroke: "none", strokeWidth: 0, radius: kind === "rect" ? Math.round(Math.min(rect.w, rect.h) * 0.1) : 0 } },
@@ -73,19 +84,85 @@ export function renderAdLayoutSpec(spec: AdLayoutDesignSpec, options: AdLayoutRe
 
   if (spec.assets.background) {
     layers.push(imageLayer("layer_bg", "情境背景", zIndex++, spec.assets.background.imageUrl, { x: 0, y: 0, w: width, h: height }, "background", "background"));
+  } else {
+    const background = shapeLayer(
+      "background_base",
+      "背景底色",
+      zIndex++,
+      { x: 0, y: 0, w: width, h: height },
+      "#f8f9fc",
+      1,
+      "rect",
+      "background",
+      "background",
+    );
+    background.meta.shape = { kind: "rect", fill: "#f8f9fc", stroke: "none", strokeWidth: 0, radius: 0 };
+    layers.push(background);
+  }
+  if (spec.polishTreatment?.backgroundWash === "soft-light") {
+    const wash = shapeLayer(
+      "background_wash",
+      "背景柔光",
+      zIndex++,
+      { x: 0, y: 0, w: width, h: height },
+      "#ffffff",
+      0.24,
+      "rect",
+      "background",
+      "background",
+    );
+    wash.meta.shape = {
+      kind: "rect",
+      fill: "#ffffff",
+      stroke: "none",
+      strokeWidth: 0,
+      radius: 0,
+      gradient: { axis: "vertical", from: "#ffffffb8", to: "#ffffff1f" },
+    };
+    layers.push(wash);
   }
   if (spec.assets.support) {
     const id = spec.assets.support.role === "benefit" ? "benefit_1" : "texture_1";
     const label = spec.assets.support.role === "benefit" ? "賣點視覺" : "質地細節";
     layers.push(imageLayer(id, label, zIndex++, spec.assets.support.imageUrl, layout?.support ?? box(template.zones.support, width, height), "object", "object", 0.82));
   }
-  if (spec.assets.product && spec.productTreatment?.shadow === "soft-ellipse") {
-    const product = layout?.product ?? fitAspectWithin(box(template.zones.hero, width, height), spec.productTreatment.aspectRatio);
-    const shadow: Bbox = {
-      x: Math.round(product.x + product.w * 0.15), y: Math.round(product.y + product.h * 0.82),
-      w: Math.round(product.w * 0.7), h: Math.max(12, Math.round(product.h * 0.10)),
-    };
-    layers.push(shapeLayer("product_shadow", "商品柔和投影", zIndex++, shadow, "#24364a", 0.16, "ellipse"));
+  if (spec.assets.product) {
+    const integration = spec.productIntegration ?? planProductIntegration(spec);
+    const geometry = resolveProductIntegrationGeometry(spec, integration);
+    if (geometry.halo) {
+      const halo = shapeLayer("product_color_halo", "商品品牌光暈", zIndex++, geometry.halo, spec.typography.accentColor, 0.14, "ellipse");
+      halo.meta.shape = { kind: "ellipse", fill: spec.typography.accentColor, stroke: "none", strokeWidth: 0, softness: 0.95 };
+      layers.push(halo);
+    }
+    if (geometry.castShadow) {
+      const cast = shapeLayer("product_cast_shadow", "商品方向投影", zIndex++, geometry.castShadow, "#1f2937", 0.13, "ellipse");
+      cast.rotation = integration.lightSide === "left" ? 8 : -8;
+      cast.meta.shape = { kind: "ellipse", fill: "#1f2937", stroke: "none", strokeWidth: 0, softness: 0.92 };
+      layers.push(cast);
+    }
+    if (geometry.groundingShadow) {
+      const grounding = shapeLayer("product_grounding_shadow", "商品懸浮底影", zIndex++, geometry.groundingShadow, "#24364a", 0.14, "ellipse");
+      grounding.meta.shape = { kind: "ellipse", fill: "#24364a", stroke: "none", strokeWidth: 0, softness: 0.9 };
+      layers.push(grounding);
+    }
+    if (geometry.contactShadow) {
+      const contact = shapeLayer("product_contact_shadow", "商品接觸陰影", zIndex++, geometry.contactShadow, "#1f2937", 0.2, "ellipse");
+      contact.meta.shape = { kind: "ellipse", fill: "#1f2937", stroke: "none", strokeWidth: 0, softness: 0.78 };
+      layers.push(contact);
+    }
+    if (geometry.reflectionHighlight) {
+      const reflection = shapeLayer("product_reflection_highlight", "商品表面反光", zIndex++, geometry.reflectionHighlight, "#ffffff", 0.14, "rect");
+      reflection.meta.shape = {
+        kind: "rect", fill: "#ffffff", stroke: "none", strokeWidth: 0, radius: 0,
+        gradient: { axis: "vertical", from: "#ffffff70", to: "#ffffff00" }, softness: 0.72,
+      };
+      layers.push(reflection);
+    }
+    if (geometry.highlight) {
+      const highlight = shapeLayer("product_highlight", "商品側光", zIndex++, geometry.highlight, "#ffffff", 0.18, "ellipse");
+      highlight.meta.shape = { kind: "ellipse", fill: "#ffffff", stroke: "none", strokeWidth: 0, softness: 0.86 };
+      layers.push(highlight);
+    }
   }
   if (spec.assets.product) {
     const product = layout?.product ?? fitAspectWithin(box(template.zones.hero, width, height), spec.productTreatment?.aspectRatio);
@@ -123,20 +200,90 @@ export function renderAdLayoutSpec(spec: AdLayoutDesignSpec, options: AdLayoutRe
     layers.push(textLayer("text_sub", zIndex++, spec.typography.subtitle, subtitleRect, subtitleColor, spec.typography.subtitleWeight, align, layout?.subtitleSize));
   }
   if (spec.benefits?.length) {
-    const n = spec.benefits.length, cellW = width * 0.86 / n, unit = Math.min(width,height);
-    spec.benefits.forEach((benefit,i) => {
-      const x = width*0.07+i*cellW, y=height*0.77, icon=matchBenefitGraphic(benefit).icon;
-      const groupId=`benefit_group_${benefit.id}`;
-      if(icon) {
-        const size=Math.round(unit*0.045), rect={x:Math.round(x),y:Math.round(y),w:size,h:size};
-        const graphic=shapeLayer(`graphic_${benefit.id}`,"賣點圖示",zIndex++,rect,spec.typography.accentColor,1,"rect");
-        graphic.meta.shape={kind:"icon",icon,fill:spec.typography.accentColor,stroke:"none",strokeWidth:0};graphic.meta.groupId=groupId;layers.push(graphic);
+    const n = spec.benefits.length;
+    const cellW = width * 0.86 / n;
+    const unit = Math.min(width, height);
+    spec.benefits.forEach((benefit, index) => {
+      const x = width * 0.07 + index * cellW;
+      const y = height * 0.77;
+      const match = matchBenefitGraphic(benefit);
+      const groupId = `benefit_group_${benefit.id}`;
+      if (index > 0) {
+        const length = Math.round(height * 0.105);
+        const divider = shapeLayer(
+          `benefit_divider_${index}`,
+          "賣點分隔線",
+          zIndex++,
+          { x: Math.round(x - length / 2), y: Math.round(y + unit * 0.02), w: length, h: 1 },
+          "none",
+          0.32,
+          "rect",
+        );
+        divider.rotation = 90;
+        divider.meta.shape = { kind: "line", fill: "none", stroke: spec.typography.accentColor, strokeWidth: 1 };
+        divider.meta.groupId = groupId;
+        layers.push(divider);
       }
-      const rect={x:Math.round(x),y:Math.round(y+unit*0.055),w:Math.floor(cellW-unit*0.02),h:Math.floor(height*0.075)};
-      const fitted=fitText(benefit.text,rect.w,rect.h,unit*0.018,unit*0.024);
-      if(!fitted.fits)throw new CopyTooLongError();
-      const label=textLayer("text_sub",zIndex++,benefit.text,rect,spec.typography.subtitleColor,500,"left",fitted.fontSize);
-      label.id=`benefit_text_${benefit.id}`;label.instanceId=label.id;label.meta.groupId=groupId;layers.push(label);
+      if (match.icon) {
+        const size = Math.round(unit * 0.045);
+        const badgeSize = Math.round(size * 1.45);
+        const badge = shapeLayer(
+          `benefit_badge_${benefit.id}`,
+          "賣點玻璃徽章",
+          zIndex++,
+          { x: Math.round(x - (badgeSize - size) / 2), y: Math.round(y - (badgeSize - size) / 2), w: badgeSize, h: badgeSize },
+          "#ffffff",
+          0.68,
+          "ellipse",
+        );
+        badge.meta.shape = {
+          kind: "ellipse", fill: "#ffffff", stroke: "#ffffff", strokeWidth: 1,
+          gradient: { axis: "vertical", from: "#ffffffeb", to: "#ffffff4d" },
+        };
+        badge.meta.groupId = groupId;
+        layers.push(badge);
+
+        const graphic = shapeLayer(
+          `graphic_${benefit.id}`,
+          "賣點圖示",
+          zIndex++,
+          { x: Math.round(x), y: Math.round(y), w: size, h: size },
+          spec.typography.accentColor,
+          1,
+          "rect",
+        );
+        graphic.meta.shape = { kind: "icon", icon: match.icon, fill: spec.typography.accentColor, stroke: "none", strokeWidth: 0 };
+        graphic.meta.groupId = groupId;
+        layers.push(graphic);
+      }
+      if (match.number) {
+        const numberRect = {
+          x: Math.round(x + (match.icon ? unit * 0.065 : 0)),
+          y: Math.round(y),
+          w: Math.max(24, Math.floor(cellW - (match.icon ? unit * 0.08 : unit * 0.02))),
+          h: Math.round(unit * 0.05),
+        };
+        const fittedNumber = fitText(match.number, numberRect.w, numberRect.h, unit * 0.02, unit * 0.036);
+        if (!fittedNumber.fits) throw new CopyTooLongError();
+        const callout = textLayer("text_title", zIndex++, match.number, numberRect, spec.typography.accentColor, 800, "left", fittedNumber.fontSize);
+        callout.id = `benefit_number_${benefit.id}`;
+        callout.instanceId = callout.id;
+        callout.meta.groupId = groupId;
+        layers.push(callout);
+      }
+      const rect = {
+        x: Math.round(x),
+        y: Math.round(y + unit * 0.065),
+        w: Math.floor(cellW - unit * 0.02),
+        h: Math.floor(height * 0.075),
+      };
+      const fitted = fitText(benefit.text, rect.w, rect.h, unit * 0.018, unit * 0.024);
+      if (!fitted.fits) throw new CopyTooLongError();
+      const label = textLayer("text_sub", zIndex++, benefit.text, rect, spec.typography.subtitleColor, 500, "left", fitted.fontSize);
+      label.id = `benefit_text_${benefit.id}`;
+      label.instanceId = label.id;
+      label.meta.groupId = groupId;
+      layers.push(label);
     });
   }
   if (options.logoUrl) {

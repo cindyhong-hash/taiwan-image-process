@@ -56,3 +56,41 @@ test("never suggests generating an identity-critical product or an already avail
   const completeSceneBrief = createCreativeBrief(context, { purpose: "scene", ratio: "4:5" });
   assert.equal(analyzeDesignGaps(completeSceneBrief, selectDesignRecipe(completeSceneBrief), completeSceneBrief.inventory).some((gap) => gap.kind === "missing-background"), false);
 });
+
+test("records a zero-cost background base without offering paid background generation for product", () => {
+  const brief = createCreativeBrief({ ...context, inventory: { byRole: { hero: inventory.byRole.hero } } }, { purpose: "product", ratio: "4:5" });
+  const gaps = analyzeDesignGaps(brief, selectDesignRecipe(brief), brief.inventory);
+
+  assert.ok(gaps.some((gap) => gap.kind === "missing-background-base" && gap.provider === "shape"));
+  assert.equal(gaps.some((gap) => gap.provider === "image-generation"), false);
+});
+
+test("requires a native benefit visual for an explicit benefit purpose", () => {
+  const alternatives = [
+    { byRole: { hero: inventory.byRole.hero, detail: inventory.byRole.detail } },
+    { byRole: { hero: inventory.byRole.hero, benefit: { ...inventory.byRole.benefit, sourceRole: "lifestyle" } } },
+  ];
+
+  for (const alternative of alternatives) {
+    const brief = createCreativeBrief({ ...context, inventory: alternative }, { purpose: "benefit", ratio: "4:5" });
+    const gaps = analyzeDesignGaps(brief, selectDesignRecipe(brief), brief.inventory);
+    assert.ok(gaps.some((gap) => gap.kind === "missing-benefit" && gap.provider === "image-generation"));
+  }
+
+  const nativeBenefitBrief = createCreativeBrief(context, { purpose: "benefit", ratio: "4:5" });
+  assert.equal(analyzeDesignGaps(nativeBenefitBrief, selectDesignRecipe(nativeBenefitBrief), nativeBenefitBrief.inventory).some((gap) => gap.kind === "missing-benefit"), false);
+});
+
+test("keeps a legacy lifestyle asset as valid scene support", () => {
+  const sceneInventory = {
+    byRole: {
+      hero: inventory.byRole.hero,
+      background: inventory.byRole.background,
+      benefit: { ...inventory.byRole.benefit, sourceRole: "lifestyle" },
+    },
+  };
+  const brief = createCreativeBrief({ ...context, inventory: sceneInventory }, { purpose: "scene", ratio: "4:5" });
+  const gaps = analyzeDesignGaps(brief, selectDesignRecipe(brief), brief.inventory);
+
+  assert.equal(gaps.some((gap) => gap.kind === "missing-detail"), false);
+});

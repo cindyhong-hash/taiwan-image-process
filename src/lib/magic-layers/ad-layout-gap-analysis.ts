@@ -13,6 +13,7 @@ export type AdLayoutAssetPlan = {
 
 export type GapPlanEntry =
   | { kind: "missing-identity-asset"; provider: "user-action"; message: string }
+  | { kind: "missing-background-base"; provider: "shape"; message: string }
   | { kind: "product-shadow"; provider: "shape"; message: string }
   | { kind: "text-safe-treatment"; provider: "shape"; message: string }
   | { kind: "missing-background"; provider: "image-generation"; role: "background"; label: "情境背景"; message: string }
@@ -23,6 +24,10 @@ export type GeneratableGap = Extract<GapPlanEntry, { provider: "image-generation
 
 export function isGeneratableGap(gap: GapPlanEntry): gap is GeneratableGap {
   return gap.provider === "image-generation";
+}
+
+function hasNativeBenefitVisual(inventory: AdAssetInventory): boolean {
+  return inventory.byRole.benefit?.sourceRole === "benefit";
 }
 
 function planned(asset: AdAssetCandidate | undefined, reason: string): PlannedAsset | undefined {
@@ -71,11 +76,14 @@ export function analyzeDesignGaps(
   if (brief.userCopy.headline || brief.userCopy.subtitle) {
     gaps.push({ kind: "text-safe-treatment", provider: "shape", message: "文字區若對比不足，使用可編輯安全底板維持可讀性" });
   }
+  if (hasHero && !inventory.byRole.background) {
+    gaps.push({ kind: "missing-background-base", provider: "shape", message: "缺少背景素材，使用可編輯的不透明底色避免輸出透明畫布" });
+  }
   if (hasHero && brief.purpose === "scene" && !inventory.byRole.background) {
     gaps.push({ kind: "missing-background", provider: "image-generation", role: "background", label: "情境背景", message: "缺少可合成的情境背景，可選擇建立一張不含商品的背景素材" });
   } else if (hasHero && brief.purpose === "scene" && !inventory.byRole.detail && !inventory.byRole.benefit) {
     gaps.push({ kind: "missing-detail", provider: "image-generation", role: "detail", label: "質地細節", message: "缺少能支援情境的質地細節，可選擇建立一張不含商品的輔助素材" });
-  } else if (hasHero && brief.purpose === "benefit" && !inventory.byRole.benefit && !inventory.byRole.detail) {
+  } else if (hasHero && brief.purpose === "benefit" && !hasNativeBenefitVisual(inventory)) {
     gaps.push({ kind: "missing-benefit", provider: "image-generation", role: "benefit", label: "賣點視覺", message: "缺少賣點視覺，可選擇建立一張不含商品的概念素材" });
   }
   return gaps;

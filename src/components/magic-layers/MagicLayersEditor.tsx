@@ -1,5 +1,5 @@
 "use client";
-import { drawEditableShape, drawIcon } from "@/lib/magic-layers/editable-shape.ts";
+import { drawEditableShape, drawIcon, EDITABLE_ICON_NAMES } from "@/lib/magic-layers/editable-shape.ts";
 /* ============================================================
    Magic Layers — React editor
    Canvas layer editor: select / move / scale / rotate / z-order / show / lock /
@@ -1377,7 +1377,7 @@ function drawWarpedText(ctx: CanvasRenderingContext2D, text: string, width: numb
 }
 
 /** Programmatic icon set (24-unit space, centred at 0). Reliable + recolourable. */
-const ICON_NAMES = ["star", "heart", "circle", "triangle", "check", "arrow", "plus", "bolt", "water-drop", "spring", "blade", "shield", "sparkle", "leaf"] as const;
+const ICON_NAMES = EDITABLE_ICON_NAMES;
 
 
 // 複製一個圖層（歷史快照用）：clone 可變欄位；canvas/thumb 以參照保留（它們整顆替換而非就地改）。

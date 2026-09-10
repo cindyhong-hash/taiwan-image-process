@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resolveAdLayoutDesignSpecs } from "./ad-layout-design-spec.ts";
+import { polishAdLayoutSpec } from "./ad-layout-polish.ts";
 import { renderAdLayoutSpec } from "./ad-layout-renderer.ts";
+import type { AdLayoutDesignSpec } from "./ad-layout-design-spec.ts";
 import type { LayerData } from "./types.ts";
 
 const base = {
@@ -51,4 +53,95 @@ test("subtitle-only layout uses the top of the copy block", () => {
   const withTitle = renderAdLayoutSpec(resolveAdLayoutDesignSpecs({ ...base, canvas })[0]);
   const withoutTitle = renderAdLayoutSpec(resolveAdLayoutDesignSpecs({ ...base, canvas, typography: { ...base.typography, headline: undefined } })[0]);
   assert.equal(withoutTitle.find(l => l.id === "text_sub")!.y, withTitle.find(l => l.id === "text_title")!.y);
+});
+
+function polishFixture(overrides: Partial<AdLayoutDesignSpec> = {}): AdLayoutDesignSpec {
+  return {
+    direction: "product-focus",
+    purpose: "product",
+    templateId: "copy-left-product-right",
+    layout: {
+      templateId: "copy-left-product-right",
+      product: { x: 300, y: 300, w: 200, h: 300 },
+      headline: { x: 40, y: 40, w: 300, h: 60 },
+      subtitle: { x: 40, y: 120, w: 300, h: 50 },
+      safePanel: { x: 20, y: 20, w: 340, h: 180 },
+      support: { x: 720, y: 720, w: 180, h: 180 },
+      decoration: { x: 470, y: 320, w: 90, h: 90 },
+      logo: { x: 40, y: 920, w: 100, h: 40 },
+      headlineSize: 40,
+      subtitleSize: 24,
+    },
+    artDirection: "測試方向",
+    rationale: [],
+    canvas: { width: 1000, height: 1000, ratio: "1:1" },
+    assets: {
+      background: { role: "background", imageUrl: "background-url" },
+      product: { role: "hero", imageUrl: "hero-url" },
+      support: { role: "detail", imageUrl: "detail-url" },
+      decorations: [{ role: "decoration", imageUrl: "decoration-url" }],
+    },
+    textSafeArea: { zone: "left-top", treatment: "light-panel" },
+    typography: {
+      headline: "亮白",
+      subtitle: "溫和配方",
+      headlineColor: "#223344",
+      subtitleColor: "#223344",
+      accentColor: "#66aee0",
+      headlineWeight: 700,
+      subtitleWeight: 500,
+    },
+    productTreatment: { shadow: "soft-ellipse", aspectRatio: 2 / 3 },
+    polishTreatment: { backgroundWash: "none", reasons: [] },
+    quality: { score: 100, warnings: [], checks: [] },
+    ...overrides,
+  };
+}
+
+test("polish grows an undersized product by at most eight percent without changing its image", () => {
+  const source = polishFixture();
+  const polished = polishAdLayoutSpec(source);
+
+  assert.deepEqual(source.layout?.product, { x: 300, y: 300, w: 200, h: 300 });
+  assert.deepEqual(polished.layout?.product, { x: 292, y: 288, w: 216, h: 324 });
+  assert.equal(polished.assets.product?.imageUrl, "hero-url");
+  assert.ok(polished.rationale.some((reason) => reason.includes("8%")));
+});
+
+test("polish refuses product growth when the expanded bounds collide or leave the canvas", () => {
+  const collision = polishFixture({
+    layout: { ...polishFixture().layout!, headline: { x: 505, y: 300, w: 200, h: 100 } },
+  });
+  const outOfBounds = polishFixture({
+    layout: { ...polishFixture().layout!, product: { x: 0, y: 300, w: 200, h: 300 } },
+  });
+
+  assert.deepEqual(polishAdLayoutSpec(collision).layout?.product, collision.layout?.product);
+  assert.deepEqual(polishAdLayoutSpec(outOfBounds).layout?.product, outOfBounds.layout?.product);
+});
+
+test("polish strengthens short weak copy, removes a colliding decoration, and adds a soft background wash", () => {
+  const source = polishFixture();
+  const polished = polishAdLayoutSpec(source);
+
+  assert.equal(polished.typography.headline, source.typography.headline);
+  assert.equal(polished.typography.headlineWeight, 800);
+  assert.ok((polished.layout?.headlineSize ?? 0) > (source.layout?.headlineSize ?? 0));
+  assert.ok((polished.layout?.headlineSize ?? 0) <= (source.layout?.headlineSize ?? 0) * 1.08);
+  assert.deepEqual(polished.assets.decorations, []);
+  assert.equal(polished.polishTreatment.backgroundWash, "soft-light");
+  assert.deepEqual(
+    [polished.assets.background, polished.assets.product, polished.assets.support].map((asset) => asset?.imageUrl),
+    ["background-url", "hero-url", "detail-url"],
+  );
+});
+
+test("polish keeps weak headline settings when its existing box cannot fit a larger line", () => {
+  const source = polishFixture({
+    layout: { ...polishFixture().layout!, headline: { x: 40, y: 40, w: 300, h: 50 }, headlineSize: 40 },
+  });
+  const polished = polishAdLayoutSpec(source);
+
+  assert.equal(polished.layout?.headlineSize, 40);
+  assert.equal(polished.typography.headlineWeight, 700);
 });

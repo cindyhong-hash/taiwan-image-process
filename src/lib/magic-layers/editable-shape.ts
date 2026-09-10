@@ -1,4 +1,7 @@
 import type { ShapeSpec } from "./saved-layer.ts";
+
+export const EDITABLE_ICON_NAMES = ["star", "heart", "circle", "triangle", "check", "arrow", "plus", "bolt", "water-drop", "spring", "blade", "shield", "sparkle", "leaf", "sun", "clean", "repair", "texture"] as const;
+
 export function drawEditableShape(ctx: CanvasRenderingContext2D, w: number, h: number, sh: ShapeSpec) {
   const x = -w / 2, y = -h / 2;
   if (sh.gradient && (sh.kind === "rect" || sh.kind === "ellipse")) {
@@ -64,6 +67,10 @@ export function drawIcon(ctx: CanvasRenderingContext2D, size: number, name: stri
     case "shield":ctx.moveTo(12,2);ctx.lineTo(21,6);ctx.bezierCurveTo(21,15,18,19,12,22);ctx.bezierCurveTo(6,19,3,15,3,6);ctx.closePath();ctx.stroke();break;
     case "sparkle":ctx.moveTo(12,2);ctx.lineTo(15,9);ctx.lineTo(22,12);ctx.lineTo(15,15);ctx.lineTo(12,22);ctx.lineTo(9,15);ctx.lineTo(2,12);ctx.lineTo(9,9);ctx.closePath();ctx.stroke();break;
     case "leaf":ctx.moveTo(4,20);ctx.bezierCurveTo(0,6,13,3,21,3);ctx.bezierCurveTo(22,16,15,23,4,20);ctx.moveTo(4,20);ctx.lineTo(16,8);ctx.stroke();break;
+    case "sun":ctx.arc(12,12,4.5,0,Math.PI*2);ctx.stroke();for(let i=0;i<8;i++){const a=i*Math.PI/4;ctx.moveTo(12+7*Math.cos(a),12+7*Math.sin(a));ctx.lineTo(12+10*Math.cos(a),12+10*Math.sin(a));}ctx.stroke();break;
+    case "clean":ctx.arc(9,14,5,0,Math.PI*2);ctx.moveTo(15,5);ctx.arc(15,5,2.5,0,Math.PI*2);ctx.moveTo(19,11);ctx.arc(19,11,1.5,0,Math.PI*2);ctx.stroke();break;
+    case "repair":ctx.arc(12,12,9,0,Math.PI*2);ctx.moveTo(12,7);ctx.lineTo(12,17);ctx.moveTo(7,12);ctx.lineTo(17,12);ctx.stroke();break;
+    case "texture":ctx.moveTo(3,7);ctx.bezierCurveTo(7,3,10,11,14,7);ctx.bezierCurveTo(17,4,19,5,21,7);ctx.moveTo(3,12);ctx.bezierCurveTo(7,8,10,16,14,12);ctx.bezierCurveTo(17,9,19,10,21,12);ctx.moveTo(3,17);ctx.bezierCurveTo(7,13,10,21,14,17);ctx.bezierCurveTo(17,14,19,15,21,17);ctx.stroke();break;
     case "heart": ctx.moveTo(12, 21); ctx.bezierCurveTo(12, 21, 3, 14.5, 3, 8.5); ctx.bezierCurveTo(3, 5.5, 5.5, 3, 8.5, 3); ctx.bezierCurveTo(10.5, 3, 12, 4.5, 12, 6); ctx.bezierCurveTo(12, 4.5, 13.5, 3, 15.5, 3); ctx.bezierCurveTo(18.5, 3, 21, 5.5, 21, 8.5); ctx.bezierCurveTo(21, 14.5, 12, 21, 12, 21); ctx.fill(); break;
     case "circle": ctx.arc(12, 12, 9, 0, Math.PI * 2); ctx.fill(); break;
     case "triangle": ctx.moveTo(12, 3); ctx.lineTo(21, 20); ctx.lineTo(3, 20); ctx.closePath(); ctx.fill(); break;
