@@ -9,6 +9,10 @@
 
 > **Vision Safety P2-A 已完成（branch `feat/ai-layout-vision-safety-p2`，疊在 P1 上）**：在背景處理與 brief 前，route 會把 hero 加上至多四張既有非 identity 素材縮至 768px，以私有 data URI 交給 OpenRouter 做一次可失敗的視覺安全判讀。高信心且角色不符、含第二個商品、文字／Logo 或不適合的完整 composition 的素材會被省略；hero／Logo 絕不會被移除。provider、storage、逾時或格式失敗一律保留原素材並走 P1 deterministic fallback。模型只能建議既有的 text-safe category 與是否有可用場景表面，不能提供座標、URL、template ID、顏色或 effect。
 
+> **Design Polish P2／P3（branch `codex/ai-layout-design-polish-p3`，待 review）**：新增比例感知構圖、多行可編輯文案、依實際 LayerData 繪製的候選預覽、可儲存的漸層／柔邊投影，以及使用者確認文字驅動的賣點圖示組。商品主體不變形，長文案會以可讀性限制回覆縮短提示。P3 已接入受限的 OpenRouter art-direction 決策：只接受固定 enum JSON、僅影響既有可編輯版型能力，20 秒 deadline 或任何 provider/格式失敗都回到 P2 三候選。部署時需設 `AD_LAYOUT_ART_DIRECTION_ENABLED=true` 才會啟用；目前不提供過往貼文選取，避免無登入驗證的圖片網址揭露。
+
+> **P4 Gap Generation（branch `codex/ai-layout-design-polish-p3`，待 review）**：scene 缺背景、scene 缺輔助質地、benefit 缺賣點視覺時，排版結果會列出單一可選缺口。只有使用者主動按下按鈕才透過既有 paid image-set worker 建立一張 background／detail／benefit 素材；hero 與 Logo 永不由此流程重生成。完成後使用者明確重跑排版，生成素材會重新經既有 safety policy。
+
 整條產品流程：
 `產品 → AI 建立商品素材 → AI 幫我排版 → 可編輯設計稿 → 自由畫布微調 → 完成`
 

@@ -14,7 +14,16 @@ export type AdLayoutAssetPlan = {
 export type GapPlanEntry =
   | { kind: "missing-identity-asset"; provider: "user-action"; message: string }
   | { kind: "product-shadow"; provider: "shape"; message: string }
-  | { kind: "text-safe-treatment"; provider: "shape"; message: string };
+  | { kind: "text-safe-treatment"; provider: "shape"; message: string }
+  | { kind: "missing-background"; provider: "image-generation"; role: "background"; label: "情境背景"; message: string }
+  | { kind: "missing-detail"; provider: "image-generation"; role: "detail"; label: "質地細節"; message: string }
+  | { kind: "missing-benefit"; provider: "image-generation"; role: "benefit"; label: "賣點視覺"; message: string };
+
+export type GeneratableGap = Extract<GapPlanEntry, { provider: "image-generation" }>;
+
+export function isGeneratableGap(gap: GapPlanEntry): gap is GeneratableGap {
+  return gap.provider === "image-generation";
+}
 
 function planned(asset: AdAssetCandidate | undefined, reason: string): PlannedAsset | undefined {
   return asset ? { ...asset, reason } : undefined;
@@ -52,7 +61,8 @@ export function analyzeDesignGaps(
   inventory: AdAssetInventory,
 ): GapPlanEntry[] {
   const gaps: GapPlanEntry[] = [];
-  if (recipe.productRequired && !inventory.byRole.hero) {
+  const hasHero = Boolean(inventory.byRole.hero);
+  if (recipe.productRequired && !hasHero) {
     gaps.push({ kind: "missing-identity-asset", provider: "user-action", message: "缺少去背商品主體，無法建立可靠的產品設計稿" });
   }
   if (recipe.productRequired) {
@@ -60,6 +70,13 @@ export function analyzeDesignGaps(
   }
   if (brief.userCopy.headline || brief.userCopy.subtitle) {
     gaps.push({ kind: "text-safe-treatment", provider: "shape", message: "文字區若對比不足，使用可編輯安全底板維持可讀性" });
+  }
+  if (hasHero && brief.purpose === "scene" && !inventory.byRole.background) {
+    gaps.push({ kind: "missing-background", provider: "image-generation", role: "background", label: "情境背景", message: "缺少可合成的情境背景，可選擇建立一張不含商品的背景素材" });
+  } else if (hasHero && brief.purpose === "scene" && !inventory.byRole.detail && !inventory.byRole.benefit) {
+    gaps.push({ kind: "missing-detail", provider: "image-generation", role: "detail", label: "質地細節", message: "缺少能支援情境的質地細節，可選擇建立一張不含商品的輔助素材" });
+  } else if (hasHero && brief.purpose === "benefit" && !inventory.byRole.benefit && !inventory.byRole.detail) {
+    gaps.push({ kind: "missing-benefit", provider: "image-generation", role: "benefit", label: "賣點視覺", message: "缺少賣點視覺，可選擇建立一張不含商品的概念素材" });
   }
   return gaps;
 }

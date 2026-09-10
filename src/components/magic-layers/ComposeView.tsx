@@ -15,27 +15,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { MagicLayersEditor, type SavedLayer } from "@/components/magic-layers/MagicLayersEditor.tsx";
-import type { LayerData, SemanticId } from "@/lib/magic-layers/types.ts";
+import { savedToLayerData } from "@/lib/magic-layers/saved-layer.ts";
+import type { LayerData } from "@/lib/magic-layers/types.ts";
 import { ML_COMPOSE_BG_KEY, ML_COMPOSE_CLIENT_KEY, ML_WIZARD_SEED_KEY } from "@/components/activities/RolePickerModal";
 
-// 把存起來的 SavedLayer[] 還原成編輯器吃的 LayerData[]（含執行期旗標塞進 meta）。
-function savedToLayerData(sl: SavedLayer): LayerData {
-  const semanticId: SemanticId = sl.type === "independent_text" ? "text" : (sl.type as SemanticId);
-  return {
-    id: sl.id, type: sl.type, name: sl.name, semanticId, instanceId: sl.id, parentId: null,
-    bbox: { x: sl.x, y: sl.y, w: sl.w, h: sl.h }, mask: null,
-    image: sl.isText ? null : (sl.image ?? null),
-    x: sl.x, y: sl.y, width: sl.w, height: sl.h, rotation: sl.rotation,
-    zIndex: sl.zIndex, confidence: 1, source: "generated", editable: true,
-    embeddedText: [], children: [],
-    meta: {
-      visible: sl.visible, locked: sl.locked, opacity: sl.opacity, groupId: sl.groupId ?? null,
-      ...(sl.isText ? { style: { text: sl.text, fontSizePx: sl.fontSize, fontWeight: sl.fontWeight, color: sl.color, align: sl.align, fontFamily: sl.fontFamily, fx: sl.fx ?? null }, textObject: { text: sl.text } } : {}),
-      ...(sl.isArt ? { isArt: true, artText: sl.text ?? "", ...(sl.artRefImage ? { artRefImage: sl.artRefImage } : {}) } : {}),
-      ...(sl.shape ? { shape: sl.shape } : {}),
-    },
-  };
-}
 // 造一張 docW×docH 的空白圖，只用來給編輯器決定畫布尺寸（圖層自己帶各自的圖）。
 function blankImage(w: number, h: number): Promise<HTMLImageElement> {
   const c = document.createElement("canvas"); c.width = w; c.height = h;

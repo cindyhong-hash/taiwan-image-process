@@ -3,15 +3,17 @@
  * AI 幫我排版：用商品素材包，問極少的問題（用途/尺寸/主要文字）→ 呼叫 /api/magic-layers/ad-layout
  * 組成一張可編輯設計稿 → seed 進 Magic Layers 編輯器（?seed=1）讓使用者自由微調。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Loader2, Sparkles, X } from "lucide-react";
 import { ML_WIZARD_SEED_KEY } from "@/components/activities/RolePickerModal";
 import {
-  previewModelForOption,
   selectAdLayoutOption,
   type AdLayoutOption,
 } from "@/lib/magic-layers/ad-layout-options";
+
+import { AdLayoutPreviewCanvas } from "./AdLayoutPreviewCanvas";
+import type { LayerData } from "@/lib/magic-layers/types.ts";
 
 const PURPOSES = [
   { k: "product", label: "產品介紹" },
@@ -26,23 +28,30 @@ const RATIOS = [
 ] as const;
 
 type LayoutCanvas = { width: number; height: number };
+type ArtDirectionStatus = { source: "vision" | "fallback"; message: string };
+type GenerationGap = { kind: "missing-background" | "missing-detail" | "missing-benefit"; role: "background" | "detail" | "benefit"; label: string; message: string };
+type GapJob = { id: string; role: GenerationGap["role"]; label: string; status: "PENDING" | "GENERATING" | "DONE" | "FAILED"; errorMessage?: string };
 
-function previewStyle(rect: { x: number; y: number; w: number; h: number }) {
-  return { left: `${rect.x}%`, top: `${rect.y}%`, width: `${rect.w}%`, height: `${rect.h}%` };
+function isGenerationGap(value: unknown): value is GenerationGap {
+  if (!value || typeof value !== "object") return false;
+  const gap = value as Record<string, unknown>;
+  return (gap.kind === "missing-background" || gap.kind === "missing-detail" || gap.kind === "missing-benefit")
+    && (gap.role === "background" || gap.role === "detail" || gap.role === "benefit")
+    && typeof gap.label === "string" && typeof gap.message === "string";
 }
 
 function LayoutOptionPreview({
   option,
   canvas,
   selected,
-  onSelect,
+  onSelect, onReady,
 }: {
   option: AdLayoutOption;
   canvas: LayoutCanvas;
   selected: boolean;
   onSelect: () => void;
+  onReady: (layers: LayerData[] | null) => void;
 }) {
-  const model = previewModelForOption(option, canvas);
 
   return (
     <button
@@ -56,25 +65,7 @@ function LayoutOptionPreview({
       }`}
     >
       <div className="relative overflow-hidden bg-[#f4f5f8]" style={{ aspectRatio: `${canvas.width} / ${canvas.height}` }}>
-        {model.backgroundUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={model.backgroundUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-white/5" />
-        {model.support && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={model.support.imageUrl} alt="" className="absolute object-contain opacity-80" style={previewStyle(model.support.rect)} />
-        )}
-        {model.product && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={model.product.imageUrl} alt="" className="absolute object-contain drop-shadow-xl" style={previewStyle(model.product.rect)} />
-        )}
-        {model.panel && <div className="absolute rounded-md" style={{ ...previewStyle(model.panel.rect), backgroundColor: model.panel.color, opacity: model.panel.kind === "promo" ? 0.96 : 0.52 }} />}
-        {model.decoration && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={model.decoration.imageUrl} alt="" className="absolute object-contain opacity-75" style={previewStyle(model.decoration.rect)} />
-        )}
-        {model.headline && <div className="absolute whitespace-pre-line text-[11px] font-extrabold leading-tight" style={{ ...previewStyle(model.headline.rect), color: model.headline.color }}>{model.headline.text}</div>}
+        <AdLayoutPreviewCanvas layers={option.layers} width={canvas.width} height={canvas.height} onReady={onReady} />
         {selected && (
           <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-violet-600 text-white shadow-sm">
             <Check className="h-4 w-4" />
@@ -96,12 +87,44 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
   const [purpose, setPurpose] = useState<(typeof PURPOSES)[number]["k"]>("product");
   const [ratio, setRatio] = useState<(typeof RATIOS)[number]["k"]>("4:5");
   const [title, setTitle] = useState("");
+  const [benefitText, setBenefitText] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] = useState<AdLayoutOption[] | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [readyLayers, setReadyLayers] = useState<Record<string, LayerData[] | null>>({});
   const [canvas, setCanvas] = useState<LayoutCanvas | null>(null);
+  const [artDirection, setArtDirection] = useState<ArtDirectionStatus | null>(null);
+  const [generationGaps, setGenerationGaps] = useState<GenerationGap[]>([]);
+  const [gapJob, setGapJob] = useState<GapJob | null>(null);
+  const [gapBusy, setGapBusy] = useState(false);
+
+  useEffect(() => {
+    if (!gapJob || gapJob.status === "DONE" || gapJob.status === "FAILED") return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/library/images?ids=${encodeURIComponent(gapJob.id)}`);
+        const data = await response.json().catch(() => ({}));
+        const row = Array.isArray(data.items) ? data.items[0] : null;
+        if (!cancelled && row && (row.status === "PENDING" || row.status === "GENERATING" || row.status === "DONE" || row.status === "FAILED")) {
+          setGapJob((current) => current && current.id === gapJob.id ? {
+            ...current,
+            status: row.status,
+            errorMessage: typeof row.errorMessage === "string" ? row.errorMessage : undefined,
+          } : current);
+          if (row.status === "DONE" || row.status === "FAILED") return;
+        }
+      } catch {
+        // A temporary poll failure never changes the durable generation state.
+      }
+      if (!cancelled) timer = setTimeout(poll, 2_000);
+    };
+    timer = setTimeout(poll, 1_500);
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [gapJob]);
 
   const generate = async () => {
     if (busy) return;
@@ -109,16 +132,22 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
     try {
       const res = await fetch("/api/magic-layers/ad-layout", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, productId, purpose, ratio, title: title.trim(), subtitle: subtitle.trim() }),
+        body: JSON.stringify({ clientId, productId, purpose, ratio, title: title.trim(), subtitle: subtitle.trim(), benefits: purpose === "benefit" ? benefitText.split("\n").map(s=>s.trim()).filter(Boolean) : [] }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "產生設計稿失敗");
       if (!Array.isArray(data.options) || data.options.length === 0) {
         throw new Error("沒有可選擇的版型，請稍後再試");
       }
+      setReadyLayers({});
       setOptions(data.options);
       setSelectedOptionId(data.options[0].id);
       setCanvas({ width: data.canvasWidth, height: data.canvasHeight });
+      setArtDirection(data.artDirection?.source === "vision" || data.artDirection?.source === "fallback"
+        ? { source: data.artDirection.source, message: typeof data.artDirection.message === "string" ? data.artDirection.message : "已使用穩定排版規則。" }
+        : null);
+      setGenerationGaps(Array.isArray(data.generationGaps) ? data.generationGaps.filter(isGenerationGap) : []);
+      setGapJob(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "產生設計稿失敗，請稍後再試");
     } finally {
@@ -126,14 +155,38 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
     }
   };
 
+  const startGapGeneration = async (gap: GenerationGap) => {
+    if (gapBusy || gapJob) return;
+    setGapBusy(true); setError(null);
+    try {
+      const response = await fetch(`/api/products/${productId}/image-set`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: [{ role: gap.role }] }),
+      });
+      const data = await response.json().catch(() => ({}));
+      const item = Array.isArray(data.items) ? data.items[0] : null;
+      if (!response.ok || !item || typeof item.id !== "string" || typeof item.label !== "string") throw new Error(typeof data.error === "string" ? data.error : "無法開始建立素材");
+      setGapJob({ id: item.id, role: gap.role, label: item.label, status: item.status === "GENERATING" ? "GENERATING" : "PENDING" });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法開始建立素材");
+    } finally {
+      setGapBusy(false);
+    }
+  };
+
+  const restartDesign = () => {
+    setOptions(null); setCanvas(null); setSelectedOptionId(null); setArtDirection(null); setGenerationGaps([]); setGapJob(null);
+  };
+
   const continueToEditor = () => {
     const selected = options && selectedOptionId
       ? selectAdLayoutOption(options, selectedOptionId)
       : null;
-    if (!selected || !canvas) return;
+    if (!selected || !canvas || !readyLayers[selected.id]) return;
 
     sessionStorage.setItem(ML_WIZARD_SEED_KEY, JSON.stringify({
-      layers: selected.layers,
+      layers: readyLayers[selected.id],
       docW: canvas.width,
       docH: canvas.height,
       clientId,
@@ -162,15 +215,23 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
                 <div className="text-sm font-bold text-gray-900">選一個設計方向</div>
                 <p className="mt-1 text-xs leading-5 text-gray-500">每個方向都已挑選必要素材並建立文字層級；下一步仍可自由調整。</p>
               </div>
-              <button type="button" onClick={() => { setOptions(null); setCanvas(null); setSelectedOptionId(null); }} className="flex shrink-0 items-center gap-1 text-xs font-medium text-gray-500 hover:text-violet-700">
+              <button type="button" onClick={restartDesign} className="flex shrink-0 items-center gap-1 text-xs font-medium text-gray-500 hover:text-violet-700">
                 <ArrowLeft className="h-3.5 w-3.5" />重選條件
               </button>
             </div>
+            {artDirection && <p className={`mt-2 text-xs ${artDirection.source === "vision" ? "text-violet-700" : "text-gray-500"}`}>{artDirection.message}</p>}
+            {(generationGaps.length > 0 || gapJob) && <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3 text-xs leading-5 text-gray-600">
+              {gapJob?.status === "DONE" ? <div><p><strong className="text-gray-800">{gapJob.label}</strong> 已加入商品素材。</p><button type="button" onClick={restartDesign} className="mt-2 font-bold text-violet-700 hover:text-violet-800">重新建立設計稿</button></div>
+                : gapJob?.status === "FAILED" ? <div><p>建立{gapJob.label}未完成{gapJob.errorMessage ? `：${gapJob.errorMessage}` : ""}</p><button type="button" onClick={() => setGapJob(null)} className="mt-2 font-bold text-violet-700 hover:text-violet-800">重新選擇補齊素材</button></div>
+                  : gapJob ? <p>正在建立{gapJob.label}；完成後可重新建立設計稿。</p>
+                    : <div><p>有一項素材可補齊。只會在你按下按鈕後建立一張不含商品的素材，並產生影像生成用量。</p><div className="mt-2 flex flex-wrap gap-2">{generationGaps.map((gap) => <button key={gap.kind} type="button" onClick={() => void startGapGeneration(gap)} disabled={gapBusy} className="rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50">補{gap.label}</button>)}</div></div>}
+            </div>}
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {options.map((option) => (
                 <LayoutOptionPreview
                   key={option.id}
                   option={option}
+                  onReady={(layers) => setReadyLayers(prev => ({...prev, [option.id]: layers}))}
                   canvas={canvas}
                   selected={selectedOptionId === option.id}
                   onSelect={() => setSelectedOptionId(option.id)}
@@ -202,7 +263,8 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
 
         {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
 
-        <button type="button" onClick={options ? continueToEditor : generate} disabled={busy}
+        {!options && purpose === "benefit" && <label className="mt-3 block text-sm text-gray-600">賣點（選填，最多三條，每條 40 字）<textarea value={benefitText} onChange={e=>setBenefitText(e.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-gray-200 p-2" placeholder="每行填寫一個已確認的產品賣點" /></label>}
+        <button type="button" onClick={options ? continueToEditor : generate} disabled={busy || Boolean(options && (!selectedOptionId || !readyLayers[selectedOptionId]))}
           className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-60">
           {busy ? <><Loader2 className="h-4 w-4 animate-spin" />正在建立三個可編輯設計稿…</> : options ? <><Check className="h-4 w-4" />使用這份設計稿進入編輯</> : <><Sparkles className="h-4 w-4" />建立 3 個設計稿</>}
         </button>

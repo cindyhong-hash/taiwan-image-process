@@ -1,3 +1,6 @@
+import type { BenefitInput } from "./ad-layout-graphics.ts";
+import type { DirectionDecision } from "./ad-layout-art-direction.ts";
+import { resolveAdComposition, type ResolvedAdLayout } from "./ad-layout-composition.ts";
 import { templateForAdvice } from "./ad-layout-templates.ts";
 import type { CreativeBrief, DesignRecipe } from "./ad-layout-creative-brief.ts";
 import { planRecipeAssets, type AdLayoutAssetPlan, type GapPlanEntry } from "./ad-layout-gap-analysis.ts";
@@ -26,15 +29,23 @@ export interface AdLayoutDesignInput {
   assets: AdLayoutAssetPool;
   purpose: AdLayoutPurpose;
   typography: AdLayoutTypographyInput;
+  layouts?: Partial<Record<AdLayoutDirection, ResolvedAdLayout>>;
+  textColors?: Partial<Record<AdLayoutDirection, string>>;
+  benefits?: BenefitInput[];
+  directionDecisions?: Partial<Record<AdLayoutDirection, DirectionDecision>>;
+  secondaryAccent?: string;
   artDirection?: string;
   productAspectRatio?: number;
   planning?: { brief: CreativeBrief; recipe: DesignRecipe; assetPlan: AdLayoutAssetPlan; gapPlan: GapPlanEntry[] };
   compositionAdvice?: AdLayoutCompositionAdvice;
 }
 export interface AdLayoutDesignSpec {
+  benefits?: BenefitInput[];
+  artDirectionDecision?: DirectionDecision;
   direction: AdLayoutDirection;
   purpose: AdLayoutPurpose;
   templateId: string;
+  layout?: ResolvedAdLayout;
   artDirection: string;
   creativeBrief?: CreativeBrief;
   recipe?: DesignRecipe;
@@ -103,20 +114,28 @@ export function validateAndRepairDesignSpec(spec: AdLayoutDesignSpec, available:
 export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayoutDesignSpec[] {
   const directions: AdLayoutDirection[] = ["product-focus", "editorial", "scene-led"];
   return directions.map((direction) => {
+    const directionDecision = input.directionDecisions?.[direction];
     const template = templateForAdvice(direction, input.purpose, input.canvas.ratio, input.compositionAdvice?.preferredTextSafeArea);
     const directionalPlan = input.planning
       ? planRecipeAssets(input.planning.recipe, input.planning.brief.inventory, direction)
       : undefined;
     const assets = directionalPlan ? selectionsFromPlan(directionalPlan) : assetPlan(direction, input.purpose, input.assets);
+    if (input.benefits?.length || directionDecision?.support === "none") assets.support = undefined;
+    if (directionDecision?.support === "detail" && input.assets.detail) assets.support = selected("detail", input.assets.detail);
+    if (directionDecision?.support === "benefit" && input.assets.benefit) assets.support = selected("benefit", input.assets.benefit);
+    if (directionDecision?.decoration === "none") assets.decorations = [];
     const treatment = typeof input.typography.treatment === "string"
       ? input.typography.treatment
       : input.typography.treatment?.[direction] ?? "none";
     const useLightText = treatment === "dark-panel";
-    const color = useLightText ? input.typography.light : input.typography.dark;
+    const color = input.textColors?.[direction] ?? (useLightText ? input.typography.light : input.typography.dark);
     const spec: AdLayoutDesignSpec = {
       direction,
+      benefits: directionDecision ? directionDecision.graphics === "benefit-group" ? input.benefits : undefined : input.benefits,
+      artDirectionDecision: directionDecision,
       purpose: input.purpose,
       templateId: template.id,
+      layout: input.layouts?.[direction] ?? resolveAdComposition(input, direction, directionDecision),
       artDirection: input.artDirection ?? "以品牌調性完成乾淨、清楚的產品社群設計",
       creativeBrief: input.planning?.brief,
       recipe: input.planning?.recipe,
@@ -132,8 +151,8 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
         subtitle: input.typography.subtitle,
         headlineColor: color,
         subtitleColor: color,
-        accentColor: input.typography.accent,
-        headlineWeight: direction === "editorial" ? 700 : 800,
+        accentColor: directionDecision?.accent === "secondary" && input.secondaryAccent ? input.secondaryAccent : input.typography.accent,
+        headlineWeight: directionDecision?.typography === "quiet" || direction === "editorial" ? 700 : 800,
         subtitleWeight: 500,
       },
       productTreatment: assets.product ? {
