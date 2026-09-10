@@ -208,7 +208,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
         </div>
 
         <div className="space-y-1">
-          <Label>品牌名稱 *</Label>
+          <Label>品牌名稱 <span className="text-red-500">*</span></Label>
           <Input
             value={values.name}
             onChange={(e) => setValues((v) => ({ ...v, name: e.target.value }))}
@@ -218,7 +218,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
         </div>
 
         <div className="space-y-1">
-          <Label>品牌簡介<span className="text-xs text-gray-400 font-normal ml-1">（選填）</span></Label>
+          <Label>品牌簡介</Label>
           {/* placeholder 一定要有「例：」前綴。這一格原本寫「專注於女性保養與生活美學的
               品牌」，在同表單八個 placeholder 裡是唯一沒有前綴的，讀起來像一句已填好的
               品牌定位句 —— 標籤又寫「（選填）」，兩個訊號都在說「這格不用管」，
@@ -238,7 +238,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
       </Card>
 
       {/* 2. 品牌色彩設定 */}
-      <Card title="品牌色彩設定" sub="定義品牌的視覺色彩主調，AI 生成設計時將優先套用此調色盤。（選填）">
+      <Card title="品牌色彩設定" sub="定義品牌的視覺色彩主調，AI 生成設計時將優先套用此調色盤。">
         <div className="flex gap-4">
           <div className="space-y-1 flex-1">
             <Label>主色</Label>
@@ -278,12 +278,11 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
       {/* 3. 品牌產業 */}
       <Card title="品牌產業" sub="選擇品牌所屬產業，AI 會根據產業特性調整語調與視覺風格。">
         <div className="space-y-1">
-          <Label>產業類別 *</Label>
+          <Label>產業類別</Label>
           <select
             value={values.industry}
             onChange={(e) => setValues((v) => ({ ...v, industry: e.target.value }))}
             className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200"
-            required
           >
             <option value="">選擇產業類別</option>
             {INDUSTRY_PRESETS.map((p) => (
@@ -296,7 +295,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
       </Card>
 
       {/* 4. 品牌調性關鍵字 */}
-      <Card title="品牌調性關鍵字" sub="點選或新增描述品牌調性的風格詞彙，AI 會將這些屬性融入文案與設計。（選填）">
+      <Card title="品牌調性關鍵字" sub="點選或新增描述品牌調性的風格詞彙，AI 會將這些屬性融入文案與設計。">
         <div className="flex gap-2">
           <Input
             value={toneInput}
@@ -323,7 +322,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
       </Card>
 
       {/* 5. 禁忌事項 — [WIP/素材庫] negative prompts */}
-      <Card title="禁忌事項" sub="AI 生成時會避開這些內容（negative prompts）。（選填）">
+      <Card title="禁忌事項" sub="AI 生成時會避開這些內容（negative prompts）。">
         <div className="flex gap-2">
           <Input
             value={tabooInput}
@@ -353,8 +352,8 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
       <Card
         title="品牌字體"
         sub={clientId
-          ? "上傳品牌專用字體，在自由畫布編輯文字時使用。（選填）"
-          : "先建立品牌後即可上傳字檔。（選填）"}
+          ? "上傳品牌專用字體，在自由畫布編輯文字時使用。"
+          : "先建立品牌後即可上傳字檔。"}
         right={clientId ? (
           <>
             <span className="rounded-full border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-600">
@@ -375,7 +374,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
       {/* 7. 字體風格偏好 — 沿用既有 Client.fonts 欄位，純備註，不進生圖 prompt */}
       <Card
         title="字體風格偏好"
-        sub="記錄品牌偏好的文字風格，供團隊溝通參考。（選填）"
+        sub="記錄品牌偏好的文字風格，供團隊溝通參考。"
         right={
           <HelpTip
             label="這會影響 AI 嗎？"
@@ -434,7 +433,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
       </Card>
 
       {/* 8. 過往貼文圖片上傳 */}
-      <Card title="過往貼文圖片上傳" sub="上傳以前做過的圖，AI 會學習你們的視覺風格，每次生成都更貼近品牌調性。（選填，最多 5 張）">
+      <Card title="過往貼文圖片上傳" sub="上傳以前做過的圖，AI 會學習你們的視覺風格，每次生成都更貼近品牌調性。（最多 5 張）">
         <div className="flex gap-2 flex-wrap">
           {values.pastPostImageUrls.map((url, i) => (
             <div key={i} className="relative w-24 h-24">
