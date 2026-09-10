@@ -26,7 +26,13 @@ const validJson = JSON.stringify({
       ignored: "value",
     },
   },
-  background: { textSafeArea: "left-top", placementSurface: "counter", confidence: -0.2, templateId: "ignored" },
+  background: {
+    textSafeArea: "left-top",
+    placementSurface: "counter",
+    surfaceRect: { x: 0.08, y: 0.62, w: 0.55, h: 0.1 },
+    confidence: -0.2,
+    templateId: "ignored",
+  },
   injectedUrl: "https://unsafe.example",
 });
 
@@ -36,8 +42,20 @@ test("parses only the supported assessment fields and clamps confidence", () => 
   assert.equal(value?.assets.background?.confidence, 1);
   assert.equal(value?.background?.confidence, 0);
   assert.equal(value?.background?.textSafeArea, "left-top");
+  assert.deepEqual(value?.background?.surfaceRect, { x: 0.08, y: 0.62, w: 0.55, h: 0.1 });
   assert.equal("templateId" in (value?.background ?? {}), false);
   assert.equal("injectedUrl" in (value ?? {}), false);
+});
+
+test("drops an invalid optional surface rectangle without rejecting the remaining assessment", () => {
+  const parsed = JSON.parse(validJson) as { background: Record<string, unknown> };
+  parsed.background.surfaceRect = { x: 0.8, y: 0.62, w: 0.55, h: 0.1 };
+
+  const value = parseAdLayoutVisionAssessment(JSON.stringify(parsed));
+
+  assert.ok(value);
+  assert.equal(value.background?.placementSurface, "counter");
+  assert.equal(value.background?.surfaceRect, undefined);
 });
 
 test("returns a named fallback when vision output is malformed", async () => {
@@ -62,8 +80,25 @@ test("sends an unambiguous single-value enum example to the vision provider", as
   assert.doesNotMatch(systemPrompt, /"placementSurface"\s*:\s*"[^"]*\|/);
   assert.match(systemPrompt, /textSafeArea must be exactly one of:/);
   assert.match(systemPrompt, /placementSurface must be exactly one of:/);
+  assert.match(systemPrompt, /surfaceRect/);
   assert.match(systemPrompt, /immediately following that role label/);
   assert.match(systemPrompt, /Do not attribute anything visible in the hero reference to another role/);
+});
+
+test("requests final-canvas preprocessing only for the assessed background", async () => {
+  const received: Array<{ url: string; canvas?: { width: number; height: number } }> = [];
+  await assessAdLayoutVisualKit(context, {
+    backgroundCanvas: { width: 720, height: 1280 },
+    loadAsDataUrl: async (url, _signal, canvas) => {
+      received.push({ url, canvas });
+      return `data:image/png;base64,${url}`;
+    },
+    completeVision: async () => validJson,
+  });
+
+  assert.deepEqual(received.find((entry) => entry.url === "background")?.canvas, { width: 720, height: 1280 });
+  assert.equal(received.find((entry) => entry.url === "hero")?.canvas, undefined);
+  assert.equal(received.find((entry) => entry.url === "detail")?.canvas, undefined);
 });
 
 test("uses deterministic sampling for the default vision completion", async (t) => {

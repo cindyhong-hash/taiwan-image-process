@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { loadBuffer } from "../storage.ts";
 import type { AdLayoutContext } from "./ad-layout-context.ts";
+import { prepareAdBackground } from "./ad-layout-data.ts";
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash";
@@ -17,6 +18,7 @@ export type AssessedVisualRole = typeof ASSESSED_ROLES[number];
 export type AdLayoutVisionImageRole = typeof IMAGE_ROLES[number];
 export type AdLayoutTextSafeAreaAdvice = typeof SAFE_AREAS[number];
 export type AdLayoutPlacementSurface = typeof SURFACES[number];
+export type AdLayoutSurfaceRect = { x: number; y: number; w: number; h: number };
 
 export type AssetSafety = {
   safeForDeclaredRole: boolean;
@@ -33,6 +35,7 @@ export type ParsedVisionAssessment = {
   background?: {
     textSafeArea: AdLayoutTextSafeAreaAdvice;
     placementSurface: AdLayoutPlacementSurface;
+    surfaceRect?: AdLayoutSurfaceRect;
     confidence: number;
   };
 };
@@ -53,11 +56,12 @@ export type AdLayoutVisionDependencies = {
   apiKey?: string | null;
   model?: string;
   timeoutMs?: number;
-  loadAsDataUrl?: (url: string, signal?: AbortSignal) => Promise<string>;
+  backgroundCanvas?: { width: number; height: number };
+  loadAsDataUrl?: (url: string, signal?: AbortSignal, canvas?: { width: number; height: number }) => Promise<string>;
   completeVision?: (request: AdLayoutVisionRequest) => Promise<string>;
 };
 
-const SYSTEM_PROMPT = `You are an asset-safety reviewer for an editable product-ad designer. Report only visible facts from the labelled images. Evaluate each candidate image independently: each image is immediately following that role label. The hero is a separate identity reference; never evaluate it as removable. Do not attribute anything visible in the hero reference to another role. Do not infer product claims, audience, performance, ingredients, or a new design. Do not output coordinates, template IDs, URLs, colors, effects, image edits, or prose.
+const SYSTEM_PROMPT = `You are an asset-safety reviewer for an editable product-ad designer. Report only visible facts from the labelled images. Evaluate each candidate image independently: each image is immediately following that role label. The hero is a separate identity reference; never evaluate it as removable. Do not attribute anything visible in the hero reference to another role. Do not infer product claims, audience, performance, ingredients, or a new design. Do not output arbitrary layer coordinates, template IDs, URLs, colors, effects, image edits, or prose. surfaceRect is the only allowed coordinate field.
 
 Return strict JSON only:
 {
@@ -68,12 +72,13 @@ Return strict JSON only:
     "benefit": { "safeForDeclaredRole": true, "productVisible": false, "textOrLogoVisible": false, "completeSceneVisible": false, "confidence": 0.9 },
     "decoration": { "safeForDeclaredRole": true, "productVisible": false, "textOrLogoVisible": false, "completeSceneVisible": false, "confidence": 0.9 }
   },
-  "background": { "textSafeArea": "left-top", "placementSurface": "none", "confidence": 0.9 }
+  "background": { "textSafeArea": "left-top", "placementSurface": "counter", "surfaceRect": { "x": 0.08, "y": 0.62, "w": 0.55, "h": 0.10 }, "confidence": 0.9 }
 }
 
 Each enum field must contain exactly one value, never a pipe-delimited list. Choose the value from visible evidence; do not copy the example unless it is accurate.
 textSafeArea must be exactly one of: left-top | right-top | left-center | bottom | unknown
 placementSurface must be exactly one of: counter | shelf | platform | table | none | unknown
+When a clearly usable counter, shelf, platform, or table is visible, surfaceRect must tightly describe that surface in normalized coordinates relative to the supplied background: x, y, w, and h must each be between 0 and 1, with x+w and y+h no greater than 1. The y value is the visible top edge where a product can stand. Omit surfaceRect when no clear usable surface is visible.
 For background, productVisible means any complete product/package visible in that background image. A complete clean environmental scene (for example an empty bathroom or tabletop) is a valid background; completeSceneVisible alone never makes a background unsafe. Omit unavailable roles from assets.`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -86,6 +91,15 @@ function hasValue<T extends readonly string[]>(values: T, value: unknown): value
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function parseSurfaceRect(value: unknown): AdLayoutSurfaceRect | undefined {
+  if (!isRecord(value)) return undefined;
+  const { x, y, w, h } = value;
+  if (![x, y, w, h].every((part) => typeof part === "number" && Number.isFinite(part))) return undefined;
+  const rect = { x: x as number, y: y as number, w: w as number, h: h as number };
+  if (rect.x < 0 || rect.y < 0 || rect.w <= 0 || rect.h <= 0 || rect.x + rect.w > 1 || rect.y + rect.h > 1) return undefined;
+  return rect;
 }
 
 function parseSafety(value: unknown): AssetSafety | null {
@@ -116,11 +130,17 @@ type VisionParseResult =
 
 function parseBackground(value: unknown): { value: NonNullable<ParsedVisionAssessment["background"]>; reason?: never } | { value: null; reason: string } {
   if (!isRecord(value)) return { value: null, reason: "background must be an object" };
-  const { textSafeArea, placementSurface, confidence } = value;
+  const { textSafeArea, placementSurface, surfaceRect, confidence } = value;
   if (!hasValue(SAFE_AREAS, textSafeArea)) return { value: null, reason: "background.textSafeArea is not an allowed value" };
   if (!hasValue(SURFACES, placementSurface)) return { value: null, reason: "background.placementSurface is not an allowed value" };
   if (typeof confidence !== "number" || !Number.isFinite(confidence)) return { value: null, reason: "background.confidence must be a finite number" };
-  return { value: { textSafeArea, placementSurface, confidence: clamp(confidence) } };
+  const parsedSurfaceRect = parseSurfaceRect(surfaceRect);
+  return { value: {
+    textSafeArea,
+    placementSurface,
+    ...(parsedSurfaceRect ? { surfaceRect: parsedSurfaceRect } : {}),
+    confidence: clamp(confidence),
+  } };
 }
 
 function parseAdLayoutVisionAssessmentResult(text: string): VisionParseResult {
@@ -156,10 +176,11 @@ function fallback(message: string): AdLayoutVisionAssessment {
   return { version: 1, assets: {}, source: "fallback", warnings: [message] };
 }
 
-async function defaultLoadAsDataUrl(url: string, signal?: AbortSignal): Promise<string> {
+async function defaultLoadAsDataUrl(url: string, signal?: AbortSignal, canvas?: { width: number; height: number }): Promise<string> {
   signal?.throwIfAborted();
-  const buffer = await loadBuffer(url, signal);
-  const png = await sharp(Buffer.from(buffer))
+  const loaded = Buffer.from(await loadBuffer(url, signal));
+  const source = canvas ? await prepareAdBackground(loaded, canvas.width, canvas.height) : loaded;
+  const png = await sharp(source)
     .resize(MAX_IMAGE_EDGE, MAX_IMAGE_EDGE, { fit: "inside", withoutEnlargement: true })
     .png()
     .toBuffer();
@@ -230,7 +251,11 @@ export async function assessAdLayoutVisualKit(
   const { signal, dispose } = mergedAbortSignal(parentSignal, deps.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const loadAsDataUrl = deps.loadAsDataUrl ?? defaultLoadAsDataUrl;
-    const imageDataUrls = await Promise.all(selected.map((asset) => loadAsDataUrl(asset.imageUrl, signal)));
+    const imageDataUrls = await Promise.all(selected.map((asset) => loadAsDataUrl(
+      asset.imageUrl,
+      signal,
+      asset.role === "background" ? deps.backgroundCanvas : undefined,
+    )));
     signal.throwIfAborted();
     const request: AdLayoutVisionRequest = {
       imageDataUrls,

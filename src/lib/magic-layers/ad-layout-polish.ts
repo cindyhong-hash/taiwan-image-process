@@ -39,6 +39,11 @@ function canGrowProduct(spec: AdLayoutDesignSpec, candidate: LayoutRect): boolea
 
 function isProductUndersized(spec: AdLayoutDesignSpec): boolean {
   if (!spec.layout) return false;
+  if (
+    spec.compositionAdvice?.source === "vision"
+    && spec.compositionAdvice.sceneGrounding === "surface"
+    && spec.compositionAdvice.surfaceRect
+  ) return false;
   const canvasArea = spec.canvas.width * spec.canvas.height;
   const productArea = spec.layout.product.w * spec.layout.product.h;
   return canvasArea > 0 && productArea / canvasArea < 0.22;

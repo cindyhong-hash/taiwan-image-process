@@ -2,6 +2,7 @@ import type { AdLayoutContext } from "./ad-layout-context.ts";
 import type {
   AdLayoutPlacementSurface,
   AdLayoutTextSafeAreaAdvice,
+  AdLayoutSurfaceRect,
   AdLayoutVisionAssessment,
   AssetSafety,
   AssessedVisualRole,
@@ -14,6 +15,7 @@ export type AdLayoutCompositionAdvice = {
   source: "vision" | "fallback";
   preferredTextSafeArea?: Exclude<AdLayoutTextSafeAreaAdvice, "unknown">;
   sceneGrounding: "surface" | "floating";
+  surfaceRect?: AdLayoutSurfaceRect;
   warnings: string[];
 };
 
@@ -99,13 +101,14 @@ export function applyAdLayoutVisionPolicy(
   const preferredTextSafeArea = trustedBackground && assessment.background
     ? trustedSafeArea(assessment.background.textSafeArea)
     : undefined;
-  const sceneGrounding = trustedBackground && assessment.background && trustedSurface(assessment.background.placementSurface)
-    ? "surface"
-    : "floating";
+  const surfaceRect = trustedBackground && assessment.background && trustedSurface(assessment.background.placementSurface)
+    ? assessment.background.surfaceRect
+    : undefined;
+  const sceneGrounding = surfaceRect ? "surface" : "floating";
 
   return {
     context: { ...context, inventory: { ...context.inventory, byRole } },
-    advice: { source: assessment.source, preferredTextSafeArea, sceneGrounding, warnings },
+    advice: { source: assessment.source, preferredTextSafeArea, sceneGrounding, ...(surfaceRect ? { surfaceRect } : {}), warnings },
     omitted,
   };
 }

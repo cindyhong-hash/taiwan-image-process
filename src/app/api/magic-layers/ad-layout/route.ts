@@ -58,7 +58,9 @@ export async function POST(request: Request) {
     const context = createAdLayoutContext({ product, client, assets: product.assets });
     if (!context.inventory.byRole.hero?.imageUrl) return NextResponse.json({ error: "此產品尚未有商品主體，請先完成去背商品素材再建立設計稿" }, { status: 400 });
 
-    const assessment = await assessAdLayoutVisualKit(context);
+    const assessment = await assessAdLayoutVisualKit(context, {
+      backgroundCanvas: { width: W, height: H },
+    });
     const assessed = applyAdLayoutVisionPolicy(context, assessment);
     const safeContext = assessed.context;
     const rawBg = safeContext.inventory.byRole.background?.imageUrl;

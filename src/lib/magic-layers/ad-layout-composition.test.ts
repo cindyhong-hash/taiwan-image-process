@@ -35,3 +35,44 @@ test("maps a trusted composition decision to a bounded template before resolving
   assert.deepEqual(layout.decoration, { x: 819, y: 218, w: 102, h: 115 });
   assert.deepEqual(layout.logo, { x: 768, y: 1165, w: 164, h: 64 });
 });
+
+test("anchors the product to a trusted surface rectangle and caps it to the usable surface", () => {
+  const input = {
+    canvas: { width: 1000, height: 1000, ratio: "1:1" },
+    assets: { hero: "hero", background: "background" },
+    purpose: "scene" as const,
+    productAspectRatio: 0.25,
+    compositionAdvice: {
+      source: "vision" as const,
+      sceneGrounding: "surface" as const,
+      surfaceRect: { x: 0.08, y: 0.62, w: 0.55, h: 0.1 },
+      warnings: [],
+    },
+    typography: { headline: "溫和保養", subtitle: "每天安心使用", dark: "#123456", light: "#fff", accent: "#68bbee" },
+  };
+
+  for (const direction of ["product-focus", "editorial", "scene-led"] as const) {
+    const layout = resolveAdComposition(input, direction);
+    assert.equal(layout.product.y + layout.product.h, 620);
+    assert.ok(layout.product.x >= 80);
+    assert.ok(layout.product.x + layout.product.w <= 630);
+    assert.ok(layout.product.w <= 341);
+    assert.ok(layout.product.h <= 540);
+    assert.ok(Math.abs(layout.product.w / layout.product.h - 0.25) < 0.01);
+  }
+});
+
+test("keeps template geometry when surface placement has no trusted rectangle", () => {
+  const base = {
+    canvas: { width: 1000, height: 1000, ratio: "1:1" },
+    assets: { hero: "hero", background: "background" },
+    purpose: "scene" as const,
+    productAspectRatio: 0.4,
+    typography: { headline: "溫和保養", subtitle: "每天安心使用", dark: "#123456", light: "#fff", accent: "#68bbee" },
+  };
+
+  assert.deepEqual(
+    resolveAdComposition({ ...base, compositionAdvice: { source: "vision", sceneGrounding: "surface", warnings: [] } }, "scene-led"),
+    resolveAdComposition(base, "scene-led"),
+  );
+});
