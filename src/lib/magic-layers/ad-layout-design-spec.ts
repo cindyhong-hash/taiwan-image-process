@@ -1,7 +1,7 @@
 import type { BenefitInput } from "./ad-layout-graphics.ts";
 import type { DirectionDecision } from "./ad-layout-art-direction.ts";
 import { resolveAdComposition, type ResolvedAdLayout } from "./ad-layout-composition.ts";
-import { templateForAdvice } from "./ad-layout-templates.ts";
+import { templateById, templateForAdvice } from "./ad-layout-templates.ts";
 import type { CreativeBrief, DesignRecipe } from "./ad-layout-creative-brief.ts";
 import { planRecipeAssets, type AdLayoutAssetPlan, type GapPlanEntry } from "./ad-layout-gap-analysis.ts";
 import { validateAdLayoutSpec, type AdLayoutQualityCheck } from "./ad-layout-quality.ts";
@@ -115,7 +115,9 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
   const directions: AdLayoutDirection[] = ["product-focus", "editorial", "scene-led"];
   return directions.map((direction) => {
     const directionDecision = input.directionDecisions?.[direction];
-    const template = templateForAdvice(direction, input.purpose, input.canvas.ratio, input.compositionAdvice?.preferredTextSafeArea);
+    const fallbackTemplate = templateForAdvice(direction, input.purpose, input.canvas.ratio, input.compositionAdvice?.preferredTextSafeArea);
+    const layout = input.layouts?.[direction] ?? resolveAdComposition(input, direction, directionDecision);
+    const template = templateById(layout?.templateId ?? fallbackTemplate.id);
     const directionalPlan = input.planning
       ? planRecipeAssets(input.planning.recipe, input.planning.brief.inventory, direction)
       : undefined;
@@ -135,7 +137,7 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
       artDirectionDecision: directionDecision,
       purpose: input.purpose,
       templateId: template.id,
-      layout: input.layouts?.[direction] ?? resolveAdComposition(input, direction, directionDecision),
+      layout,
       artDirection: input.artDirection ?? "以品牌調性完成乾淨、清楚的產品社群設計",
       creativeBrief: input.planning?.brief,
       recipe: input.planning?.recipe,

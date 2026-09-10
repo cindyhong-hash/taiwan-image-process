@@ -14,13 +14,16 @@ export function resolveAdComposition(input: AdLayoutDesignInput, direction: AdLa
   const unit = Math.min(W, H);
   const rect = (x: number, y: number, w: number, h: number): LayoutRect => ({ x: Math.round(x * W), y: Math.round(y * H), w: Math.round(w * W), h: Math.round(h * H) });
   const aspect = input.productAspectRatio && Number.isFinite(input.productAspectRatio) && input.productAspectRatio > 0 ? input.productAspectRatio : 0.65;
-  const template = templateForAdvice(direction, input.purpose, input.canvas.ratio, input.compositionAdvice?.preferredTextSafeArea);
-  const side = decision?.composition === "stacked" ? false : aspect < 0.65 && W / H >= 0.72;
-  const rightCopy = decision?.composition === "copy-right" || (decision?.composition === undefined && direction === "editorial");
-  const copy = side ? rect(rightCopy ? 0.56 : 0.07, 0.24, 0.37, 0.38) : rect(direction === "editorial" ? 0.10 : 0.07, 0.08, 0.80, 0.24);
-  const heroZone = side
-    ? rect(rightCopy ? 0.07 : 0.51, 0.15, 0.42, direction === "scene-led" ? 0.62 : 0.72)
-    : rect(direction === "scene-led" ? 0.28 : direction === "editorial" ? 0.07 : 0.09, 0.35, direction === "scene-led" ? 0.65 : 0.84, 0.53);
+  const template = templateForAdvice(
+    direction,
+    input.purpose,
+    input.canvas.ratio,
+    input.compositionAdvice?.preferredTextSafeArea,
+    decision?.composition,
+  );
+  const zone = (value: { x: number; y: number; w: number; h: number }) => rect(value.x, value.y, value.w, value.h);
+  const copy = zone(template.zones.text);
+  const heroZone = zone(template.zones.hero);
   let w = Math.min(heroZone.w, heroZone.h * aspect), h = w / aspect;
   w = Math.round(w); h = Math.round(h);
   if (input.benefits?.length) { heroZone.h = Math.min(heroZone.h, Math.round(H * 0.72) - heroZone.y); w = Math.round(Math.min(heroZone.w, heroZone.h * aspect)); h = Math.round(w / aspect); }
@@ -36,11 +39,11 @@ export function resolveAdComposition(input: AdLayoutDesignInput, direction: AdLa
   if (!title.fits || !sub.fits) throw new CopyTooLongError();
   const headline = { ...copy, h: titleH };
   const subtitle = { ...copy, y: copy.y + (hasTitle ? titleH + gap : 0), h: Math.ceil(sub.lines.length * sub.fontSize * 1.25) };
-  const padding = Math.round(unit * 0.025);
   return {
     templateId: template.id, product, headline, subtitle, headlineSize: title.fontSize, subtitleSize: sub.fontSize,
-    safePanel: { x: copy.x - padding, y: copy.y - padding, w: copy.w + padding * 2, h: Math.max(titleH, subtitle.y + subtitle.h - copy.y) + padding * 2 },
-    support: side ? rect(rightCopy ? 0.67 : 0.07, 0.72, 0.22, 0.13) : rect(0.07, 0.74, 0.17, 0.13),
-    decoration: rect(rightCopy ? 0.08 : 0.78, 0.06, 0.11, 0.08), logo: rect(0.07, 0.92, 0.16, 0.045),
+    safePanel: zone(template.zones.safePanel),
+    support: zone(template.zones.support),
+    decoration: zone(template.zones.decoration),
+    logo: zone(template.zones.logo),
   };
 }
