@@ -54,13 +54,13 @@
 - Add `AdLayoutPolishTreatment = { backgroundWash: "none" | "soft-light"; reasons: string[] }` to the design spec.
 - Add `polishAdLayoutSpec(spec: AdLayoutDesignSpec): AdLayoutDesignSpec`.
 
-- [ ] Add failing unit cases for safe 8% product growth, refusing growth on collision/out-of-bounds, strengthening a short weak headline, removing a colliding decoration, and preserving all image URLs.
-- [ ] Run `node --test --experimental-strip-types src/lib/magic-layers/ad-layout-polish.test.ts` and confirm the new API is absent.
-- [ ] Implement immutable rectangle helpers and `polishAdLayoutSpec`; cap scale at 1.08, keep copy unchanged, and append reasons only for actions actually applied.
-- [ ] Call polish after initial spec construction and before `validateAndRepairDesignSpec`.
-- [ ] Add renderer coverage for `background_wash`, an editable full-canvas vertical gradient below product/copy and above the image background.
-- [ ] Run polish, composition, design-spec, renderer, preview and quality tests; run TypeScript and focused ESLint.
-- [ ] Commit `feat(design): polish resolved ad layouts`.
+- [x] Add failing unit cases for safe 8% product growth, refusing growth on collision/out-of-bounds, strengthening a short weak headline, removing a colliding decoration, and preserving all image URLs.
+- [x] Run `node --test --experimental-strip-types src/lib/magic-layers/ad-layout-polish.test.ts` and confirm the new API is absent.
+- [x] Implement immutable rectangle helpers and `polishAdLayoutSpec`; cap scale at 1.08, keep copy unchanged, and append reasons only for actions actually applied.
+- [x] Call polish after initial spec construction and before `validateAndRepairDesignSpec`.
+- [x] Add renderer coverage for `background_wash`, an editable full-canvas vertical gradient below product/copy and above the image background.
+- [x] Run polish, composition, design-spec, renderer, preview and quality tests; run TypeScript and focused ESLint.
+- [x] Commit `feat(design): polish resolved ad layouts`.
 
 ### Task 3: Editable product integration
 

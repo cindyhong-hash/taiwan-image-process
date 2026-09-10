@@ -98,6 +98,28 @@ export function renderAdLayoutSpec(spec: AdLayoutDesignSpec, options: AdLayoutRe
     background.meta.shape = { kind: "rect", fill: "#f8f9fc", stroke: "none", strokeWidth: 0, radius: 0 };
     layers.push(background);
   }
+  if (spec.polishTreatment?.backgroundWash === "soft-light") {
+    const wash = shapeLayer(
+      "background_wash",
+      "背景柔光",
+      zIndex++,
+      { x: 0, y: 0, w: width, h: height },
+      "#ffffff",
+      0.24,
+      "rect",
+      "background",
+      "background",
+    );
+    wash.meta.shape = {
+      kind: "rect",
+      fill: "#ffffff",
+      stroke: "none",
+      strokeWidth: 0,
+      radius: 0,
+      gradient: { axis: "vertical", from: "#ffffffb8", to: "#ffffff1f" },
+    };
+    layers.push(wash);
+  }
   if (spec.assets.support) {
     const id = spec.assets.support.role === "benefit" ? "benefit_1" : "texture_1";
     const label = spec.assets.support.role === "benefit" ? "賣點視覺" : "質地細節";

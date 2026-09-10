@@ -18,10 +18,29 @@ test("renders a focused composition without support-image clutter", () => {
   const layers = renderAdLayoutSpec(productFocus, { logoUrl: "logo" });
 
   assert.deepEqual(layers.map((layer) => layer.id), [
-    "layer_bg", "product_shadow", "product_1", "decoration_1", "text_safe_panel", "text_title", "text_sub", "logo_1",
+    "layer_bg", "background_wash", "product_shadow", "product_1", "decoration_1", "text_safe_panel", "text_title", "text_sub", "logo_1",
   ]);
   assert.equal(layers.some((layer) => layer.id === "texture_1" || layer.id === "benefit_1"), false);
   assert.equal((layers.find((layer) => layer.id === "text_safe_panel")?.meta.shape as { kind?: string }).kind, "rect");
+});
+
+test("renders the polish wash as an editable full-canvas gradient above the image background", () => {
+  const productFocus = resolveAdLayoutDesignSpecs(input).find((spec) => spec.direction === "product-focus");
+  assert.ok(productFocus);
+  assert.equal(productFocus.polishTreatment.backgroundWash, "soft-light");
+
+  const layers = renderAdLayoutSpec(productFocus);
+  const background = layers.find((layer) => layer.id === "layer_bg");
+  const wash = layers.find((layer) => layer.id === "background_wash");
+  const product = layers.find((layer) => layer.id === "product_1");
+
+  assert.ok(background && wash && product);
+  assert.equal(wash.image, null);
+  assert.equal(wash.editable, true);
+  assert.deepEqual(wash.bbox, { x: 0, y: 0, w: 1024, h: 1280 });
+  assert.equal((wash.meta.shape as { gradient?: { axis?: string } }).gradient?.axis, "vertical");
+  assert.ok(background.zIndex < wash.zIndex);
+  assert.ok(wash.zIndex < product.zIndex);
 });
 
 test("renders scene support behind product and copy", () => {
