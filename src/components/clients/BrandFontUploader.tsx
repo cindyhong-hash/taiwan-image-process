@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Trash2, Upload } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { FileUp, Loader2, Trash2 } from "lucide-react";
 import type { BrandFont } from "@/lib/fonts/useBrandFonts";
 
 /**
@@ -14,6 +13,8 @@ export function BrandFontUploader({ clientId }: { clientId: string }) {
   const [fonts, setFonts] = useState<BrandFont[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 純視覺：拖曳經過時高亮
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
@@ -106,47 +107,77 @@ export function BrandFontUploader({ clientId }: { clientId: string }) {
         className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }}
       />
-      <div className="flex items-center gap-2">
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {busy ? "上傳中…" : "上傳字體檔"}
-        </Button>
-        <span className="text-xs text-gray-400">支援 woff2 / woff / ttf / otf，建議 woff2（檔案小很多）</span>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* 左：拖放區。真的接 onDrop —— 只寫「拖曳」卻沒有 handler 的話文案就是騙人的。 */}
+        <div
+          onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f && !busy) upload(f);
+          }}
+          onClick={() => { if (!busy) fileRef.current?.click(); }}
+          className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors ${
+            dragging ? "border-violet-400 bg-violet-50" : "border-[#ebeff5] bg-white hover:border-violet-300"
+          } ${busy ? "cursor-wait opacity-70" : ""}`}
+        >
+          {busy
+            ? <Loader2 className="h-7 w-7 animate-spin text-violet-500" />
+            : <FileUp className="h-7 w-7 text-gray-400" />}
+          <span className="mt-1 text-sm font-bold text-gray-900">
+            {busy ? "上傳中…" : "拖曳字體檔案至此"}
+          </span>
+          {!busy && (
+            <span className="text-xs text-gray-500">
+              或 <span className="font-bold text-violet-600">點擊選擇檔案</span>
+            </span>
+          )}
+          <span className="mt-2 text-xs text-gray-400">支援格式：.woff2 / .woff / .ttf / .otf</span>
+          <span className="text-xs text-gray-400">（建議使用 woff2，檔案小很多）</span>
+        </div>
+
+        {/* 右：已上傳清單。手機直接疊在下面，分隔線只在寬螢幕出現。 */}
+        <div className="lg:border-l lg:border-[#ebeff5] lg:pl-6">
+          <p className="mb-3 text-sm font-bold text-gray-900">已上傳的字體（{fonts.length}）</p>
+          {fonts.length === 0 ? (
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm font-bold text-gray-400">
+                Aa
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm text-gray-500">尚未上傳任何字體</span>
+                <span className="block text-xs text-gray-400">上傳後會顯示在這裡，方便團隊成員使用。</span>
+              </span>
+            </div>
+          ) : (
+            <ul className="divide-y divide-[#ebeff5] rounded-lg border border-[#ebeff5]">
+              {fonts.map((f) => (
+                <li key={f.id} className="flex items-center gap-3 px-3 py-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-gray-800">{f.name}</span>
+                    <span className="block truncate text-lg text-gray-500" style={{ fontFamily: `'${f.family}', system-ui` }}>
+                      永和去角質 Salon+ 123
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => remove(f.id)}
+                    title="移除這個字體"
+                    className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-xs text-red-500">{error}</p>}
-
-      {fonts.length > 0 && (
-        <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
-          {fonts.map((f) => (
-            <li key={f.id} className="flex items-center gap-3 px-3 py-2">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-gray-800">{f.name}</span>
-                <span className="block truncate text-lg text-gray-500" style={{ fontFamily: `'${f.family}', system-ui` }}>
-                  永和去角質 Salon+ 123
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => remove(f.id)}
-                title="移除這個字體"
-                className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* 講清楚生效範圍，避免使用者上傳後以為套圖上的字也會換。 */}
-      <p className="text-xs leading-relaxed text-gray-400">
-        上傳後可在<span className="text-gray-600">自由畫布</span>與<span className="text-gray-600">AI 幫我設計</span>的文字圖層選用。
-        <br />
-        產品套圖與單圖生成的文字是 AI 直接畫進圖片裡的，不會套用這裡的字體。
-        <br />
-        請確認你擁有該字體的使用授權。
-      </p>
     </div>
   );
 }

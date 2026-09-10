@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { X, Upload, Loader2 } from "lucide-react";
-import { INDUSTRY_PRESETS } from "@/types/presets";
+import { FONT_STYLE_PRESETS, INDUSTRY_PRESETS } from "@/types/presets";
+import { HelpTip } from "@/components/activities/formParts";
 import { BrandFontUploader } from "./BrandFontUploader";
 
 // [MERGED] union of WIP(素材庫: taboos) + COLLEAGUE(clients: logoUrl/commonText)
@@ -35,12 +36,17 @@ type Props = {
 };
 
 // ── Card：白底圓角卡片，統一分區外觀 ─────────────────────────────
-function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+function Card({ title, sub, right, children }: {
+  title: string; sub?: React.ReactNode; right?: React.ReactNode; children: React.ReactNode;
+}) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-4">
-      <div className="space-y-1">
-        <h3 className="text-sm font-bold text-gray-900">{title}</h3>
-        {sub && <p className="text-xs text-gray-400">{sub}</p>}
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h3 className="text-sm font-bold text-gray-900">{title}</h3>
+          {sub && <p className="text-xs text-gray-400">{sub}</p>}
+        </div>
+        {right && <div className="flex shrink-0 items-center gap-1.5 pt-0.5">{right}</div>}
       </div>
       {children}
     </div>
@@ -69,6 +75,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
   const [tabooInput, setTabooInput] = useState("");
   const [fontInput, setFontInput] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [pastDragging, setPastDragging] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -129,14 +136,17 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
   const renameLogo = (idx: number, label: string) =>
     setValues((v) => ({ ...v, logoUrls: v.logoUrls.map((l, i) => (i === idx ? { ...l, label } : l)) }));
 
-  const handlePastPostUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []).slice(0, 5 - values.pastPostImageUrls.length);
+  const addPastPostFiles = async (picked: File[]) => {
+    const files = picked.filter((f) => f.type.startsWith("image/")).slice(0, 5 - values.pastPostImageUrls.length);
     if (!files.length) return;
     setUploading(true);
     const urls = await Promise.all(files.map(uploadImage));
     setValues((v) => ({ ...v, pastPostImageUrls: [...v.pastPostImageUrls, ...urls].slice(0, 5) }));
     setUploading(false);
   };
+
+  const handlePastPostUpload = (e: React.ChangeEvent<HTMLInputElement>) =>
+    addPastPostFiles(Array.from(e.target.files ?? []));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -339,30 +349,77 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
         </div>
       </Card>
 
-      {/* 6. 品牌字體 — 上傳字檔（畫布可用）+ 名稱 chips（純備註） */}
+      {/* 6. 品牌字體 — 上傳字檔，自由畫布／AI 排版的文字圖層可直接套用 */}
       <Card
         title="品牌字體"
         sub={clientId
-          ? "上傳字檔後可在自由畫布與 AI 幫我設計的文字圖層選用。（選填）"
-          : "先建立品牌後即可上傳字檔；這裡可先記下想用的字體名稱。（選填）"}
+          ? "上傳品牌專用字體，在自由畫布編輯文字時使用。（選填）"
+          : "先建立品牌後即可上傳字檔。（選填）"}
+        right={clientId ? (
+          <>
+            <span className="rounded-full border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-600">
+              可實際套用於編輯器
+            </span>
+            <HelpTip
+              label="生效範圍"
+              text="自由畫布與「AI 幫我設計」的文字圖層可直接套用上傳的字體。產品套圖／單圖主視覺上的文字是 AI 畫進圖片裡的，不會套用這裡的字體。請確認你擁有該字體的使用授權。"
+            />
+          </>
+        ) : undefined}
       >
-        {clientId && (
-          <div className="mb-5">
-            <BrandFontUploader clientId={clientId} />
-          </div>
-        )}
+        {clientId
+          ? <BrandFontUploader clientId={clientId} />
+          : <p className="text-xs text-gray-400">建立品牌後，這裡就會出現字體上傳區。</p>}
+      </Card>
+
+      {/* 7. 字體風格偏好 — 沿用既有 Client.fonts 欄位，純備註，不進生圖 prompt */}
+      <Card
+        title="字體風格偏好"
+        sub="記錄品牌偏好的文字風格，供團隊溝通參考。（選填）"
+        right={
+          <HelpTip
+            label="這會影響 AI 嗎？"
+            text="目前這裡只是團隊備註，不會送進 AI 生圖。AI 生圖上的文字是模型畫進畫素裡的，無法指定字體。要真的套用字體請用上方的「品牌字體」，在自由畫布編輯文字時選用。"
+          />
+        }
+      >
+        <div className="flex flex-wrap gap-2">
+          {FONT_STYLE_PRESETS.map((preset) => {
+            const on = values.fonts.includes(preset);
+            return (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setValues((v) => ({
+                  ...v,
+                  fonts: on ? v.fonts.filter((x) => x !== preset) : [...v.fonts, preset],
+                }))}
+                className={`rounded-lg border-[1.5px] px-3 py-1.5 text-sm transition-colors ${
+                  on
+                    ? "border-violet-600 bg-violet-50 text-violet-700"
+                    : "border-[#ebeff5] bg-white text-gray-500 hover:border-violet-300"
+                }`}
+              >
+                {preset}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex gap-2">
           <Input
             value={fontInput}
             onChange={(e) => setFontInput(e.target.value)}
-            placeholder="例：Noto Sans TC、思源黑體、微軟正黑體"
+            placeholder="輸入你習慣的描述詞，例：北歐極簡、雜誌感標題"
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addFont(); } }}
           />
-          <Button type="button" variant="outline" onClick={addFont}>加入</Button>
+          <Button type="button" variant="outline" onClick={addFont}>新增自訂風格</Button>
         </div>
+
+        {/* preset 已經是 toggle，這裡只列自訂的，避免同一個詞出現兩次 */}
         <div className="flex flex-wrap gap-2">
-          {values.fonts.map((t) => (
-            <Badge key={t} variant="secondary" className="flex items-center gap-1">
+          {values.fonts.filter((t) => !FONT_STYLE_PRESETS.includes(t as (typeof FONT_STYLE_PRESETS)[number])).map((t) => (
+            <Badge key={t} variant="secondary" className="flex items-center gap-1 bg-violet-50 text-violet-700 border-violet-200">
               {t}
               <button
                 type="button"
@@ -376,7 +433,7 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
         </div>
       </Card>
 
-      {/* 7. 過往貼文圖片上傳 */}
+      {/* 8. 過往貼文圖片上傳 */}
       <Card title="過往貼文圖片上傳" sub="上傳以前做過的圖，AI 會學習你們的視覺風格，每次生成都更貼近品牌調性。（選填，最多 5 張）">
         <div className="flex gap-2 flex-wrap">
           {values.pastPostImageUrls.map((url, i) => (
@@ -394,7 +451,18 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
             </div>
           ))}
           {values.pastPostImageUrls.length < 5 && (
-            <label className="flex flex-col items-center justify-center w-full sm:w-auto sm:min-w-[12rem] h-24 border-2 border-dashed rounded-lg cursor-pointer hover:bg-gray-50 px-4">
+            <label
+              onDragOver={(e) => { e.preventDefault(); if (!pastDragging) setPastDragging(true); }}
+              onDragLeave={() => setPastDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setPastDragging(false);
+                if (!uploading) addPastPostFiles(Array.from(e.dataTransfer.files ?? []));
+              }}
+              className={`flex flex-col items-center justify-center w-full sm:w-auto sm:min-w-[12rem] h-24 border-2 border-dashed rounded-lg cursor-pointer px-4 transition-colors ${
+                pastDragging ? "border-violet-400 bg-violet-50" : "hover:bg-gray-50"
+              }`}
+            >
               {uploading ? (
                 <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
               ) : (

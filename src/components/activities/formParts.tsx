@@ -4,11 +4,42 @@
  * 抽出嚟自 ActivityForm.tsx（Figma 對齊嘅 source of truth），兩邊表單要維持
  * 視覺一致，改樣式淨改呢度一個地方即可。對齊 Figma step3-creation-form-v2 (263-974)。
  */
+import { useState } from "react";
 import { Label } from "@/components/ui/label";
-import { X, Loader2, Images, Upload, Sparkles } from "lucide-react";
+import { X, Loader2, Images, Upload, Sparkles, HelpCircle } from "lucide-react";
 
 // ── SectionLabel：violet 數字圓圈 + 標題 + 必填 */選填 + 底線分隔 ─────────────
 // divider 預設 true（多圖／素材庫表單靠底線分隔）；白卡片式版面傳 divider={false}。
+
+/**
+ * 「?」說明 popover（DESIGN.md §5）。
+ * 長說明不要 inline 佔版面，也不要用行內琥珀色警告 —— 一律收進這顆小圖示。
+ * 放共用而不是各頁自己寫一套；標竿寫法原本在 PromptComposer。
+ */
+export function HelpTip({ text, label = "說明" }: { text: string; label?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={label}
+        className="text-gray-400 transition-colors hover:text-violet-600"
+      >
+        <HelpCircle className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <>
+          {/* 點畫面任一處關閉 */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-6 z-20 w-64 rounded-lg border border-[#ebeff5] bg-white p-3 text-xs leading-relaxed text-gray-500 shadow-md">
+            {text}
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
 
 export function SectionLabel({ step, title, hint, required, divider = true }: { step: string; title: string; hint?: string; required?: boolean; divider?: boolean }) {
   return (

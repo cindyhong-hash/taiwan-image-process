@@ -202,3 +202,18 @@ export const INDUSTRY_PRESETS: IndustryPreset[] = [
     },
   },
 ];
+
+/**
+ * 字體風格偏好 preset（品牌設定「字體風格偏好」卡）。
+ * 存進既有的 Client.fonts（JSON string[]），不另開欄位、不用 migration。
+ */
+export const FONT_STYLE_PRESETS = [
+  "簡約黑體",
+  "日系圓體",
+  "現代無襯線",
+  "優雅襯線",
+  "手寫風",
+  "復古風",
+  "可愛童趣",
+  "高級時尚",
+] as const;
