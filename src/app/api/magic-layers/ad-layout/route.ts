@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       where: { id: productId },
       select: {
         id: true, clientId: true, name: true, description: true, category: true, visualProfileJson: true, heroImageUrl: true, primaryColorOverride: true,
-        assets: { where: { status: "DONE" }, select: { assetRole: true, imageUrl: true } },
+        assets: { where: { status: "DONE" }, orderBy: { createdAt: "desc" }, select: { assetRole: true, imageUrl: true } },
       },
     });
     if (!product || product.clientId !== clientId) return NextResponse.json({ error: "Product not found" }, { status: 404 });
