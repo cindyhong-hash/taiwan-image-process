@@ -77,11 +77,12 @@ The parser strips markdown fences, validates every enum, clamps confidence, and 
 ### Deterministic asset rules
 
 - `hero` and logo: always retain; never ask vision to decide their identity.
-- `background`: omit if a product, package, readable branding/text, or an obvious duplicate product is visible. It must be a pure supporting environment.
+- `background`: a complete clean environment is a valid supporting scene. Omit only when the background itself visibly contains a product/package or readable branding/text.
 - `detail`: omit when it is a full product/packaging shot or a complete scene. A photographic texture/macro may remain.
 - `benefit`: omit when it is a physical product, package, or full scene. It may remain abstract/conceptual.
 - `decoration`: omit when it contains a product, readable text/logo, or a complete scene. It must remain a small independent overlay.
-- In uncertain low-confidence results, retain the asset. This makes the model advisory rather than silently destructive; P1’s asset budgets still prevent collage.
+- `safeForDeclaredRole: false` is advisory and cannot remove an asset without a role-specific visible conflict.
+- Hard omission requires a role-specific conflict with confidence at least `0.95`. A conflict from `0.7` through less than `0.95` retains the asset and adds a deterministic warning; lower-confidence results are ignored. This makes a single stochastic assessment conservative while P1’s asset budgets still prevent collage.
 
 ### Applying advice
 
@@ -92,7 +93,7 @@ The parser strips markdown fences, validates every enum, clamps confidence, and 
 
 ## Failure, Cost, and Safety
 
-- The vision call has a short server-side timeout that leaves enough room for existing background work and stays inside the route’s 120-second max duration.
+- The vision call has a short server-side timeout that leaves enough room for existing background work and stays inside the route’s 120-second max duration. Completion uses `temperature: 0` to reduce repeated-run variance.
 - Missing API key, storage read failure, provider error, timeout, empty output, or invalid JSON produces a named `fallback` assessment. The request still returns the P1 deterministic three options.
 - Never return private data URIs, raw model output, or stack traces to the client. Only safe provenance and user-facing omission reason appear in `DesignSpec` rationale/warnings.
 - No persistent cache in P2-A. That avoids a new migration and prevents stale safety decisions when an asset URL changes. A later slice can introduce a content-hash cache once product asset lifecycle ownership is agreed.

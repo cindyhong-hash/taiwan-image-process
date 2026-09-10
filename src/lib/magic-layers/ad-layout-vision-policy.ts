@@ -8,6 +8,7 @@ import type {
 } from "./ad-layout-vision.ts";
 
 const MIN_TRUSTED_CONFIDENCE = 0.7;
+const MIN_OMISSION_CONFIDENCE = 0.95;
 
 export type AdLayoutCompositionAdvice = {
   source: "vision" | "fallback";
@@ -24,21 +25,21 @@ export type AssessedAdLayoutContext = {
   omitted: Array<{ role: AssessedVisualRole; reason: string }>;
 };
 
+const ROLE_LABELS: Record<AssessedVisualRole, string> = {
+  background: "情境背景",
+  detail: "質地細節",
+  benefit: "賣點視覺",
+  decoration: "裝飾元素",
+};
+
 function mustOmit(role: AssessedVisualRole, asset: AssetSafety): boolean {
-  if (!asset.safeForDeclaredRole) return true;
-  if (role === "background") return asset.productVisible || asset.textOrLogoVisible || asset.completeSceneVisible;
+  if (role === "background") return asset.productVisible || asset.textOrLogoVisible;
   if (role === "detail") return asset.productVisible || asset.completeSceneVisible;
   if (role === "benefit") return asset.productVisible || asset.completeSceneVisible;
   return asset.productVisible || asset.textOrLogoVisible || asset.completeSceneVisible;
 }
 
 function reasonFor(role: AssessedVisualRole, assessment: AssetSafety): string {
-  const label: Record<AssessedVisualRole, string> = {
-    background: "情境背景",
-    detail: "質地細節",
-    benefit: "賣點視覺",
-    decoration: "裝飾元素",
-  };
   const conflict = assessment.productVisible
     ? "含有完整商品"
     : assessment.textOrLogoVisible
@@ -46,7 +47,11 @@ function reasonFor(role: AssessedVisualRole, assessment: AssetSafety): string {
       : assessment.completeSceneVisible
         ? "看起來像完整場景"
         : "不適合目前素材角色";
-  return `${label[role]}${conflict}，已省略以避免素材拼貼${assessment.reason ? `（${assessment.reason}）` : ""}`;
+  return `${ROLE_LABELS[role]}${conflict}，已省略以避免素材拼貼${assessment.reason ? `（${assessment.reason}）` : ""}`;
+}
+
+function retainedWarningFor(role: AssessedVisualRole): string {
+  return `${ROLE_LABELS[role]}的單次視覺判讀信心不足，已保留素材並交由版型限制使用`;
 }
 
 function trustedSurface(value: AdLayoutPlacementSurface): boolean {
@@ -68,7 +73,13 @@ export function applyAdLayoutVisionPolicy(
   if (assessment.source === "vision") {
     for (const role of ["background", "detail", "benefit", "decoration"] as const) {
       const asset = assessment.assets[role];
-      if (!asset || asset.confidence < MIN_TRUSTED_CONFIDENCE || !byRole[role] || !mustOmit(role, asset)) continue;
+      if (!asset || !byRole[role] || !mustOmit(role, asset)) continue;
+      if (asset.confidence < MIN_OMISSION_CONFIDENCE) {
+        if (asset.confidence >= MIN_TRUSTED_CONFIDENCE) {
+          warnings.push(retainedWarningFor(role));
+        }
+        continue;
+      }
       const reason = reasonFor(role, asset);
       delete byRole[role];
       omitted.push({ role, reason });
@@ -81,6 +92,7 @@ export function applyAdLayoutVisionPolicy(
     byRole.background &&
     backgroundAssessment &&
     backgroundAssessment.confidence >= MIN_TRUSTED_CONFIDENCE &&
+    !mustOmit("background", backgroundAssessment) &&
     assessment.background &&
     assessment.background.confidence >= MIN_TRUSTED_CONFIDENCE,
   );

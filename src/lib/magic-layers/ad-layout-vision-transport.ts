@@ -15,6 +15,6 @@ export async function withVisionDeadline<T>(work:(signal:AbortSignal)=>Promise<T
  finally{clearTimeout(timer);parent?.removeEventListener("abort",abort);controller.signal.removeEventListener("abort",listener);}
 }
 export async function completeDesignVision(system:string,payload:unknown,images:{role:string;url:string}[],signal:AbortSignal,key:string,model:string):Promise<string>{
- const response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",signal,headers:{Authorization:`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model,messages:[{role:"system",content:system},{role:"user",content:[{type:"text",text:JSON.stringify(payload)},...images.flatMap(i=>[{type:"text",text:`Image role: ${i.role}`},{type:"image_url",image_url:{url:i.url}}])]}],max_tokens:1800})});
+ const response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",signal,headers:{Authorization:`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model,messages:[{role:"system",content:system},{role:"user",content:[{type:"text",text:JSON.stringify(payload)},...images.flatMap(i=>[{type:"text",text:`Image role: ${i.role}`},{type:"image_url",image_url:{url:i.url}}])]}],max_tokens:1800,temperature:0})});
  if(!response.ok)throw new Error("Vision unavailable");const data=await response.json();const text=data.choices?.[0]?.message?.content;if(typeof text!=="string")throw new Error("Invalid vision response");return text;
 }
