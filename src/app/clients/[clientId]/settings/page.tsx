@@ -128,7 +128,7 @@ export default function ClientSettingsPage({ params }: { params: Promise<{ clien
                   儲存失敗，請稍後再試一次。你的內容仍保留在下方表單。
                 </div>
               )}
-              <BrandSettingsForm initialValues={client} onSubmit={handleSubmit} submitLabel="更新品牌設定" />
+              <BrandSettingsForm initialValues={client} clientId={clientId} onSubmit={handleSubmit} submitLabel="更新品牌設定" />
             </div>
             <div className="hidden lg:block w-[300px] shrink-0 sticky top-6">
               <AiLearnedCard assetCount={assetCount} percent={percent} missing={missing} />

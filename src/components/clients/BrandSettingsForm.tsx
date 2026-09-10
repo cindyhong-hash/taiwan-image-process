@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { X, Upload, Loader2 } from "lucide-react";
 import { INDUSTRY_PRESETS } from "@/types/presets";
+import { BrandFontUploader } from "./BrandFontUploader";
 
 // [MERGED] union of WIP(素材庫: taboos) + COLLEAGUE(clients: logoUrl/commonText)
 export type LogoVersion = { url: string; label: string };
@@ -29,6 +30,8 @@ type Props = {
   initialValues?: Partial<BrandFormValues>;
   onSubmit: (values: BrandFormValues) => Promise<void>;
   submitLabel?: string;
+  /** 有品牌 id 時才顯示字體上傳（新增品牌頁還沒有 id）。 */
+  clientId?: string;
 };
 
 // ── Card：白底圓角卡片，統一分區外觀 ─────────────────────────────
@@ -44,7 +47,7 @@ function Card({ title, sub, children }: { title: string; sub?: string; children:
   );
 }
 
-export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲存" }: Props) {
+export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲存", clientId }: Props) {
   const [values, setValues] = useState<BrandFormValues>({
     name: initialValues?.name ?? "",
     primaryColor: initialValues?.primaryColor ?? "#000000",
@@ -336,8 +339,13 @@ export function BrandSettingsForm({ initialValues, onSubmit, submitLabel = "儲�
         </div>
       </Card>
 
-      {/* 6. 常用字體 — chips（取代舊 commonText 單行輸入） */}
-      <Card title="常用字體" sub="填入品牌慣用的字體名稱，AI 生成圖文時會參考。（選填）">
+      {/* 6. 品牌字體 — 上傳字檔（畫布可用）+ 名稱 chips（純備註） */}
+      <Card title="品牌字體" sub="上傳字檔後可在自由畫布與 AI 幫我設計的文字圖層選用。（選填）">
+        {clientId && (
+          <div className="mb-5">
+            <BrandFontUploader clientId={clientId} />
+          </div>
+        )}
         <div className="flex gap-2">
           <Input
             value={fontInput}

@@ -8,6 +8,7 @@ import { drawEditableShape, drawIcon, EDITABLE_ICON_NAMES } from "@/lib/magic-la
    Ported from the verified vanilla engine.
    ============================================================ */
 import { drawEditableText, readTextLayout, DEFAULT_TEXT_LAYOUT, type TextLayout } from "@/lib/magic-layers/editable-text.ts";
+import { useBrandFonts } from "@/lib/fonts/useBrandFonts";
 import type { SavedLayer, TextFx, ShapeKind, ShapeSpec } from "@/lib/magic-layers/saved-layer.ts";
 export type { SavedLayer } from "@/lib/magic-layers/saved-layer.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -42,7 +43,10 @@ const TYPE_LABEL: Record<string, string> = { background: "背景", product: "產
 
 /** One serialized layer in a saved 排版 (stored in LibraryImage.paramsJson). */
 
-export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, logos, name, onRename, onBack, onSave }: { image: HTMLImageElement; layers: LayerData[]; fragmentation?: FragmentationReport; backgrounds?: { url: string; label?: string }[]; logos?: string[]; name?: string; onRename?: (name: string) => void; onBack?: () => void; onSave?: (payload: { docW: number; docH: number; layers: SavedLayer[]; imageDataUrl: string; finalize: boolean }) => Promise<void> }) {
+export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, logos, name, clientId, onRename, onBack, onSave }: { image: HTMLImageElement; layers: LayerData[]; fragmentation?: FragmentationReport; backgrounds?: { url: string; label?: string }[]; logos?: string[]; name?: string; clientId?: string | null; onRename?: (name: string) => void; onBack?: () => void; onSave?: (payload: { docW: number; docH: number; layers: SavedLayer[]; imageDataUrl: string; finalize: boolean }) => Promise<void> }) {
+  // 品牌字體：使用者上傳的字體要能在畫布選用。ready 用來在字體載完後重畫一次，
+  // 否則已經套用品牌字體的圖層會先以系統字型畫出來。
+  const { fonts: brandFonts, ready: brandFontsReady } = useBrandFonts(clientId);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const addProdRef = useRef<HTMLInputElement>(null);
@@ -439,7 +443,9 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
     resize(); const ro = new ResizeObserver(resize); ro.observe(wrap); return () => ro.disconnect();
   }, [render]);
 
-  useEffect(() => { render(); }, [render, tool]);
+  // brandFontsReady 進 deps：canvas 的 ctx.font 只認已載入完成的字體，
+  // 品牌字體是非同步載入的，載完必須重畫一次，否則圖層會停在系統字型。
+  useEffect(() => { render(); }, [render, tool, brandFontsReady]);
   // 換選取的圖層時，收起 AI 藝術字子畫面 / 清空微調輸入
   useEffect(() => { setArtView("none"); setArtRef(null); setArtEdit(""); }, [selectedId]);
 
@@ -1023,6 +1029,13 @@ export function MagicLayersEditor({ image, layers, fragmentation, backgrounds, l
                       <option value="'Noto Sans TC',system-ui,sans-serif">思源黑體（Noto Sans TC）</option>
                       <option value="'Noto Serif TC',serif">思源宋體（Noto Serif TC）</option>
                       <option value="'Manrope','Noto Sans TC',sans-serif">Manrope（英數）</option>
+                      {brandFonts.length > 0 && (
+                        <optgroup label="品牌字體">
+                          {brandFonts.map((f) => (
+                            <option key={f.id} value={`'${f.family}','Noto Sans TC',sans-serif`}>{f.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                     <div style={{ display: "flex", gap: 10 }}>
                       <div style={{ flex: 1 }}><label style={S.rlabel}>字型大小</label>

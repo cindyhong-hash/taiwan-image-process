@@ -8,6 +8,12 @@ export function contentTypeForExt(ext: string): string {
   if (e === "png") return "image/png";
   if (e === "webp") return "image/webp";
   if (e === "gif") return "image/gif";
+  // 品牌字體：Blob 會照這裡的 content-type 回應，標成 image/jpeg 的話
+  // 瀏覽器會拒絕當字體載入（@font-face 直接失敗）。
+  if (e === "woff2") return "font/woff2";
+  if (e === "woff") return "font/woff";
+  if (e === "ttf") return "font/ttf";
+  if (e === "otf") return "font/otf";
   return "image/jpeg";
 }
 
