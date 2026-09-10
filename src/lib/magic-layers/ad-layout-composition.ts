@@ -88,7 +88,20 @@ export function resolveAdComposition(input: AdLayoutDesignInput, direction: AdLa
   const heroZone = zone(template.zones.hero);
   let w = Math.min(heroZone.w, heroZone.h * aspect), h = w / aspect;
   w = Math.round(w); h = Math.round(h);
-  if (input.benefits?.length) { heroZone.h = Math.min(heroZone.h, Math.round(H * 0.72) - heroZone.y); w = Math.round(Math.min(heroZone.w, heroZone.h * aspect)); h = Math.round(w / aspect); }
+  if (input.benefits?.length) {
+    // 賣點列畫在 y=0.77，所以限制其實是「商品底部要在它上面」。
+    // 原本只把 hero 區塊壓扁，對起點本來就低的 scene-led 版型（y=0.53 / 0.59）
+    // 等於只剩 0.13–0.19 個畫布高，商品縮到畫布的 1.7%，等於白給一個選項。
+    // 先把區塊往上移來滿足限制，真的還不夠才縮 —— 上移不用犧牲尺寸。
+    const limit = Math.round(H * 0.72);
+    const topMargin = Math.round(H * 0.08);
+    if (heroZone.y + heroZone.h > limit) {
+      heroZone.y = Math.max(topMargin, limit - heroZone.h);
+      heroZone.h = Math.min(heroZone.h, limit - heroZone.y);
+    }
+    w = Math.round(Math.min(heroZone.w, heroZone.h * aspect));
+    h = Math.round(w / aspect);
+  }
   const product = alignProductToSurface(
     { x: Math.round(heroZone.x + (heroZone.w - w) / 2), y: Math.round(heroZone.y + (heroZone.h - h) / 2), w, h },
     aspect,
