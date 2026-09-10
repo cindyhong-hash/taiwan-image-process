@@ -228,7 +228,7 @@ export function ComposeView({ clientId: clientIdProp }: { clientId?: string }) {
     return (
       <div style={S.editorPanel}>
         <MagicLayersEditor image={img} layers={layers} backgrounds={bgLibrary} logos={logos}
-          name={docName ?? title} clientId={clientIdProp ?? null} onRename={setDocName}
+          name={docName ?? title} clientId={clientId} onRename={setDocName}
           onBack={() => {
             // handoff（精靈/空白/續編）進來 → 返回離開編輯器（回上一頁）；表單流程 → 返回回表單。
             if (fromHandoff) { router.back(); }
