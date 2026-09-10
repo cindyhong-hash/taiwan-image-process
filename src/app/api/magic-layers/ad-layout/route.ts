@@ -19,6 +19,7 @@ import { applyArtDirectionPolicy } from "@/lib/magic-layers/ad-layout-art-direct
 import { planArtDirection } from "@/lib/magic-layers/ad-layout-art-direction-provider.ts";
 import { buildDirectedCandidates } from "@/lib/magic-layers/ad-layout-orchestration.ts";
 import { availableBrandPostReferences, selectDesignReferences } from "@/lib/magic-layers/ad-layout-references.ts";
+import { artDirectionStatus } from "@/lib/magic-layers/ad-layout-art-direction-status.ts";
 import { loadBuffer, saveBuffer } from "@/lib/storage";
 import sharp from "sharp";
 
@@ -150,6 +151,7 @@ export async function POST(request: Request) {
       Boolean(safeContext.brand.secondaryColor),
       benefits,
     );
+    const directionStatus = artDirectionStatus(artResult, options);
 
     return NextResponse.json({
       options: options.map((option) => ({
@@ -160,6 +162,7 @@ export async function POST(request: Request) {
           accentColor, purpose,
         },
       })),
+      artDirection: directionStatus,
       canvasWidth: W,
       canvasHeight: H,
     });

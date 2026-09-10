@@ -28,6 +28,7 @@ const RATIOS = [
 ] as const;
 
 type LayoutCanvas = { width: number; height: number };
+type ArtDirectionStatus = { source: "vision" | "fallback"; message: string };
 
 function LayoutOptionPreview({
   option,
@@ -84,6 +85,7 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [readyLayers, setReadyLayers] = useState<Record<string, LayerData[] | null>>({});
   const [canvas, setCanvas] = useState<LayoutCanvas | null>(null);
+  const [artDirection, setArtDirection] = useState<ArtDirectionStatus | null>(null);
 
   const generate = async () => {
     if (busy) return;
@@ -102,6 +104,9 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
       setOptions(data.options);
       setSelectedOptionId(data.options[0].id);
       setCanvas({ width: data.canvasWidth, height: data.canvasHeight });
+      setArtDirection(data.artDirection?.source === "vision" || data.artDirection?.source === "fallback"
+        ? { source: data.artDirection.source, message: typeof data.artDirection.message === "string" ? data.artDirection.message : "已使用穩定排版規則。" }
+        : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "產生設計稿失敗，請稍後再試");
     } finally {
@@ -145,10 +150,11 @@ export function AdLayoutModal({ clientId, productId, productName, onClose }: {
                 <div className="text-sm font-bold text-gray-900">選一個設計方向</div>
                 <p className="mt-1 text-xs leading-5 text-gray-500">每個方向都已挑選必要素材並建立文字層級；下一步仍可自由調整。</p>
               </div>
-              <button type="button" onClick={() => { setOptions(null); setCanvas(null); setSelectedOptionId(null); }} className="flex shrink-0 items-center gap-1 text-xs font-medium text-gray-500 hover:text-violet-700">
+              <button type="button" onClick={() => { setOptions(null); setCanvas(null); setSelectedOptionId(null); setArtDirection(null); }} className="flex shrink-0 items-center gap-1 text-xs font-medium text-gray-500 hover:text-violet-700">
                 <ArrowLeft className="h-3.5 w-3.5" />重選條件
               </button>
             </div>
+            {artDirection && <p className={`mt-2 text-xs ${artDirection.source === "vision" ? "text-violet-700" : "text-gray-500"}`}>{artDirection.message}</p>}
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {options.map((option) => (
                 <LayoutOptionPreview
