@@ -101,10 +101,15 @@ export function applyAdLayoutVisionPolicy(
   const preferredTextSafeArea = trustedBackground && assessment.background
     ? trustedSafeArea(assessment.background.textSafeArea)
     : undefined;
-  const surfaceRect = trustedBackground && assessment.background && trustedSurface(assessment.background.placementSurface)
-    ? assessment.background.surfaceRect
-    : undefined;
-  const sceneGrounding = surfaceRect ? "surface" : "floating";
+  // 檯面可不可信、跟模型有沒有給得出合法座標，是兩件事。
+  // rect 只是「貼齊到哪」的加分資訊；缺了它仍然是 surface —— 陰影
+  // (design-spec) 與商品整合模式 (product-integration) 都吃 sceneGrounding，
+  // 綁在一起會讓座標差一點點就整個掉回 floating。
+  const groundedSurface = Boolean(
+    trustedBackground && assessment.background && trustedSurface(assessment.background.placementSurface),
+  );
+  const surfaceRect = groundedSurface ? assessment.background?.surfaceRect : undefined;
+  const sceneGrounding = groundedSurface ? "surface" : "floating";
 
   return {
     context: { ...context, inventory: { ...context.inventory, byRole } },

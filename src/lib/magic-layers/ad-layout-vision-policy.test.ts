@@ -87,7 +87,11 @@ test("applies only trusted valid background advice from a retained background", 
   assert.deepEqual(result.advice.surfaceRect, { x: 0.08, y: 0.62, w: 0.55, h: 0.1 });
 });
 
-test("does not claim surface grounding without a trusted normalized surface rectangle", () => {
+// sceneGrounding 回答「這是不是可信的檯面場景」（陰影、商品整合模式吃它），
+// surfaceRect 回答「要貼齊到哪個座標」（composition、polish 吃它）。
+// 兩者要分開：檯面可信但模型沒給合法座標時，仍該當作檯面場景，
+// 只是不做位置貼齊 —— 綁在一起會讓座標差一點就連陰影都掉了。
+test("keeps surface grounding without a rect, but exposes no rect to align to", () => {
   const missingRect = applyAdLayoutVisionPolicy(context, vision(
     { background: safe },
     { textSafeArea: "right-top", placementSurface: "counter", confidence: 0.9 },
@@ -97,7 +101,7 @@ test("does not claim surface grounding without a trusted normalized surface rect
     { textSafeArea: "right-top", placementSurface: "counter", surfaceRect: { x: 0.08, y: 0.62, w: 0.55, h: 0.1 }, confidence: 0.6 },
   ));
 
-  assert.equal(missingRect.advice.sceneGrounding, "floating");
+  assert.equal(missingRect.advice.sceneGrounding, "surface");
   assert.equal(missingRect.advice.surfaceRect, undefined);
   assert.equal(lowConfidence.advice.sceneGrounding, "floating");
   assert.equal(lowConfidence.advice.surfaceRect, undefined);

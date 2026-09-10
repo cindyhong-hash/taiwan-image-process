@@ -10,6 +10,9 @@ export type ResolvedAdLayout = {
 };
 export class CopyTooLongError extends Error { constructor() { super("文案較長，請縮短標題或副標後再試"); } }
 
+/** 貼齊檯面後至少要保留原尺寸的這個比例，否則不貼。 */
+const MIN_GROUNDED_AREA_RATIO = 0.5;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -50,6 +53,11 @@ function alignProductToSurface(
       h = Math.max(1, Math.round(w / aspect));
     }
   }
+
+  // 檯面偵測到得越高，上方可站立的空間越少，商品就被壓得越小 ——
+  // 檯面在畫面上緣時甚至會退化成 1px。貼齊只是加分項，不值得為它輸出一張
+  // 看不到商品的圖：縮太多就整個放棄貼齊，退回原本的浮空排版。
+  if (w * h < product.w * product.h * MIN_GROUNDED_AREA_RATIO) return product;
 
   const minCenter = surfaceLeft + w / 2;
   const maxCenter = surfaceLeft + surfaceWidth - w / 2;

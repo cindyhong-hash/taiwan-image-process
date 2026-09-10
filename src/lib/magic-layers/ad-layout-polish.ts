@@ -37,13 +37,22 @@ function canGrowProduct(spec: AdLayoutDesignSpec, candidate: LayoutRect): boolea
   return protectedRects.every((rect) => !overlaps(candidate, rect));
 }
 
+/**
+ * 商品是不是真的站在偵測到的檯面上（底部貼齊檯面上緣）。
+ * 只看 surfaceRect 有沒有值是不夠的 —— 貼齊可能因為會把商品壓太小而被放棄，
+ * 那種情況要讓下面的放大修補照常運作，否則就沒有任何東西擋得住過小的商品。
+ */
+function isGroundedOnSurface(spec: AdLayoutDesignSpec): boolean {
+  const advice = spec.compositionAdvice;
+  if (!spec.layout || advice?.source !== "vision" || advice.sceneGrounding !== "surface" || !advice.surfaceRect) return false;
+  const surfaceTop = Math.round(advice.surfaceRect.y * spec.canvas.height);
+  return Math.abs(spec.layout.product.y + spec.layout.product.h - surfaceTop) <= 1;
+}
+
 function isProductUndersized(spec: AdLayoutDesignSpec): boolean {
   if (!spec.layout) return false;
-  if (
-    spec.compositionAdvice?.source === "vision"
-    && spec.compositionAdvice.sceneGrounding === "surface"
-    && spec.compositionAdvice.surfaceRect
-  ) return false;
+  // 已經貼齊檯面就不要再放大，放大會讓商品浮起來離開檯面。
+  if (isGroundedOnSurface(spec)) return false;
   const canvasArea = spec.canvas.width * spec.canvas.height;
   const productArea = spec.layout.product.w * spec.layout.product.h;
   return canvasArea > 0 && productArea / canvasArea < 0.22;

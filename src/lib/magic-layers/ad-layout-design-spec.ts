@@ -141,6 +141,10 @@ export function resolveAdLayoutDesignSpecs(input: AdLayoutDesignInput): AdLayout
     const color = input.textColors?.[direction] ?? (useLightText ? input.typography.light : input.typography.dark);
     const spec: AdLayoutDesignSpec = {
       direction,
+      // 使用者自己打的賣點一律保留 —— 之前這裡吃 decision.graphics，
+      // 模型回 "none" 時三條賣點會整個消失。AI 可以決定怎麼呈現，
+      // 不能決定要不要顯示使用者輸入的內容。
+      // 註：因此 decision.graphics 目前沒有任何消費端（見 art-direction-policy）。
       benefits: input.benefits,
       artDirectionDecision: directionDecision,
       purpose: input.purpose,
