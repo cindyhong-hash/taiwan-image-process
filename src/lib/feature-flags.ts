@@ -30,7 +30,8 @@ export const SHOW_MONTHLY_PLANNER = false;
  *   1. 環境變數 NEXT_PUBLIC_SHOW_AD_LAYOUT=1 —— 給整個環境開（要正式放出時在
  *      Vercel 加這個變數即可，不用改程式）。不設 = 關，所以正式站預設就是安全的。
  *   2. 網址加 ?adlayout=1 —— 只給自己這個瀏覽器分頁開，記在 sessionStorage，
- *      同一個分頁內換頁還在，關掉分頁就沒了。
+ *      同一個分頁內換頁還在，關掉分頁就沒了。?adlayout=0 則明確關掉，
+ *      讓「看正式站會長怎樣」也只是換個網址，不用開新分頁。
  *
  * 為什麼要有第 2 種：這是「功能還沒做好」的產品開關，不是權限控制（整站本來就在
  * SITE_PASSWORD 後面）。做 (1) 的話每次想試都要改 .env.local 再重啟 dev server，
@@ -48,7 +49,14 @@ export function isAdLayoutEnabled(): boolean {
   if (AD_LAYOUT_ENV_ENABLED) return true;
   if (typeof window === "undefined") return false;
   try {
-    if (new URLSearchParams(window.location.search).get("adlayout") === "1") {
+    const param = new URLSearchParams(window.location.search).get("adlayout");
+    if (param === "0") {
+      // 明確關掉：不然一旦開過就記在 sessionStorage，要看「正式站的樣子」
+      // 只能開新分頁或手動清 storage。
+      sessionStorage.removeItem(AD_LAYOUT_PREVIEW_KEY);
+      return false;
+    }
+    if (param === "1") {
       // 只在還沒記錄時才寫，讓這個函式可以被重複呼叫而不產生額外副作用
       // （useSyncExternalStore 的 getSnapshot 一次 render 可能呼叫多次）。
       if (sessionStorage.getItem(AD_LAYOUT_PREVIEW_KEY) !== "1") {
