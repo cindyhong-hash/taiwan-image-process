@@ -31,6 +31,25 @@ type NotiItem = { id: string; title: string; time: string; href?: string };
  *  對每個新品牌都值得再提醒一次。 */
 const tourSeenKey = (clientId: string) => `tourSeen:${clientId}`;
 
+/** localStorage 不可用（無痕模式、瀏覽器擋網站資料）時的退路。
+ *  原本這種情況一律當作「看過」，結果是這些人永遠看不到導覽 —— 而他們往往正是
+ *  第一次用的人。改成用記憶體記錄：這個分頁內只跳一次，不會每換頁都煩，
+ *  但至少跳得出來。 */
+const tourSeenFallback = new Set<string>();
+
+function hasSeenTour(clientId: string): boolean {
+  try {
+    return localStorage.getItem(tourSeenKey(clientId)) === "1";
+  } catch {
+    return tourSeenFallback.has(clientId);
+  }
+}
+
+/** 導覽自動開啟的節奏。延遲是刻意的 —— 讓人先看一眼畫面，再跳出說明。 */
+const TOUR_AUTO_DELAY_MS = 5000;   // 進站後多久才跳
+const TOUR_POLL_MS = 250;          // 等首頁錨點掛上的輪詢間隔
+const TOUR_GIVE_UP_MS = 20000;     // 等太久就放手，不要在使用者操作到一半才彈出來
+
 function timeAgo(iso?: string): string {
   if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
@@ -80,20 +99,31 @@ export function TopHeader() {
   useEffect(() => {
     if (!clientId) return;
     if (!/^\/clients\/[^/]+\/?$/.test(pathname)) return;
-    let seen = true;
-    try { seen = localStorage.getItem(tourSeenKey(clientId)) === "1"; } catch { /* 無痕模式：當作看過，不打擾 */ }
-    if (seen) return;
-    // 等首頁的錨點掛上再開，否則前兩步會找不到目標而置中顯示。
-    const t = window.setTimeout(() => {
-      if (document.querySelector('[data-tour="home-create"]')) setTour(true);
-    }, 600);
-    return () => window.clearTimeout(t);
+    if (hasSeenTour(clientId)) return;
+
+    // 原本是「600ms 後檢查一次，錨點沒掛上就放棄」。本機永遠會過，但正式站上
+    // 首頁要等資料回來才渲染，慢一點就整個不跳了 —— 朋友第一次進站沒看到導覽
+    // 就是這個原因。改成持續輪詢到錨點出現為止。
+    const start = Date.now();
+    const timer = window.setInterval(() => {
+      const elapsed = Date.now() - start;
+      if (elapsed > TOUR_GIVE_UP_MS) { window.clearInterval(timer); return; }
+      // 兩個條件都要成立：錨點已在（前兩步才對得準）、而且已經過了緩衝時間。
+      if (elapsed < TOUR_AUTO_DELAY_MS) return;
+      if (!document.querySelector('[data-tour="home-create"]')) return;
+      window.clearInterval(timer);
+      setTour(true);
+    }, TOUR_POLL_MS);
+    return () => window.clearInterval(timer);
   }, [clientId, pathname]);
 
   // 看完或略過都算看過 —— 使用者按了「略過」還一直跳出來會更煩。
   const closeTour = () => {
     setTour(false);
-    if (clientId) { try { localStorage.setItem(tourSeenKey(clientId), "1"); } catch { /* ignore */ } }
+    if (clientId) {
+      try { localStorage.setItem(tourSeenKey(clientId), "1"); }
+      catch { tourSeenFallback.add(clientId); }
+    }
   };
 
   if (HIDE_ON.some((re) => re.test(pathname))) return null;
