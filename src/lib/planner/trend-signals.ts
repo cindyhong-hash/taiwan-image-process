@@ -295,14 +295,30 @@ const instagramProvider: TrendSignalProvider = {
    農曆檔期（春節、中秋）逐年變動，仍交給 TAIWAN_SEASONAL 用月份處理。 */
 
 /** 依距今天數給分：越近越該現在做。超過 45 天就先不吵。 */
-function proximityScore(days: number): number | null {
+export function proximityScore(days: number): number | null {
   if (days < -3) return null;          // 已經過了 3 天以上
-  if (days <= 0) return 0.95;          // 今天（或剛開始）
+  // 已經過了 1–3 天：還留著（追單、開箱、感謝文仍有題材），但不該贏過
+  // 真正還沒到的檔期 —— 之前跟「今天」同樣給 0.95，排序會把過期的頂到最前面。
+  if (days < 0) return 0.70;
+  if (days === 0) return 0.95;         // 就是今天
   if (days <= 7) return 0.92;
   if (days <= 14) return 0.86;
   if (days <= 30) return 0.76;
   if (days <= 45) return 0.66;
   return null;
+}
+
+/**
+ * 檔期倒數文案。
+ *
+ * 原本是 `days <= 0 ? "就是今天" : ...`，把「今天」和「已經過了 1–3 天」混成同一句，
+ * 結果 9/9 的購物節到了 9/11 還在說「就是今天」。寬限期是刻意保留的（剛過的檔期
+ * 仍有追單題材），但文案要說實話。
+ */
+export function promoWhenLabel(days: number): string {
+  if (days > 0) return `還有 ${days} 天`;
+  if (days === 0) return "就是今天";
+  return `剛過 ${-days} 天`;
 }
 
 /** 檔期 provider：不需要任何 API key。只吐「45 天內」的檔期，並在 label 帶上倒數。 */
@@ -326,7 +342,7 @@ const promoCalendarProvider: TrendSignalProvider = {
       const days = dayDiff(today, c.date);
       const score = proximityScore(days);
       if (score == null) continue;
-      const when = days <= 0 ? "就是今天" : `還有 ${days} 天`;
+      const when = promoWhenLabel(days);
       out.push({
         id: `promo:${c.date.toISOString().slice(0, 10)}`,
         source: "promo",
