@@ -6,7 +6,7 @@ import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, imageSetCompleteness, 
 import { ImageSetModal } from "@/components/products/ImageSetModal";
 import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { AdLayoutModal } from "@/components/adcreation/AdLayoutModal";
-import { SHOW_AD_LAYOUT } from "@/lib/feature-flags";
+import { isAdLayoutEnabled } from "@/lib/feature-flags";
 
 export default function ProductDetailPage({
   params,
@@ -24,6 +24,9 @@ export default function ProductDetailPage({
   const [showAdLayout, setShowAdLayout] = useState(false);
   // 旗標關著時點按鈕不開排版流程，改顯示「籌備中」說明。
   const [showAdLayoutSoon, setShowAdLayoutSoon] = useState(false);
+  // 在 effect 裡算，不在 render 期間 —— 它會讀 window，server/client 會不一致。
+  const [adLayoutOn, setAdLayoutOn] = useState(false);
+  useEffect(() => { setAdLayoutOn(isAdLayoutEnabled()); }, []);
 
   useEffect(() => {
     params.then(({ clientId, productId }) => { setClientId(clientId); setProductId(productId); });
@@ -176,16 +179,16 @@ export default function ProductDetailPage({
               </button>
             )}
             <button
-              onClick={() => (SHOW_AD_LAYOUT ? setShowAdLayout(true) : setShowAdLayoutSoon(true))}
+              onClick={() => (adLayoutOn ? setShowAdLayout(true) : setShowAdLayoutSoon(true))}
               disabled={!hasBridgeImage}
-              title={SHOW_AD_LAYOUT ? "使用商品素材，自動建立可編輯的設計稿" : "新功能還在籌備中"}
+              title={adLayoutOn ? "使用商品素材，自動建立可編輯的設計稿" : "新功能還在籌備中"}
               className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Sparkles className="h-[18px] w-[18px]" /> AI 幫我排版
             </button>
           </div>
           <p className="mt-2 text-xs text-gray-400">
-            {SHOW_AD_LAYOUT
+            {adLayoutOn
               ? "「AI 幫我排版」會用商品素材自動排成可編輯設計稿，進編輯器後可自由微調。"
               : "「AI 幫我排版」還在籌備中，敬請期待。"}
           </p>
@@ -277,7 +280,7 @@ export default function ProductDetailPage({
         </div>
       )}
 
-      {SHOW_AD_LAYOUT && showAdLayout && (
+      {adLayoutOn && showAdLayout && (
         <AdLayoutModal
           clientId={clientId}
           productId={productId}
