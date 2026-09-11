@@ -6,6 +6,7 @@ import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, imageSetCompleteness, 
 import { ImageSetModal } from "@/components/products/ImageSetModal";
 import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { AdLayoutModal } from "@/components/adcreation/AdLayoutModal";
+import { SHOW_AD_LAYOUT } from "@/lib/feature-flags";
 
 export default function ProductDetailPage({
   params,
@@ -21,6 +22,8 @@ export default function ProductDetailPage({
   const [note, setNote] = useState<string | null>(null);
   const [showSet, setShowSet] = useState(false);
   const [showAdLayout, setShowAdLayout] = useState(false);
+  // 旗標關著時點按鈕不開排版流程，改顯示「籌備中」說明。
+  const [showAdLayoutSoon, setShowAdLayoutSoon] = useState(false);
 
   useEffect(() => {
     params.then(({ clientId, productId }) => { setClientId(clientId); setProductId(productId); });
@@ -173,15 +176,19 @@ export default function ProductDetailPage({
               </button>
             )}
             <button
-              onClick={() => setShowAdLayout(true)}
+              onClick={() => (SHOW_AD_LAYOUT ? setShowAdLayout(true) : setShowAdLayoutSoon(true))}
               disabled={!hasBridgeImage}
-              title="使用商品素材，自動建立可編輯的設計稿"
+              title={SHOW_AD_LAYOUT ? "使用商品素材，自動建立可編輯的設計稿" : "新功能還在籌備中"}
               className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-violet-200 bg-white text-violet-700 hover:bg-violet-50 px-5 py-3 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Sparkles className="h-[18px] w-[18px]" /> AI 幫我排版
             </button>
           </div>
-          <p className="mt-2 text-xs text-gray-400">「AI 幫我排版」會用商品素材自動排成可編輯設計稿，進編輯器後可自由微調。</p>
+          <p className="mt-2 text-xs text-gray-400">
+            {SHOW_AD_LAYOUT
+              ? "「AI 幫我排版」會用商品素材自動排成可編輯設計稿，進編輯器後可自由微調。"
+              : "「AI 幫我排版」還在籌備中，敬請期待。"}
+          </p>
           {note && <p className="mt-2 text-xs text-gray-400">{note}</p>}
 
           {/* [單元E] 資產完整度儀表 */}
@@ -244,7 +251,33 @@ export default function ProductDetailPage({
           onFinished={load}
         />
       )}
-      {showAdLayout && (
+      {/* 籌備中提示：功能旗標關著時取代排版流程 */}
+      {showAdLayoutSoon && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowAdLayoutSoon(false)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-violet-50">
+              <Sparkles className="h-5 w-5 text-violet-600" />
+            </div>
+            <h3 className="text-base font-bold text-gray-900">新功能還在籌備中</h3>
+            <p className="mt-2 text-xs leading-relaxed text-gray-500">
+              「AI 幫我排版」正在調整版面品質，完成後會開放使用。<br />
+              目前可以先用「自由設計」自己排版。
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowAdLayoutSoon(false)}
+              className="mt-5 w-full rounded-full bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700"
+            >
+              我知道了
+            </button>
+          </div>
+        </div>
+      )}
+
+      {SHOW_AD_LAYOUT && showAdLayout && (
         <AdLayoutModal
           clientId={clientId}
           productId={productId}
