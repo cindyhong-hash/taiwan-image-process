@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 /**
  * 功能開關（單一來源）。
  *
@@ -41,16 +43,17 @@ const AD_LAYOUT_PREVIEW_KEY = "showAdLayoutPreview";
 
 export const AD_LAYOUT_ENV_ENABLED = process.env.NEXT_PUBLIC_SHOW_AD_LAYOUT === "1";
 
-/**
- * 只能在 client component 的 effect / event handler 裡呼叫。
- * 不要在 render 期間用 —— server 與 client 算出來的值會不一致（hydration mismatch）。
- */
+/** 讀取目前狀態。回傳 boolean（primitive），可安全當作 getSnapshot。 */
 export function isAdLayoutEnabled(): boolean {
   if (AD_LAYOUT_ENV_ENABLED) return true;
   if (typeof window === "undefined") return false;
   try {
     if (new URLSearchParams(window.location.search).get("adlayout") === "1") {
-      sessionStorage.setItem(AD_LAYOUT_PREVIEW_KEY, "1");
+      // 只在還沒記錄時才寫，讓這個函式可以被重複呼叫而不產生額外副作用
+      // （useSyncExternalStore 的 getSnapshot 一次 render 可能呼叫多次）。
+      if (sessionStorage.getItem(AD_LAYOUT_PREVIEW_KEY) !== "1") {
+        sessionStorage.setItem(AD_LAYOUT_PREVIEW_KEY, "1");
+      }
       return true;
     }
     return sessionStorage.getItem(AD_LAYOUT_PREVIEW_KEY) === "1";
@@ -58,4 +61,19 @@ export function isAdLayoutEnabled(): boolean {
     // 隱私模式等存取 sessionStorage 會丟例外：當作沒開，不要讓整頁壞掉。
     return false;
   }
+}
+
+/** useSyncExternalStore 需要穩定的 subscribe；這個值在一次 session 內不會變。 */
+const subscribeNever = () => () => {};
+
+/**
+ * 在 client component 裡取得旗標狀態。
+ *
+ * 用 useSyncExternalStore 而不是 useEffect + setState：後者會被
+ * react-hooks/set-state-in-effect 擋下（effect 裡同步 setState 會多跑一輪 render），
+ * 而且這正是這個 hook 存在的用途 —— 讀一個 server 上不存在的外部值，
+ * 由它負責給 server snapshot（false），不會 hydration mismatch。
+ */
+export function useAdLayoutEnabled(): boolean {
+  return useSyncExternalStore(subscribeNever, isAdLayoutEnabled, () => false);
 }

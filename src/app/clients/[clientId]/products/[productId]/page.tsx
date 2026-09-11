@@ -6,7 +6,7 @@ import { ASSET_ROLE_LABELS, CORE_SET_ROLES as CORE_ROLES, imageSetCompleteness, 
 import { ImageSetModal } from "@/components/products/ImageSetModal";
 import { ACTIVITY_HANDOFF_KEY } from "@/components/activities/RolePickerModal";
 import { AdLayoutModal } from "@/components/adcreation/AdLayoutModal";
-import { isAdLayoutEnabled } from "@/lib/feature-flags";
+import { useAdLayoutEnabled } from "@/lib/feature-flags";
 
 export default function ProductDetailPage({
   params,
@@ -24,9 +24,7 @@ export default function ProductDetailPage({
   const [showAdLayout, setShowAdLayout] = useState(false);
   // 旗標關著時點按鈕不開排版流程，改顯示「籌備中」說明。
   const [showAdLayoutSoon, setShowAdLayoutSoon] = useState(false);
-  // 在 effect 裡算，不在 render 期間 —— 它會讀 window，server/client 會不一致。
-  const [adLayoutOn, setAdLayoutOn] = useState(false);
-  useEffect(() => { setAdLayoutOn(isAdLayoutEnabled()); }, []);
+  const adLayoutOn = useAdLayoutEnabled();
 
   useEffect(() => {
     params.then(({ clientId, productId }) => { setClientId(clientId); setProductId(productId); });
